@@ -3,6 +3,7 @@
 
 import pathlib
 import re
+import zlib
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -40,3 +41,26 @@ for plural, type_name, array_name in (
     hashes = count_entries(type_name, array_name)
     assert len(hashes) == declared_count(plural), (type_name, len(hashes), declared_count(plural))
     assert len(hashes) == len(set(hashes)), f"duplicate {type_name} completion hash"
+
+# Location flags are named Location_<internal name>; the stored hash is its CRC32.
+# These entries were paired with a neighbouring room/stable flag before; the
+# internal names follow MrCheeze/botw-waypoint-map, the source of the names and
+# positions in Data.cpp.
+EXPECTED_LOCATION_FLAGS = {
+    "East Passage": "Location_HyruleCastle_Room_10",
+    "West Passage": "Location_HyruleCastle_Room_11",
+    "Dining Hall": "Location_HyruleCastle_Room_1",
+    "South Akkala Stable": "Location_TamourHatago2",
+    "East Akkala Stable": "Location_TamourHatago",
+    "Hyrule Castle": "Location_HyruleCastle",
+}
+for display_name, flag in EXPECTED_LOCATION_FLAGS.items():
+    match = re.search(rf'Data::Location\((\d+), "{re.escape(display_name)}"', DATA)
+    assert match, display_name
+    assert int(match.group(1)) == zlib.crc32(flag.encode()), (display_name, flag)
+
+# Korok guide ids must be unique except for the fairy-light pair that shares one guide.
+guide_ids = re.findall(r"Data::Korok\(\d+, \"[^\"]+\", [^,]+, [^,]+, (\d+)\)", DATA)
+assert len(guide_ids) == declared_count("Koroks"), len(guide_ids)
+duplicates = {i for i in guide_ids if guide_ids.count(i) > 1}
+assert duplicates == {"78"}, duplicates
