@@ -58,6 +58,13 @@ loading them in the background as the map moves. The chunks are not distributed 
 - Only used when the app runs as an application (title override or forwarder). From the Album, which has
   less memory, the app keeps the built-in map. Up to 40 chunks stay in memory (about 4 MB each).
 
+## Sharper icons (optional)
+
+A PNG in `sdmc:/switch/botw-unexplored/icons/` with the name of an image at the top of romfs (for example
+`shrine.png` or `hinox.png`) replaces it. It is drawn at the size of the built-in image, so it can be larger as long
+as the aspect ratio is the same. These files are not distributed with the app. All images now use mipmaps, so they
+stay clean when drawn smaller than their size.
+
 ## Saved data
 
 The app stores its own files under `sdmc:/switch/botw-unexplored/`:

@@ -29,6 +29,8 @@ fi
 /tmp/test_map_completion
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_map_hd_grid.cpp source/MapHdGrid.cpp -o /tmp/test_map_hd_grid
 /tmp/test_map_hd_grid
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_image_override.cpp source/ImageOverride.cpp -o /tmp/test_image_override
+/tmp/test_image_override
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_flags.cpp source/ShrineFlags.cpp -o /tmp/test_shrine_flags
 /tmp/test_shrine_flags
 python3 tests/test_data_mapping.py
