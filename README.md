@@ -87,5 +87,6 @@ They cover settings migration and validation, UTF-8 decoding, manual-progress pr
 
 - [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored) — original application and codebase.
 - [marcrobledo/savegame-editors](https://github.com/marcrobledo/savegame-editors), [MrCheeze/botw-waypoint-map](https://github.com/MrCheeze/botw-waypoint-map), [Zelda Dungeon](https://www.zeldadungeon.net/), and [d4mation/botw-unexplored-viewer](https://github.com/d4mation/botw-unexplored-viewer) — original data, research, and guide references.
+- Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.
