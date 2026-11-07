@@ -1,4 +1,5 @@
 #include "Legend.h"
+#include "MapCompletion.h"
 
 #include <iostream>
 
@@ -9,6 +10,23 @@
 #include "MapLocation.h"
 #include "SavefileIO.h"
 #include "Localization.h"
+
+namespace
+{
+    std::string MapCompletionText()
+    {
+        static_assert(Data::KoroksCount + Data::ShrineCount + Data::LocationsCount == MapCompletion::TotalEntries,
+                      "Map completion total must match the tracked data");
+
+        int found = 0;
+        for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
+        for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
+        for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
+
+        const char separator = Localization::GetLanguage() == Localization::Language::English ? '.' : ',';
+        return MapCompletion::Format(MapCompletion::Hundredths(found), separator);
+    }
+}
 
 Legend::Legend()
 {
@@ -151,6 +169,7 @@ void Legend::Render()
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Legend), glm::vec2(viewLeft + 25.0f, viewTop - 55.0f), 0.75f, glm::vec3(1.0));
     Map::m_Font.AddTextToBatch("ZL - " + Localization::Get(Localization::Text::LanguageName), glm::vec2(viewLeft + m_Width - 26.0f, viewTop - 55.0f), 0.45f, glm::vec3(1.0), ALIGN_RIGHT);
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(viewLeft + m_Width - 26.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0), ALIGN_RIGHT);
+    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MapCompletion) + ": " + MapCompletionText(), glm::vec2(viewLeft + 25.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0));
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
     {

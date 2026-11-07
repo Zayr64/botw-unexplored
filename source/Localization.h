@@ -60,6 +60,7 @@ namespace Localization
         Hinox,
         StoneTalus,
         Molduga,
+        MapCompletion,
         Count
     };
 

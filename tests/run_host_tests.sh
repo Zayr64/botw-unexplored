@@ -25,4 +25,6 @@ fi
 /tmp/test_localization
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_image_viewer_layout.cpp source/ImageViewerLayout.cpp -o /tmp/test_image_viewer_layout
 /tmp/test_image_viewer_layout
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_map_completion.cpp source/MapCompletion.cpp -o /tmp/test_map_completion
+/tmp/test_map_completion
 python3 tests/test_data_mapping.py
