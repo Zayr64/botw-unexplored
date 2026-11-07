@@ -17,6 +17,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - "You are here": a marker at the position of the last save; the map opens there, `L` glides back to it, and `ZR` / `ZL` measure distances from it.
 - Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays in the `Missing` view.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
+- Optional high-resolution map (4x) when zoomed in, read from the SD card (see below).
 - Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
 
 ## Installation
@@ -45,6 +46,17 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 | Object info | `B` | Mark a missing object as found while using a backup |
 | Legend | D-Pad, `A`, or touch | Select/toggle a category |
 | Korok hint | `B` | Mark the Korok as found while using a backup and close the hint |
+
+## High-resolution map (optional)
+
+The app ships with a 3000x2500 map. When `sdmc:/switch/botw-unexplored/map-hd/` holds the map at 4x
+(12000x10000) cut in 1024-pixel JPEG chunks, the app draws the chunks on screen over it from zoom 1.5 on,
+loading them in the background as the map moves. The chunks are not distributed with the app.
+
+- Files: `map-hd.txt` with the lines `BOTW_UNEXPLORED_MAP_HD`, `1` and `12000 10000 1024`, plus one
+  `<column>_<row>.jpg` per chunk (`00_00.jpg` at the top left to `11_09.jpg`, edge chunks smaller), RGB.
+- Only used when the app runs as an application (title override or forwarder). From the Album, which has
+  less memory, the app keeps the built-in map. Up to 40 chunks stay in memory (about 4 MB each).
 
 ## Saved data
 

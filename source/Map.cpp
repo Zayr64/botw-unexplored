@@ -15,6 +15,7 @@
 #include "KorokDialog.h"
 #include "ObjectInfo.h"
 #include "ImageViewer.h"
+#include "MapHd.h"
 #include "ObjectModel.h"
 #include "Log.h"
 #include "Localization.h"
@@ -187,6 +188,7 @@ bool Map::Init()
     m_MapBackground.Create("romfs:/map-lowres.png");
     m_MapBackground.m_ProjectionMatrix = &m_ProjectionMatrix;
     m_MapBackground.m_ViewMatrix = &m_ViewMatrix;
+    MapHd::Init();
 
     // Load font
     if (m_Font.Load("romfs:/arial.ttf") != 1)
@@ -621,6 +623,8 @@ void Map::Update()
 
     }
 
+    MapHd::Update(m_CameraPosition, m_Zoom, m_CameraWidth / (2.0f * m_Zoom), m_CameraHeight / (2.0f * m_Zoom));
+
     m_PrevCameraPosition = m_CameraPosition;
     ClampCursorToViewport();
 }
@@ -628,6 +632,7 @@ void Map::Update()
 void Map::Render()
 {
     m_MapBackground.Render();
+    MapHd::Render(&m_ProjectionMatrix, &m_ViewMatrix);
 
     Map::m_Font.BeginBatch();
 
@@ -818,6 +823,7 @@ void Map::Destroy()
     m_LineRenderer = nullptr;
 
     m_Font.Destroy();
+    MapHd::Destroy(); // before the background, whose Destroy also deletes the shared textured-quad shader
     m_MapBackground.Destroy();
     m_MasterModeIcon.Destroy();
     s_PlayerMarker.Destroy();
