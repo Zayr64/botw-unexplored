@@ -18,22 +18,22 @@ int main()
     assert(Navigation::FindNearest(candidates, {0.0f, 0.0f}, false, result));
     assert(result.x == 1.0f);
     {
-        const std::vector<Navigation::Candidate> walk = {
+        const std::vector<Navigation::Candidate> objects = {
             {{5.0f, 0.0f}, true, false}, {{1.0f, 0.0f}, true, true}, {{2.0f, 0.0f}, true, false},
-            {{-2.0f, 0.0f}, true, false}, {{9.0f, 0.0f}, false, false}
+            {{-2.0f, 0.0f}, true, false}, {{9.0f, 0.0f}, false, false}, {{0.0f, 7.0f}, true, false},
+            {{0.0f, -3.0f}, true, false}, {{8.0f, 0.0f}, true, false}
         };
-        Navigation::Step step;
-        // Missing and visible ones by distance: index 2 and 3 tie at 2 (lower index first), then 0.
-        assert(Navigation::FindNextByDistance(walk, {0.0f, 0.0f}, true, step, step) && step.index == 2);
-        assert(Navigation::FindNextByDistance(walk, {0.0f, 0.0f}, true, step, step) && step.index == 3);
-        assert(Navigation::FindNextByDistance(walk, {0.0f, 0.0f}, true, step, step) && step.index == 0);
-        assert(step.distanceSquared == 25.0f);
-        // Wraps to the nearest again.
-        assert(Navigation::FindNextByDistance(walk, {0.0f, 0.0f}, true, step, step) && step.index == 2);
-        // Nothing to visit.
+        // Missing and visible ones by distance: 2 and 3 tie at 2 (candidate order), then 6, 0, 5, 7.
+        assert((Navigation::NearestByDistance(objects, {0.0f, 0.0f}, true, 5) == std::vector<int>{2, 3, 6, 0, 5}));
+        // Fewer than asked: all of them.
+        assert((Navigation::NearestByDistance(objects, {0.0f, 0.0f}, true, 20) == std::vector<int>{2, 3, 6, 0, 5, 7}));
+        // Found ones count when asked.
+        assert((Navigation::NearestByDistance(objects, {0.0f, 0.0f}, false, 2) == std::vector<int>{1, 2}));
+        // Another origin, another order.
+        assert((Navigation::NearestByDistance(objects, {8.0f, 0.0f}, true, 2) == std::vector<int>{7, 0}));
+        assert(Navigation::NearestByDistance(objects, {0.0f, 0.0f}, true, 0).empty());
         const std::vector<Navigation::Candidate> none = {{{1.0f, 0.0f}, true, true}};
-        Navigation::Step empty;
-        assert(!Navigation::FindNextByDistance(none, {0.0f, 0.0f}, true, Navigation::Step(), empty));
+        assert(Navigation::NearestByDistance(none, {0.0f, 0.0f}, true, 5).empty());
     }
     for (Navigation::Candidate& candidate : candidates) candidate.visible = false;
     assert(!Navigation::FindNearest(candidates, {0.0f, 0.0f}, true, result));

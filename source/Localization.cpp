@@ -10,8 +10,8 @@ namespace
         "No", "Yes", "Master mode save file detected", "Would you like to load it?", "Legend", "X - close", "B/X - back", "Koroks",
         "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "Show Completed", "B - mark as found",
         "Press X: legend", "BotW is running.", "Loaded older save", "Press Y: master mode",
-        "Press Y: normal mode", "L/R: zoom  (-): user  (+): exit", "Missing", "Completed", "All",
-        "Position", "Found", "Not found", "Object info", "Next missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link"
+        "Press Y: normal mode", "ZL/ZR: nearest  L: Link  R: view  (-): user  (+): exit", "Missing", "Completed", "All",
+        "Position", "Found", "Not found", "Object info", "Nearest missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

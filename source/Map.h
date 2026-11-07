@@ -31,7 +31,7 @@ namespace Map
     bool OpenNearestObject(const glm::vec2& mapPosition);
     void CloseInfoPanels();
     void MarkSelectedObjectFound();
-    void FocusNextMissing();
+    void FocusMissing(int step); // +1: next of the nearest missing objects, -1: previous
     void ClampCursorToViewport();
 
     void Update();

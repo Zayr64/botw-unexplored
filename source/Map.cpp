@@ -28,14 +28,14 @@ constexpr float MapScale = 0.25f;
 
 namespace
 {
-    // "You are here": the position of the last save, and ZR walking the missing objects by distance.
+    // "You are here": the position of the last save, and ZR cycling through the nearest missing objects.
     TexturedQuad s_PlayerMarker;
+    constexpr int NextMissingCount = 5;
     bool s_NextMissingActive = false;
-    Navigation::Step s_NextMissingStep;
+    std::vector<int> s_NextMissingList; // indices into CollectObjects(), nearest first
     glm::vec2 s_NextMissingOrigin(0.0f);
     glm::vec2 s_NextMissingTarget(0.0f);
-    unsigned s_NextMissingFilter = 0;
-    int s_NextMissingRank = 0;
+    int s_NextMissingRank = 0; // 0-based position in s_NextMissingList
     float s_NextMissingMeters = 0.0f;
 
     bool HasPlayerPosition()
@@ -74,26 +74,91 @@ namespace
         return SavefileIO::GameIsRunning && ManualProgress::IsMarkedFound(context, type, hash);
     }
 
+    // Map position of the object whose card is open.
+    bool SelectedObjectPosition(glm::vec2& position)
+    {
+        if (Map::m_KorokDialog != nullptr && Map::m_KorokDialog->m_IsOpen &&
+            Map::m_KorokDialog->m_KorokIndex >= 0 && Map::m_KorokDialog->m_KorokIndex < Data::KoroksCount)
+        {
+            position = Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Position;
+            return true;
+        }
+        if (Map::m_ObjectInfo != nullptr && Map::m_ObjectInfo->m_IsOpen)
+        {
+            position = Map::m_ObjectInfo->GetMapPosition();
+            return true;
+        }
+        return false;
+    }
+
+    // Every object on the map, in a fixed order, with what its card needs.
+    struct MapEntry
+    {
+        Data::ObjectType type;
+        uint32_t hash;
+        glm::vec2 position;
+        const std::string* name;
+        bool* found;
+        bool pending; // a discovered shrine with something left still counts as missing
+        bool visible; // its category is on in the legend
+        int korokIndex;
+    };
+
+    void CollectObjects(std::vector<MapEntry>& entries)
+    {
+        static const std::string noName;
+        entries.clear();
+        entries.reserve(Data::KoroksCount + Data::ShrineCount + Data::DLCShrineCount + Data::HinoxesCount +
+                        Data::TalusesCount + Data::MoldugasCount + Data::LocationsCount);
+        const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
+                             bool* found, bool pending = false, int korokIndex = -1)
+        {
+            bool visible = Map::m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex];
+            if (type == Data::ObjectType::DLCShrine)
+                visible = visible && SavefileIO::HasDLC;
+            entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex});
+        };
+
+        for (int i = 0; i < Data::KoroksCount; ++i)
+            add(Data::ObjectType::Korok, Data::Koroks[i].hash, Map::m_Koroks[i].m_Position, noName, &Map::m_Koroks[i].m_Found, false, i);
+        for (int i = 0; i < Data::ShrineCount; ++i)
+            add(Data::ObjectType::Shrine, Data::Shrines[i].hash, Map::m_Shrines[i].m_Position, Data::Shrines[i].displayName,
+                &Map::m_Shrines[i].m_Found, Map::m_Shrines[i].m_Pending);
+        for (int i = 0; i < Data::DLCShrineCount; ++i)
+            add(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, Map::m_DLCShrines[i].m_Position, noName,
+                &Map::m_DLCShrines[i].m_Found, Map::m_DLCShrines[i].m_Pending);
+        for (int i = 0; i < Data::HinoxesCount; ++i)
+            add(Data::ObjectType::Hinox, Data::Hinoxes[i].hash, Map::m_Hinoxes[i].m_Position, noName, &Map::m_Hinoxes[i].m_Found);
+        for (int i = 0; i < Data::TalusesCount; ++i)
+            add(Data::ObjectType::Talus, Data::Taluses[i].hash, Map::m_Taluses[i].m_Position, noName, &Map::m_Taluses[i].m_Found);
+        for (int i = 0; i < Data::MoldugasCount; ++i)
+            add(Data::ObjectType::Molduga, Data::Moldugas[i].hash, Map::m_Moldugas[i].m_Position, noName, &Map::m_Moldugas[i].m_Found);
+        for (int i = 0; i < Data::LocationsCount; ++i)
+            add(Data::ObjectType::Location, Data::Locations[i].hash, Map::m_Locations[i].m_Position, Data::Locations[i].displayName,
+                &Map::m_Locations[i].m_Found);
+    }
+
+    // Opens the Korok hint or the object card.
+    void OpenObject(const MapEntry& entry)
+    {
+        Map::CloseInfoPanels();
+        if (entry.type == Data::ObjectType::Korok)
+        {
+            Map::m_KorokDialog->SetSeed(Map::m_Koroks[entry.korokIndex].m_ObjectData->zeldaDungeonId, entry.korokIndex);
+            Map::m_KorokDialog->SetOpen(true);
+            return;
+        }
+        Map::m_ObjectInfo->SetObject(entry.type, entry.hash, entry.position, *entry.name, entry.found);
+        Map::m_ObjectInfo->SetOpen(true);
+    }
+
     void RenderSelectedObjectHighlight()
     {
         if (Map::m_LineRenderer == nullptr)
             return;
 
         glm::vec2 position;
-        bool hasSelection = false;
-        if (Map::m_KorokDialog != nullptr && Map::m_KorokDialog->m_IsOpen &&
-            Map::m_KorokDialog->m_KorokIndex >= 0 && Map::m_KorokDialog->m_KorokIndex < Data::KoroksCount)
-        {
-            position = Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Position;
-            hasSelection = true;
-        }
-        else if (Map::m_ObjectInfo != nullptr && Map::m_ObjectInfo->m_IsOpen)
-        {
-            position = Map::m_ObjectInfo->GetMapPosition();
-            hasSelection = true;
-        }
-
-        if (!hasSelection || !Map::IsInView(position, 30.0f))
+        if (!SelectedObjectPosition(position) || !Map::IsInView(position, 30.0f))
             return;
 
         const float halfSize = 18.0f / Map::m_Zoom;
@@ -303,7 +368,6 @@ void Map::Update()
     if (m_Pad == nullptr) return;
 
     u64 buttonsPressed = padGetButtonsDown(m_Pad);
-    u64 buttonsDown = padGetButtons(m_Pad);
 
     const bool imageViewerWasOpen = m_ImageViewer != nullptr && m_ImageViewer->IsOpen();
     if (imageViewerWasOpen)
@@ -311,7 +375,6 @@ void Map::Update()
         if (buttonsPressed & (HidNpadButton_B | HidNpadButton_X))
             m_ImageViewer->Close();
         buttonsPressed = 0;
-        buttonsDown = 0;
     }
 
     float zoomAmount = 0.015f;
@@ -329,13 +392,6 @@ void Map::Update()
     if (!imageViewerWasOpen && fabs(stickRPosition.y) >= deadzone)
         m_Zoom *= 1.0f + zoomAmount * stickRPosition.y;
 
-    // Zoom with L and R
-    if (!imageViewerWasOpen && (buttonsDown & HidNpadButton_R)) // Zoom in
-        m_Zoom *= 1.0f + zoomAmount;
-
-    if (!imageViewerWasOpen && (buttonsDown & HidNpadButton_L)) // Zoom out
-        m_Zoom *= 1.0f - zoomAmount;
-
     // Reset zoom if pressing L or R stick
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_StickL))
     {
@@ -343,6 +399,18 @@ void Map::Update()
         m_CameraPosition = HasPlayerPosition() ? PlayerMapPosition() : glm::vec2(0.0f, 0.0f);
         m_HasTargetCameraPosition = false;
     }
+
+    // L glides to Link and keeps the zoom
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
+    {
+        m_TargetCameraPosition = PlayerMapPosition();
+        m_HasTargetCameraPosition = true;
+        m_CursorFollowsTarget = true;
+    }
+
+    // R cycles the display mode (Missing, Completed, All) like its button in the legend
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_R))
+        m_Legend->m_Buttons[IconButton::ShowCompleted]->Click(m_Legend);
 
     if (m_Zoom < minZoom) m_Zoom = minZoom;
 
@@ -424,8 +492,8 @@ void Map::Update()
         m_CursorFollowsTarget = false;
     }
 
-    if (!imageViewerWasOpen && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen &&
-        !m_NoSavefileDialog->m_IsOpen && !m_GameRunningDialog->m_IsOpen && !m_MasterModeDialog->m_IsOpen)
+    const bool modalDialogOpen = m_NoSavefileDialog->m_IsOpen || m_GameRunningDialog->m_IsOpen || m_MasterModeDialog->m_IsOpen;
+    if (!imageViewerWasOpen && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen && !modalDialogOpen)
     {
         const float cursorStep = 12.0f / m_Zoom;
         if (buttonsPressed & HidNpadButton_Left) m_CursorPosition.x -= cursorStep;
@@ -433,8 +501,12 @@ void Map::Update()
         if (buttonsPressed & HidNpadButton_Up) m_CursorPosition.y += cursorStep;
         if (buttonsPressed & HidNpadButton_Down) m_CursorPosition.y -= cursorStep;
         if (buttonsPressed & HidNpadButton_A) OpenNearestObject(m_CursorPosition);
-        if (buttonsPressed & HidNpadButton_ZR) FocusNextMissing();
     }
+    // ZR/ZL open the card of each object they visit, so they also work with a card or the legend open.
+    if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZR))
+        FocusMissing(1);
+    else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZL))
+        FocusMissing(-1);
 
     if (!imageViewerWasOpen && m_HasTargetCameraPosition)
     {
@@ -648,7 +720,9 @@ void Map::Render()
         m_MasterModeDialog->Render();
 
     if (!m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && SavefileIO::LoadedSavefile)
-        m_Font.AddTextToBatch(Localization::Get(Localization::Text::OpenLegend), glm::vec2(m_ScreenLeft + 20, m_ScreenTop - 30), 0.42f);
+        m_Font.AddTextToBatch(Localization::Get(Localization::Text::OpenLegend) + "   R: " +
+                              Localization::GetShowModeName(static_cast<int>(m_Legend->m_ShowMode)),
+                              glm::vec2(m_ScreenLeft + 20, m_ScreenTop - 30), 0.42f);
 
     if (SavefileIO::LoadedSavefile)
     {
@@ -665,10 +739,13 @@ void Map::Render()
         else if (m_LoadMasterMode)
             m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadNormalMode), glm::vec2(bottomTextX, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
 
-        if (s_NextMissingActive && !m_Legend->m_IsOpen && !m_ObjectInfo->m_IsOpen && !m_KorokDialog->m_IsOpen)
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::NextMissing) + " #" + std::to_string(s_NextMissingRank) +
+        // While the card ZR opened is still the one shown.
+        glm::vec2 selected;
+        if (s_NextMissingActive && !m_Legend->m_IsOpen && SelectedObjectPosition(selected) && selected == s_NextMissingTarget)
+            m_Font.AddTextToBatch(Localization::Get(Localization::Text::NextMissing) + " " + std::to_string(s_NextMissingRank + 1) +
+                                  "/" + std::to_string(s_NextMissingList.size()) +
                                   "  " + std::to_string(static_cast<int>(s_NextMissingMeters + 0.5f)) + " m",
-                                  glm::vec2(0.0f, m_ScreenBottom + 20), 0.42f, glm::vec3(1.0f), ALIGN_CENTER);
+                                  glm::vec2(0.0f, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_CENTER);
 
         m_Font.AddTextToBatch(Localization::Get(Localization::Text::Controls),
             glm::vec2(bottomTextX, m_ScreenBottom + 20), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
@@ -753,61 +830,28 @@ void Map::Destroy()
 
 bool Map::OpenNearestObject(const glm::vec2& mapPosition)
 {
-    struct Candidate
-    {
-        Data::ObjectType type;
-        uint32_t hash;
-        glm::vec2 position;
-        std::string name;
-        bool* found;
-        float distanceSquared;
-        int korokIndex;
-    };
-    Candidate best = {Data::ObjectType::Korok, 0, glm::vec2(0.0f), "", nullptr, 1e30f, -1};
+    std::vector<MapEntry> entries;
+    CollectObjects(entries);
     const float radius = 60.0f / m_Zoom;
     const float maxDistanceSquared = radius * radius;
-    const auto consider = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position,
-                              const std::string& name, bool* found, int korokIndex = -1, bool pending = false)
+    int best = -1;
+    float bestDistanceSquared = 0.0f;
+    for (int i = 0; i < static_cast<int>(entries.size()); ++i)
     {
-        if (!m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex] || !m_Legend->ShouldShow(*found && !pending))
-            return;
-        const float distanceSquared = glm::dot(position - mapPosition, position - mapPosition);
-        if (distanceSquared <= maxDistanceSquared && distanceSquared < best.distanceSquared)
-            best = {type, hash, position, name, found, distanceSquared, korokIndex};
-    };
-
-    for (int i = 0; i < Data::KoroksCount; ++i)
-        consider(Data::ObjectType::Korok, Data::Koroks[i].hash, m_Koroks[i].m_Position, "", &m_Koroks[i].m_Found, i);
-    for (int i = 0; i < Data::ShrineCount; ++i)
-        consider(Data::ObjectType::Shrine, Data::Shrines[i].hash, m_Shrines[i].m_Position, Data::Shrines[i].displayName, &m_Shrines[i].m_Found, -1, m_Shrines[i].m_Pending);
-    if (SavefileIO::HasDLC)
-        for (int i = 0; i < Data::DLCShrineCount; ++i)
-            consider(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, m_DLCShrines[i].m_Position, "", &m_DLCShrines[i].m_Found, -1, m_DLCShrines[i].m_Pending);
-    for (int i = 0; i < Data::HinoxesCount; ++i)
-        consider(Data::ObjectType::Hinox, Data::Hinoxes[i].hash, m_Hinoxes[i].m_Position, "", &m_Hinoxes[i].m_Found);
-    for (int i = 0; i < Data::TalusesCount; ++i)
-        consider(Data::ObjectType::Talus, Data::Taluses[i].hash, m_Taluses[i].m_Position, "", &m_Taluses[i].m_Found);
-    for (int i = 0; i < Data::MoldugasCount; ++i)
-        consider(Data::ObjectType::Molduga, Data::Moldugas[i].hash, m_Moldugas[i].m_Position, "", &m_Moldugas[i].m_Found);
-    for (int i = 0; i < Data::LocationsCount; ++i)
-        consider(Data::ObjectType::Location, Data::Locations[i].hash, m_Locations[i].m_Position,
-                 Data::Locations[i].displayName, &m_Locations[i].m_Found);
-
-    if (best.found != nullptr)
-    {
-        if (best.type == Data::ObjectType::Korok)
+        const MapEntry& entry = entries[i];
+        if (!entry.visible || !m_Legend->ShouldShow(*entry.found && !entry.pending))
+            continue;
+        const float distanceSquared = glm::dot(entry.position - mapPosition, entry.position - mapPosition);
+        if (distanceSquared <= maxDistanceSquared && (best < 0 || distanceSquared < bestDistanceSquared))
         {
-            CloseInfoPanels();
-            m_KorokDialog->SetSeed(m_Koroks[best.korokIndex].m_ObjectData->zeldaDungeonId, best.korokIndex);
-            m_KorokDialog->SetOpen(true);
-            return true;
+            best = i;
+            bestDistanceSquared = distanceSquared;
         }
-        CloseInfoPanels();
-        m_ObjectInfo->SetObject(best.type, best.hash, best.position, best.name, best.found);
-        m_ObjectInfo->SetOpen(true);
-        return true;
     }
-    return false;
+    if (best < 0)
+        return false;
+    OpenObject(entries[best]);
+    return true;
 }
 
 void Map::MarkSelectedObjectFound()
@@ -820,64 +864,52 @@ void Map::MarkSelectedObjectFound()
         ManualProgress::Flush();
 }
 
-void Map::FocusNextMissing()
+void Map::FocusMissing(int step)
 {
+    if (!SavefileIO::LoadedSavefile)
+        return;
+
+    std::vector<MapEntry> entries;
+    CollectObjects(entries);
     std::vector<Navigation::Candidate> candidates;
-    const auto add = [&](const glm::vec2& position, bool visible, bool found)
-    {
-        candidates.push_back({{position.x, position.y}, visible, found});
-    };
-    const bool showKoroks = m_Legend->m_Show[IconButton::Koroks];
-    const bool showShrines = m_Legend->m_Show[IconButton::Shrines];
-    const bool showHinoxes = m_Legend->m_Show[IconButton::Hinoxes];
-    const bool showTaluses = m_Legend->m_Show[IconButton::Taluses];
-    const bool showMoldugas = m_Legend->m_Show[IconButton::Moldugas];
-    const bool showLocations = m_Legend->m_Show[IconButton::Locations];
-    for (int i = 0; i < Data::KoroksCount; ++i) add(m_Koroks[i].m_Position, showKoroks, m_Koroks[i].m_Found);
-    for (int i = 0; i < Data::ShrineCount; ++i) add(m_Shrines[i].m_Position, showShrines, m_Shrines[i].m_Found && !m_Shrines[i].m_Pending);
-    for (int i = 0; i < Data::DLCShrineCount; ++i) add(m_DLCShrines[i].m_Position, showShrines && SavefileIO::HasDLC, m_DLCShrines[i].m_Found && !m_DLCShrines[i].m_Pending);
-    for (int i = 0; i < Data::HinoxesCount; ++i) add(m_Hinoxes[i].m_Position, showHinoxes, m_Hinoxes[i].m_Found);
-    for (int i = 0; i < Data::TalusesCount; ++i) add(m_Taluses[i].m_Position, showTaluses, m_Taluses[i].m_Found);
-    for (int i = 0; i < Data::MoldugasCount; ++i) add(m_Moldugas[i].m_Position, showMoldugas, m_Moldugas[i].m_Found);
-    for (int i = 0; i < Data::LocationsCount; ++i) add(m_Locations[i].m_Position, showLocations, m_Locations[i].m_Found);
+    candidates.reserve(entries.size());
+    for (const MapEntry& entry : entries)
+        candidates.push_back({{entry.position.x, entry.position.y}, entry.visible, *entry.found && !entry.pending});
 
-    // Each press goes to the next missing object by distance: from Link when the save has a position,
-    // otherwise from where the camera was at the first press. Changing filters starts over.
-    unsigned filter = static_cast<unsigned>(m_Legend->m_ShowMode) << 8;
-    for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
-        if (m_Legend->m_Show[i])
-            filter |= 1u << i;
+    // Distances from Link when the save has a position, otherwise from where the camera was at the
+    // first press, until the map is moved by hand.
     const bool cameraMoved = !m_HasTargetCameraPosition && glm::distance(m_CameraPosition, s_NextMissingTarget) > 1.0f;
-    if (filter != s_NextMissingFilter || (!HasPlayerPosition() && cameraMoved))
-        s_NextMissingActive = false;
-    if (!s_NextMissingActive)
-    {
-        s_NextMissingOrigin = HasPlayerPosition() ? PlayerMapPosition() : m_CameraPosition;
-        s_NextMissingStep = Navigation::Step();
-        s_NextMissingRank = 0;
-        s_NextMissingFilter = filter;
-    }
+    if (HasPlayerPosition())
+        s_NextMissingOrigin = PlayerMapPosition();
+    else if (!s_NextMissingActive || cameraMoved)
+        s_NextMissingOrigin = m_CameraPosition;
 
-    Navigation::Step next;
-    if (!Navigation::FindNextByDistance(candidates, {s_NextMissingOrigin.x, s_NextMissingOrigin.y}, true, s_NextMissingStep, next))
+    const std::vector<int> nearest = Navigation::NearestByDistance(
+        candidates, {s_NextMissingOrigin.x, s_NextMissingOrigin.y}, true, NextMissingCount);
+    if (nearest.empty())
     {
         s_NextMissingActive = false;
         return;
     }
-    const bool wrapped = s_NextMissingStep.index >= 0 &&
-        (next.distanceSquared < s_NextMissingStep.distanceSquared ||
-         (next.distanceSquared == s_NextMissingStep.distanceSquared && next.index <= s_NextMissingStep.index));
-    s_NextMissingRank = wrapped ? 1 : s_NextMissingRank + 1;
-    s_NextMissingStep = next;
-    s_NextMissingActive = true;
-    s_NextMissingMeters = std::sqrt(next.distanceSquared) / MapScale;
 
-    const Navigation::Candidate& target = candidates[next.index];
-    m_TargetCameraPosition = glm::vec2(target.position.x, target.position.y);
-    s_NextMissingTarget = m_TargetCameraPosition;
-    m_CursorPosition = m_TargetCameraPosition;
+    // Same five as before: step to the next (ZR) or previous (ZL) one, wrapping around. A different list
+    // (filters changed, save reloaded, an object marked as found, another origin) starts from the nearest.
+    const int count = static_cast<int>(nearest.size());
+    if (s_NextMissingActive && nearest == s_NextMissingList)
+        s_NextMissingRank = ((s_NextMissingRank + step) % count + count) % count;
+    else
+        s_NextMissingRank = 0;
+    s_NextMissingList = nearest;
+    s_NextMissingActive = true;
+
+    const MapEntry& target = entries[nearest[s_NextMissingRank]];
+    s_NextMissingMeters = glm::distance(target.position, s_NextMissingOrigin) / MapScale;
+    s_NextMissingTarget = target.position;
+    m_TargetCameraPosition = target.position;
+    m_CursorPosition = target.position;
     m_HasTargetCameraPosition = true;
     m_CursorFollowsTarget = true;
+    OpenObject(target);
 }
 
 void Map::CloseInfoPanels()
