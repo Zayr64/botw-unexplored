@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE	:=	BotW Unexplored
 APP_AUTHOR	:=	BigBear
-APP_VERSION :=  2.2.11
+APP_VERSION :=  2.2.11-zayr1
 
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
