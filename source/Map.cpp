@@ -412,19 +412,6 @@ void Map::Update()
 
     if (m_Zoom < minZoom) m_Zoom = minZoom;
 
-    // Open profile picker
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Minus))
-    {
-        if (SavefileIO::LoadedSavefile)
-        {
-            if (SavefileIO::LoadGamesave(false, true))
-            {
-                m_LoadMasterMode = ModeChangeDecision::Resolve(m_LoadMasterMode, false, true);
-                UpdateMapObjects();
-            }
-        }
-    }
-
     // Toggle legend
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_X))
     {
@@ -500,11 +487,13 @@ void Map::Update()
         if (buttonsPressed & HidNpadButton_Down) m_CursorPosition.y -= cursorStep;
         if (buttonsPressed & HidNpadButton_A) OpenNearestObject(m_CursorPosition);
     }
-    // ZR/ZL open the card of each object they visit, so they also work with a card or the legend open.
+    // ZR/ZL/R open the card of the object they pick, so they also work with a card or the legend open.
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZR))
         FocusMissing(1);
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZL))
         FocusMissing(-1);
+    else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_R))
+        FocusNearestToCenter();
 
     if (!imageViewerWasOpen && m_HasTargetCameraPosition)
     {
@@ -829,6 +818,15 @@ void Map::Destroy()
     s_PlayerMarker.Destroy();
 }
 
+static void FocusObject(const MapEntry& target)
+{
+    Map::m_TargetCameraPosition = target.position;
+    Map::m_CursorPosition = target.position;
+    Map::m_HasTargetCameraPosition = true;
+    Map::m_CursorFollowsTarget = true;
+    OpenObject(target);
+}
+
 bool Map::OpenNearestObject(const glm::vec2& mapPosition)
 {
     std::vector<MapEntry> entries;
@@ -906,11 +904,28 @@ void Map::FocusMissing(int step)
     const MapEntry& target = entries[nearest[s_NextMissingRank]];
     s_NextMissingMeters = glm::distance(target.position, s_NextMissingOrigin) / MapScale;
     s_NextMissingTarget = target.position;
-    m_TargetCameraPosition = target.position;
-    m_CursorPosition = target.position;
-    m_HasTargetCameraPosition = true;
-    m_CursorFollowsTarget = true;
-    OpenObject(target);
+    FocusObject(target);
+}
+
+void Map::FocusNearestToCenter()
+{
+    if (!SavefileIO::LoadedSavefile)
+        return;
+
+    std::vector<MapEntry> entries;
+    CollectObjects(entries);
+    std::vector<Navigation::Candidate> candidates;
+    candidates.reserve(entries.size());
+    for (const MapEntry& entry : entries)
+        candidates.push_back({{entry.position.x, entry.position.y}, entry.visible, *entry.found && !entry.pending});
+
+    const std::vector<int> nearest = Navigation::NearestByDistance(
+        candidates, {m_CameraPosition.x, m_CameraPosition.y}, true, 1);
+    if (nearest.empty())
+        return;
+
+    s_NextMissingActive = false; // the next ZR starts again from the nearest to Link
+    FocusObject(entries[nearest[0]]);
 }
 
 void Map::CloseInfoPanels()

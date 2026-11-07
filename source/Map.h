@@ -32,6 +32,7 @@ namespace Map
     void CloseInfoPanels();
     void MarkSelectedObjectFound();
     void FocusMissing(int step); // +1: next of the nearest missing objects, -1: previous
+    void FocusNearestToCenter(); // the missing object nearest to the screen center
     void ClampCursorToViewport();
 
     void Update();

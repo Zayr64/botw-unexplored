@@ -36,11 +36,11 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 | Map | Right-stick Y | Zoom |
 | Map | `X` | Open or close the legend / close an information panel |
 | Map | `Y` | Switch Normal Mode / Master Mode when available |
-| Map | `-` | Choose another profile |
 | Map | `+` | Exit |
 | Map | D-Pad | Move the controller cursor |
 | Map | `A` | Open the full Korok guide for a Korok, or ObjectInfo for another object |
 | Map | `ZR` / `ZL` | Next / previous of the 5 nearest missing visible objects (from Link when the save has a position), with its hint or card open. Starts again from the nearest when the list changes |
+| Map | `R` | Open the missing visible object nearest to the screen center, gliding to it |
 | Map | `L` | Center on Link, keeping the zoom |
 | Map | Left-stick click | Reset the zoom and center on Link |
 | Object info | `B` | Mark a missing object as found while using a backup |

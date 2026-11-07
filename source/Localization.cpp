@@ -10,7 +10,7 @@ namespace
         "No", "Yes", "Master mode save file detected", "Would you like to load it?", "Legend", "X - close", "B/X - back", "Koroks",
         "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "B - mark as found",
         "Press X: legend", "BotW is running.", "Loaded older save", "Press Y: master mode",
-        "Press Y: normal mode", "ZL/ZR: nearest  L: Link  (-): user  (+): exit",
+        "Press Y: normal mode", "ZL/ZR: nearest  R: center  L: Link  (+): exit",
         "Position", "Found", "Not found", "Object info", "Nearest missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link"
     };
 
