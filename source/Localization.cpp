@@ -31,7 +31,7 @@ namespace
         "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "Show Completed", "B - mark as found",
         "Press X: legend", "BotW is running.", "Loaded older save", "Press Y: master mode",
         "Press Y: normal mode", "L/R: zoom  (-): user  (+): exit", "EN", "Missing", "Completed", "All",
-        "Position", "Found", "Not found", "Object info", "Next missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map"
+        "Position", "Found", "Not found", "Object info", "Next missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link"
     };
 
     const std::string spanish[] = {
@@ -41,7 +41,7 @@ namespace
         "Santuarios", "Hinóx", "Taludes", "Moldugas", "Ubicaciones", "Mostrar completados", "B - marcar como encontrado",
         "X: leyenda", "BotW está en ejecución.", "Se cargó una partida anterior", "Y: modo maestro",
         "Y: modo normal", "L/R: zoom  (-): usuario  (+): salir", "ES", "Pendientes", "Completados", "Todos",
-        "Posición", "Encontrado", "No encontrado", "Información", "Siguiente pendiente", "Kolog", "Santuario", "Santuario DLC", "Ubicación", "Hinóx", "Talud de piedra", "Moldora", "Mapa"
+        "Posición", "Encontrado", "No encontrado", "Información", "Siguiente pendiente", "Kolog", "Santuario", "Santuario DLC", "Ubicación", "Hinóx", "Talud de piedra", "Moldora", "Mapa", "Completado", "Todos los cofres", "Distancia a Link"
     };
     const std::string russian[] = {
         "Выход", "Выбрать другой профиль", "Для этого пользователя не найдены сохранения", "Убедитесь, что выбран правильный профиль.",
@@ -50,7 +50,7 @@ namespace
         "Святилища", "Хиноксы", "Глыбники", "Молдоры", "Локации", "Показывать найденное", "B - отметить найденным",
         "X: открыть легенду", "BotW запущена.", "Загружено старое сохранение", "Y: режим мастера",
         "Y: обычный режим", "L/R: масштаб  (-): профиль  (+): выход", "RU", "Не найдено", "Найдено", "Все",
-        "Координаты", "Найдено", "Не найдено", "Информация об объекте", "Следующий не найденный", "Корок", "Святилище", "Святилище DLC", "Локация", "Хинокс", "Глыбник", "Молдора", "Карта"
+        "Координаты", "Найдено", "Не найдено", "Информация об объекте", "Следующий не найденный", "Корок", "Святилище", "Святилище DLC", "Локация", "Хинокс", "Глыбник", "Молдора", "Карта", "Пройдено", "Все сундуки", "Расстояние до Линка"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English localization is incomplete");

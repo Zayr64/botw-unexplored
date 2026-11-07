@@ -15,6 +15,10 @@
 #include "Log.h"
 #include "SaveLoadDecision.h"
 #include "SaveParser.h"
+#include "ShrineFlags.h"
+
+#include <algorithm>
+#include <unordered_map>
 
 namespace
 {
@@ -403,47 +407,41 @@ uint32_t SavefileIO::GetSavefilePlaytime(const std::string& filepath)
     return parsedState.playtime;
 }
 
+uint32_t SavefileIO::GetSavefileTimestamp(const std::string& captionPath)
+{
+    // caption.sav keeps the save time as a POSIX timestamp at offset 0x10.
+    FILE* file = fopen(captionPath.c_str(), "rb");
+    if (file == nullptr)
+        return 0;
+    uint8_t bytes[4] = {0, 0, 0, 0};
+    const bool read = fseek(file, 0x10, SEEK_SET) == 0 && fread(bytes, 1, sizeof(bytes), file) == sizeof(bytes);
+    fclose(file);
+    if (!read)
+        return 0;
+    const uint32_t timestamp = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
+                               (static_cast<uint32_t>(bytes[2]) << 16) | (static_cast<uint32_t>(bytes[3]) << 24);
+    // Between 2017 and 2100; anything else is not a save time.
+    return timestamp >= 1483228800u && timestamp <= 4102444800u ? timestamp : 0;
+}
+
 int SavefileIO::GetMostRecentSavefile(const std::string& dir, bool masterMode)
 {
-    // Figure out which save file is the most recent one
-
-    uint32_t highestPlaytime = 0;
-    int mostRecentFile = -1;
-
-    // Normal mode
-    if (!masterMode)
+    // Normal Mode uses slots 0-5, Master Mode 6-7. Backups only have game_data.sav, so they fall back to playtime.
+    const int first = masterMode ? 6 : 0;
+    const int last = masterMode ? 7 : 5;
+    std::vector<SaveLoadDecision::SlotCandidate> slots;
+    for (int i = first; i <= last; i++)
     {
-        for (int i = 0; i <= 5; i++)
-        {
-            std::string path = dir + std::to_string(i) + "/game_data.sav";
-            uint32_t playtime = GetSavefilePlaytime(path); // 0 = Save doesn't exist
-
-            // If this file is more recent then the currently highest one
-            if (playtime != 0 && playtime >= highestPlaytime) 
-            {
-                highestPlaytime = playtime;
-                mostRecentFile = i;
-            }
-        }
-
-        return mostRecentFile;
+        SaveLoadDecision::SlotCandidate slot;
+        slot.slot = i;
+        slot.playtime = GetSavefilePlaytime(dir + std::to_string(i) + "/game_data.sav"); // 0 = Save doesn't exist
+        if (slot.playtime != 0)
+            slot.timestamp = GetSavefileTimestamp(dir + std::to_string(i) + "/caption.sav");
+        slots.push_back(slot);
     }
-
-    // Master mode
-    for (int i = 6; i <= 7; i++)
-    {
-        std::string path = dir + std::to_string(i) + "/game_data.sav";
-        uint32_t playtime = GetSavefilePlaytime(path); // 0 = Save doesn't exist
-
-        // If this file is more recent then the currently highest one
-        if (playtime != 0 && playtime >= highestPlaytime) 
-        {
-            highestPlaytime = playtime;
-            mostRecentFile = i;
-        }
-    }
-
-    return mostRecentFile;
+    const int mostRecent = SaveLoadDecision::PickMostRecentSlot(slots);
+    Log("Most recent save slot:", mostRecent);
+    return mostRecent;
 }
 
 void SavefileIO::CopySavefiles()
@@ -555,6 +553,36 @@ bool SavefileIO::FileExists(const std::string& filepath)
 
 namespace
 {
+struct ShrineFlagTarget
+{
+    uint32_t locationHash;
+    bool allChests;
+};
+
+// Clear_DungeonNNN and CompleteTreasure_DungeonNNN hashes, pointing back to the shrine's discovery hash.
+const std::unordered_map<uint32_t, ShrineFlagTarget>& GetShrineFlagTable()
+{
+    static const std::unordered_map<uint32_t, ShrineFlagTarget> table = []()
+    {
+        std::unordered_map<uint32_t, ShrineFlagTarget> result;
+        ShrineFlags::Hashes hashes;
+        for (int i = 0; i < Data::ShrineCount; ++i)
+            if (ShrineFlags::FromLocationHash(Data::Shrines[i].hash, hashes))
+            {
+                result[hashes.clear] = {Data::Shrines[i].hash, false};
+                result[hashes.allChests] = {Data::Shrines[i].hash, true};
+            }
+        for (int i = 0; i < Data::DLCShrineCount; ++i)
+            if (ShrineFlags::FromLocationHash(Data::DLCShrines[i].hash, hashes))
+            {
+                result[hashes.clear] = {Data::DLCShrines[i].hash, false};
+                result[hashes.allChests] = {Data::DLCShrines[i].hash, true};
+            }
+        return result;
+    }();
+    return table;
+}
+
 bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parsedState)
 {
     Log("Opening savefile", filepath);
@@ -564,10 +592,16 @@ bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parse
     if (!ReadFileBuffer(filepath, buffer) || !SaveParser::ParseSaveBuffer(buffer.data(), buffer.size(), bufferState))
         return false;
 
+    const std::unordered_map<uint32_t, ShrineFlagTarget>& shrineFlags = GetShrineFlagTable();
     for (const SaveParser::Record& record : bufferState.records)
     {
         const uint32_t hashValue = record.hash;
         const uint32_t value = record.value;
+
+        const auto shrineFlag = shrineFlags.find(hashValue);
+        if (shrineFlag != shrineFlags.end() && value != 0)
+            (shrineFlag->second.allChests ? parsedState.allChestsShrines : parsedState.clearedShrines)
+                .push_back(shrineFlag->second.locationHash);
 
         // Check if a korok with the hash exists
         Data::Korok *korok = Data::KorokExists(hashValue);
@@ -643,6 +677,9 @@ bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parse
     }
 
     parsedState.hasDLC = bufferState.hasDLC;
+    parsedState.hasPlayerPosition = bufferState.hasPlayerPosition;
+    parsedState.playerX = bufferState.playerPosition[0];
+    parsedState.playerZ = bufferState.playerPosition[2];
     Log("User has DLC:", parsedState.hasDLC ? "true" : "false");
 
     Log("Successfully parsed file", filepath);
@@ -690,3 +727,15 @@ bool& SavefileIO::MasterModeFileExists = CurrentState.masterModeFileExists;
 bool& SavefileIO::MasterModeFileLoaded = CurrentState.masterModeFileLoaded;
 bool& SavefileIO::HasDLC = CurrentState.hasDLC;
 int& SavefileIO::MasterModeSlot = CurrentState.masterModeSlot;
+
+bool SavefileIO::IsShrineCleared(uint32_t locationHash)
+{
+    const std::vector<uint32_t>& cleared = CurrentState.clearedShrines;
+    return std::find(cleared.begin(), cleared.end(), locationHash) != cleared.end();
+}
+
+bool SavefileIO::HasAllShrineChests(uint32_t locationHash)
+{
+    const std::vector<uint32_t>& chests = CurrentState.allChestsShrines;
+    return std::find(chests.begin(), chests.end(), locationHash) != chests.end();
+}

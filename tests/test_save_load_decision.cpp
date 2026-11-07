@@ -4,6 +4,19 @@
 
 int main()
 {
+    {
+        using SaveLoadDecision::PickMostRecentSlot;
+        // Like a real save: autosave slots a few minutes apart, slot 0 the newest by time and by playtime.
+        assert(PickMostRecentSlot({{0, 11700, 1793017603u}, {1, 11100, 1793017012u}, {5, 11690, 1793017570u}}) == 0);
+        // An older save was loaded: slot 2 is newer by time, slot 4 still has more playtime.
+        assert(PickMostRecentSlot({{2, 9000, 2000u}, {4, 12000, 1000u}}) == 2);
+        // Without a time for every slot, playtime decides (the previous behaviour).
+        assert(PickMostRecentSlot({{2, 9000, 2000u}, {4, 12000, 0u}}) == 4);
+        // Slots without a valid save are ignored.
+        assert(PickMostRecentSlot({{0, 0, 5000u}, {3, 100, 10u}}) == 3);
+        assert(PickMostRecentSlot({{0, 0, 0u}}) == -1);
+        assert(PickMostRecentSlot({}) == -1);
+    }
     using SaveLoadDecision::Resolve;
     using SaveLoadDecision::MountStatus;
     assert(Resolve(MountStatus::Success, false, true).success);

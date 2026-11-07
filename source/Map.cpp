@@ -1,6 +1,7 @@
 #include "Map.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 #include <switch.h>
 
@@ -24,6 +25,29 @@
 #include "SavefileIO.h"
 
 constexpr float MapScale = 0.25f;
+
+namespace
+{
+    // "You are here": the position of the last save, and ZR walking the missing objects by distance.
+    TexturedQuad s_PlayerMarker;
+    bool s_NextMissingActive = false;
+    Navigation::Step s_NextMissingStep;
+    glm::vec2 s_NextMissingOrigin(0.0f);
+    glm::vec2 s_NextMissingTarget(0.0f);
+    unsigned s_NextMissingFilter = 0;
+    int s_NextMissingRank = 0;
+    float s_NextMissingMeters = 0.0f;
+
+    bool HasPlayerPosition()
+    {
+        return SavefileIO::LoadedSavefile && SavefileIO::CurrentState.hasPlayerPosition;
+    }
+
+    glm::vec2 PlayerMapPosition()
+    {
+        return glm::vec2(SavefileIO::CurrentState.playerX, -SavefileIO::CurrentState.playerZ) * MapScale;
+    }
+}
 
 namespace
 {
@@ -127,6 +151,11 @@ bool Map::Init()
     m_MasterModeIcon.m_ProjectionMatrix = &m_ProjectionMatrix;
     m_MasterModeIcon.m_ViewMatrix = nullptr;
 
+    s_PlayerMarker.Create("romfs:/player.png");
+    s_PlayerMarker.m_Scale = 0.5f;
+    s_PlayerMarker.m_ProjectionMatrix = &m_ProjectionMatrix;
+    s_PlayerMarker.m_ViewMatrix = nullptr;
+
     // Create koroks
     m_Koroks = new MapObject<Data::Korok>[Data::KoroksCount];
     MapObject<Data::Korok>::Init("romfs:/korokseed.png", Data::KoroksCount);
@@ -188,6 +217,8 @@ void Map::UpdateMapObjects()
             SavefileIO::foundShrines.end(),
             &Data::Shrines[i]) != SavefileIO::foundShrines.end();
         m_Shrines[i].m_Found = ResolveFound(Data::ObjectType::Shrine, Data::Shrines[i].hash, foundInSave, manualProgressChanged);
+        m_Shrines[i].m_Pending = foundInSave && !(SavefileIO::IsShrineCleared(Data::Shrines[i].hash) &&
+                                                  SavefileIO::HasAllShrineChests(Data::Shrines[i].hash));
     }
 
     for (int i = 0; i < Data::DLCShrineCount; i++) // DLC Shrine
@@ -200,6 +231,8 @@ void Map::UpdateMapObjects()
             SavefileIO::foundDLCShrines.end(),
             &Data::DLCShrines[i]) != SavefileIO::foundDLCShrines.end();
         m_DLCShrines[i].m_Found = ResolveFound(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, foundInSave, manualProgressChanged);
+        m_DLCShrines[i].m_Pending = foundInSave && !(SavefileIO::IsShrineCleared(Data::DLCShrines[i].hash) &&
+                                                     SavefileIO::HasAllShrineChests(Data::DLCShrines[i].hash));
     }
 
     for (int i = 0; i < Data::HinoxesCount; i++) // Hinox
@@ -254,6 +287,15 @@ void Map::UpdateMapObjects()
     if (manualProgressChanged)
         ManualProgress::Flush();
 
+    // Start where the last save was made.
+    s_NextMissingActive = false;
+    if (HasPlayerPosition())
+    {
+        m_CameraPosition = PlayerMapPosition();
+        m_CursorPosition = m_CameraPosition;
+        m_HasTargetCameraPosition = false;
+    }
+
     Log("Updated map objects");
 }
 
@@ -299,7 +341,8 @@ void Map::Update()
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_StickL))
     {
         m_Zoom = m_DefaultZoom;
-        m_CameraPosition = glm::vec2(0.0f, 0.0f);
+        m_CameraPosition = HasPlayerPosition() ? PlayerMapPosition() : glm::vec2(0.0f, 0.0f);
+        m_HasTargetCameraPosition = false;
     }
 
     if (m_Zoom < minZoom) m_Zoom = minZoom;
@@ -577,6 +620,12 @@ void Map::Render()
                 m_Locations[i].Render();
         }
         RenderSelectedObjectHighlight();
+
+        if (HasPlayerPosition() && s_PlayerMarker.m_Texture)
+        {
+            s_PlayerMarker.m_Position = (PlayerMapPosition() - m_CameraPosition) * m_Zoom;
+            s_PlayerMarker.Render();
+        }
     }
 
     if (SavefileIO::LoadedSavefile && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen)
@@ -616,6 +665,11 @@ void Map::Render()
             m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadMasterMode), glm::vec2(bottomTextX, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
         else if (m_LoadMasterMode)
             m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadNormalMode), glm::vec2(bottomTextX, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
+
+        if (s_NextMissingActive && !m_Legend->m_IsOpen && !m_ObjectInfo->m_IsOpen && !m_KorokDialog->m_IsOpen)
+            m_Font.AddTextToBatch(Localization::Get(Localization::Text::NextMissing) + " #" + std::to_string(s_NextMissingRank) +
+                                  "  " + std::to_string(static_cast<int>(s_NextMissingMeters + 0.5f)) + " m",
+                                  glm::vec2(0.0f, m_ScreenBottom + 20), 0.42f, glm::vec3(1.0f), ALIGN_CENTER);
 
         m_Font.AddTextToBatch(Localization::Get(Localization::Text::Controls),
             glm::vec2(bottomTextX, m_ScreenBottom + 20), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
@@ -695,6 +749,7 @@ void Map::Destroy()
     m_Font.Destroy();
     m_MapBackground.Destroy();
     m_MasterModeIcon.Destroy();
+    s_PlayerMarker.Destroy();
 }
 
 bool Map::OpenNearestObject(const glm::vec2& mapPosition)
@@ -713,9 +768,9 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
     const float radius = 60.0f / m_Zoom;
     const float maxDistanceSquared = radius * radius;
     const auto consider = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position,
-                              const std::string& name, bool* found, int korokIndex = -1)
+                              const std::string& name, bool* found, int korokIndex = -1, bool pending = false)
     {
-        if (!m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex] || !m_Legend->ShouldShow(*found))
+        if (!m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex] || !m_Legend->ShouldShow(*found && !pending))
             return;
         const float distanceSquared = glm::dot(position - mapPosition, position - mapPosition);
         if (distanceSquared <= maxDistanceSquared && distanceSquared < best.distanceSquared)
@@ -725,10 +780,10 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
     for (int i = 0; i < Data::KoroksCount; ++i)
         consider(Data::ObjectType::Korok, Data::Koroks[i].hash, m_Koroks[i].m_Position, "", &m_Koroks[i].m_Found, i);
     for (int i = 0; i < Data::ShrineCount; ++i)
-        consider(Data::ObjectType::Shrine, Data::Shrines[i].hash, m_Shrines[i].m_Position, Data::Shrines[i].displayName, &m_Shrines[i].m_Found);
+        consider(Data::ObjectType::Shrine, Data::Shrines[i].hash, m_Shrines[i].m_Position, Data::Shrines[i].displayName, &m_Shrines[i].m_Found, -1, m_Shrines[i].m_Pending);
     if (SavefileIO::HasDLC)
         for (int i = 0; i < Data::DLCShrineCount; ++i)
-            consider(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, m_DLCShrines[i].m_Position, "", &m_DLCShrines[i].m_Found);
+            consider(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, m_DLCShrines[i].m_Position, "", &m_DLCShrines[i].m_Found, -1, m_DLCShrines[i].m_Pending);
     for (int i = 0; i < Data::HinoxesCount; ++i)
         consider(Data::ObjectType::Hinox, Data::Hinoxes[i].hash, m_Hinoxes[i].m_Position, "", &m_Hinoxes[i].m_Found);
     for (int i = 0; i < Data::TalusesCount; ++i)
@@ -780,21 +835,50 @@ void Map::FocusNextMissing()
     const bool showMoldugas = m_Legend->m_Show[IconButton::Moldugas];
     const bool showLocations = m_Legend->m_Show[IconButton::Locations];
     for (int i = 0; i < Data::KoroksCount; ++i) add(m_Koroks[i].m_Position, showKoroks, m_Koroks[i].m_Found);
-    for (int i = 0; i < Data::ShrineCount; ++i) add(m_Shrines[i].m_Position, showShrines, m_Shrines[i].m_Found);
-    for (int i = 0; i < Data::DLCShrineCount; ++i) add(m_DLCShrines[i].m_Position, showShrines && SavefileIO::HasDLC, m_DLCShrines[i].m_Found);
+    for (int i = 0; i < Data::ShrineCount; ++i) add(m_Shrines[i].m_Position, showShrines, m_Shrines[i].m_Found && !m_Shrines[i].m_Pending);
+    for (int i = 0; i < Data::DLCShrineCount; ++i) add(m_DLCShrines[i].m_Position, showShrines && SavefileIO::HasDLC, m_DLCShrines[i].m_Found && !m_DLCShrines[i].m_Pending);
     for (int i = 0; i < Data::HinoxesCount; ++i) add(m_Hinoxes[i].m_Position, showHinoxes, m_Hinoxes[i].m_Found);
     for (int i = 0; i < Data::TalusesCount; ++i) add(m_Taluses[i].m_Position, showTaluses, m_Taluses[i].m_Found);
     for (int i = 0; i < Data::MoldugasCount; ++i) add(m_Moldugas[i].m_Position, showMoldugas, m_Moldugas[i].m_Found);
     for (int i = 0; i < Data::LocationsCount; ++i) add(m_Locations[i].m_Position, showLocations, m_Locations[i].m_Found);
 
-    Navigation::Point closest;
-    if (Navigation::FindNearest(candidates, {m_CameraPosition.x, m_CameraPosition.y}, true, closest))
+    // Each press goes to the next missing object by distance: from Link when the save has a position,
+    // otherwise from where the camera was at the first press. Changing filters starts over.
+    unsigned filter = static_cast<unsigned>(m_Legend->m_ShowMode) << 8;
+    for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
+        if (m_Legend->m_Show[i])
+            filter |= 1u << i;
+    const bool cameraMoved = !m_HasTargetCameraPosition && glm::distance(m_CameraPosition, s_NextMissingTarget) > 1.0f;
+    if (filter != s_NextMissingFilter || (!HasPlayerPosition() && cameraMoved))
+        s_NextMissingActive = false;
+    if (!s_NextMissingActive)
     {
-        m_TargetCameraPosition = glm::vec2(closest.x, closest.y);
-        m_CursorPosition = m_TargetCameraPosition;
-        m_HasTargetCameraPosition = true;
-        m_CursorFollowsTarget = true;
+        s_NextMissingOrigin = HasPlayerPosition() ? PlayerMapPosition() : m_CameraPosition;
+        s_NextMissingStep = Navigation::Step();
+        s_NextMissingRank = 0;
+        s_NextMissingFilter = filter;
     }
+
+    Navigation::Step next;
+    if (!Navigation::FindNextByDistance(candidates, {s_NextMissingOrigin.x, s_NextMissingOrigin.y}, true, s_NextMissingStep, next))
+    {
+        s_NextMissingActive = false;
+        return;
+    }
+    const bool wrapped = s_NextMissingStep.index >= 0 &&
+        (next.distanceSquared < s_NextMissingStep.distanceSquared ||
+         (next.distanceSquared == s_NextMissingStep.distanceSquared && next.index <= s_NextMissingStep.index));
+    s_NextMissingRank = wrapped ? 1 : s_NextMissingRank + 1;
+    s_NextMissingStep = next;
+    s_NextMissingActive = true;
+    s_NextMissingMeters = std::sqrt(next.distanceSquared) / MapScale;
+
+    const Navigation::Candidate& target = candidates[next.index];
+    m_TargetCameraPosition = glm::vec2(target.position.x, target.position.y);
+    s_NextMissingTarget = m_TargetCameraPosition;
+    m_CursorPosition = m_TargetCameraPosition;
+    m_HasTargetCameraPosition = true;
+    m_CursorFollowsTarget = true;
 }
 
 void Map::CloseInfoPanels()

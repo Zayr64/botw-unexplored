@@ -61,6 +61,9 @@ namespace Localization
         StoneTalus,
         Molduga,
         MapCompletion,
+        ShrineCompleted,
+        ShrineAllChests,
+        DistanceFromLink,
         Count
     };
 

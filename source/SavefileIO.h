@@ -14,6 +14,11 @@ namespace SavefileIO
     struct ParsedSaveState
     {
         bool hasDLC = false;
+        bool hasPlayerPosition = false;
+        float playerX = 0.0f; // game coordinates of the last save
+        float playerZ = 0.0f;
+        std::vector<uint32_t> clearedShrines;   // by discovery hash (Location_DungeonNNN)
+        std::vector<uint32_t> allChestsShrines; // by discovery hash (Location_DungeonNNN)
         std::vector<Data::Korok*> foundKoroks;
         std::vector<Data::Korok*> missingKoroks;
         std::vector<Data::Shrine*> foundShrines;
@@ -69,6 +74,9 @@ namespace SavefileIO
     bool LoadBackup(bool masterMode, SaveState& candidate);
 
     uint32_t GetSavefilePlaytime(const std::string& filepath);
+    uint32_t GetSavefileTimestamp(const std::string& captionPath);
+    bool IsShrineCleared(uint32_t locationHash);
+    bool HasAllShrineChests(uint32_t locationHash);
     int GetMostRecentSavefile(const std::string& dir, bool masterMode = false); // Needs slash at end of dir
 
     void CopySavefiles();

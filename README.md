@@ -15,7 +15,11 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Existing Korok hints, guide images, and route rendering remain available through touch selection.
 - `Missing`, `Completed`, and `All` display modes for every category.
 - Per-profile and per-mode manual progress for every supported object type. It never modifies the BotW save.
-- Controller cursor: D-Pad moves the cursor, `A` opens the nearest visible object, and `ZR` smoothly focuses the nearest missing visible object.
+- Controller cursor: D-Pad moves the cursor, `A` opens the nearest visible object, and `ZR` walks the missing visible objects from the nearest to the farthest.
+- Map completion in the legend, computed like the game (Korok seeds, discovered shrines and locations over 1207).
+- "You are here": a marker at the position of the last save; the map opens there and `ZR` measures distances from it.
+- Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays in the `Missing` view.
+- The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
 - Persisted camera, zoom, legend visibility, display mode, and language. Legacy settings are migrated safely.
 
 ## Installation
@@ -38,7 +42,8 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 | Map | `+` | Exit |
 | Map | D-Pad | Move the controller cursor |
 | Map | `A` | Open the full Korok guide for a Korok, or ObjectInfo for another object |
-| Map | `ZR` | Smoothly focus the nearest missing visible object and place the cursor on it |
+| Map | `ZR` | Focus the next missing visible object, nearest first (from Link when the save has a position) |
+| Map | Left-stick click | Reset the zoom and center on Link |
 | Object info | `B` | Mark a missing object as found while using a backup |
 | Legend | D-Pad, `A`, or touch | Select/toggle a category or cycle display mode |
 | Legend | `ZL` | Switch language |

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "SaveParser.h"
@@ -42,6 +43,38 @@ int main()
     assert(parsed.playtime == 12345);
     assert(parsed.hasDLC);
     assert(parsed.records.size() == SaveParser::MinimumRecordCount);
+    assert(!parsed.hasPlayerPosition);
+
+    {
+        // x=-968, height=188, z=1621 (Great Plateau), as in a real save.
+        std::vector<uint8_t> withPosition = MakeValidBuffer(false);
+        const float position[3] = {-968.0f, 188.5f, 1621.25f};
+        for (float component : position)
+        {
+            uint32_t bits;
+            std::memcpy(&bits, &component, sizeof(bits));
+            AppendRecord(withPosition, SaveParser::PlayerSavePosHash, bits);
+        }
+        SaveParser::ParsedSaveState positioned;
+        assert(SaveParser::ParseSaveBuffer(withPosition.data(), withPosition.size(), positioned));
+        assert(positioned.hasPlayerPosition);
+        assert(positioned.playerPosition[0] == -968.0f);
+        assert(positioned.playerPosition[1] == 188.5f);
+        assert(positioned.playerPosition[2] == 1621.25f);
+
+        // A position outside the map is ignored.
+        std::vector<uint8_t> outside = MakeValidBuffer(false);
+        const float far[3] = {90000.0f, 0.0f, 0.0f};
+        for (float component : far)
+        {
+            uint32_t bits;
+            std::memcpy(&bits, &component, sizeof(bits));
+            AppendRecord(outside, SaveParser::PlayerSavePosHash, bits);
+        }
+        SaveParser::ParsedSaveState farState;
+        assert(SaveParser::ParseSaveBuffer(outside.data(), outside.size(), farState));
+        assert(!farState.hasPlayerPosition);
+    }
 
     std::vector<uint8_t> representativeWithTrailer = representative;
     AppendU32(representativeWithTrailer, 0xdeadbeef);

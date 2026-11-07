@@ -27,4 +27,6 @@ fi
 /tmp/test_image_viewer_layout
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_map_completion.cpp source/MapCompletion.cpp -o /tmp/test_map_completion
 /tmp/test_map_completion
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_flags.cpp source/ShrineFlags.cpp -o /tmp/test_shrine_flags
+/tmp/test_shrine_flags
 python3 tests/test_data_mapping.py

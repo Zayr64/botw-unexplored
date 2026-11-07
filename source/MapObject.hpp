@@ -25,7 +25,9 @@ public:
 
     glm::vec2 m_Position = glm::vec2(0.0f, 0.0f);
     bool m_Found = false;
-    
+    // Found, but something is still left to do (a shrine not completed or with chests left).
+    bool m_Pending = false;
+
     static bool m_ShowAnyway;
 
     static float m_Scale;
@@ -138,7 +140,7 @@ void MapObject<T>::Update(bool clear)
 
     if (clear) m_Mesh.Clear();
 
-    if (!Map::m_Legend->ShouldShow(m_Found))
+    if (!Map::m_Legend->ShouldShow(m_Found && !m_Pending))
         return;
     
     // Culling 

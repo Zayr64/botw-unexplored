@@ -1,5 +1,7 @@
 #include "ObjectInfo.h"
 
+#include <glm/geometric.hpp>
+
 #include "Localization.h"
 #include "Legend.h"
 #include "Map.h"
@@ -81,6 +83,31 @@ void ObjectInfo::Render()
     y -= 55.0f;
     Map::m_Font.AddTextToBatch(m_Found && *m_Found ? Localization::Get(Localization::Text::Found) : Localization::Get(Localization::Text::NotFound),
                               glm::vec2(left, y), 0.46f, glm::vec3(1.0f));
+
+    const bool isShrine = m_Type == Data::ObjectType::Shrine || m_Type == Data::ObjectType::DLCShrine;
+    if (isShrine && m_Found && *m_Found)
+    {
+        const auto yesNo = [](bool value) -> const std::string& {
+            return Localization::Get(value ? Localization::Text::Yes : Localization::Text::No);
+        };
+        y -= 45.0f;
+        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ShrineCompleted) + ": " +
+                                   yesNo(SavefileIO::IsShrineCleared(m_CompletionHash)),
+                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
+        y -= 38.0f;
+        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ShrineAllChests) + ": " +
+                                   yesNo(SavefileIO::HasAllShrineChests(m_CompletionHash)),
+                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
+    }
+
+    if (SavefileIO::LoadedSavefile && SavefileIO::CurrentState.hasPlayerPosition)
+    {
+        const glm::vec2 player(SavefileIO::CurrentState.playerX * 0.25f, -SavefileIO::CurrentState.playerZ * 0.25f);
+        const int meters = static_cast<int>(glm::distance(m_MapPosition, player) / 0.25f + 0.5f);
+        y -= 45.0f;
+        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::DistanceFromLink) + ": " + std::to_string(meters) + " m",
+                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
+    }
     if (SavefileIO::GameIsRunning && m_Found && !*m_Found && ManualProgress::CanPersist())
         Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MarkFound), glm::vec2(left, Map::m_ScreenBottom + 45.0f), 0.35f, glm::vec3(1.0f));
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(Map::m_ScreenLeft + 370.0f, Map::m_ScreenBottom + 45.0f), 0.35f, glm::vec3(1.0f), ALIGN_RIGHT);
