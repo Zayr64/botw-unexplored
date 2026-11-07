@@ -44,7 +44,6 @@ static SettingsIO::Settings GetCurrentSettings()
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
         settings.visible[i] = Map::m_Legend->m_Show[i];
     settings.showMode = static_cast<int>(Map::m_Legend->m_ShowMode);
-    settings.language = static_cast<int>(Localization::GetLanguage());
     return settings;
 }
 
@@ -123,8 +122,6 @@ static void ApplySettings(const SettingsIO::Settings& settings)
     Map::m_Legend->m_ShowMode = static_cast<ShowMode>(settings.showMode);
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
         Map::m_Legend->m_Buttons[i]->Click(Map::m_Legend, settings.visible[i]);
-    if (settings.language >= 0 && settings.language <= static_cast<int>(Localization::Language::Spanish))
-        Localization::SetLanguage(static_cast<Localization::Language>(settings.language));
 }
 
 static void deinitNxLink()

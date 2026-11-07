@@ -19,7 +19,7 @@ namespace SettingsIO
         bool legendOpen = true;
         std::array<bool, CategoryCount> visible = {{true, true, false, false, false, false, false}};
         int showMode = 0;
-        int language = -1;
+        int language = -1; // Kept in the file format for older releases; the app is English only.
     };
 
     enum class LoadResult

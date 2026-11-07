@@ -43,7 +43,7 @@ void MapLocation::Render()
     // The overview is too dense for readable labels. They become available while zooming in.
     if (Map::m_Zoom < 0.55f) return;
 
-    const std::string label = Localization::GetLocationName(m_LocationData->hash, m_LocationData->displayName);
+    const std::string& label = m_LocationData->displayName;
     const size_t characterCount = std::max<size_t>(1, std::count_if(label.begin(), label.end(), [](unsigned char c)
     {
         return (c & 0xC0) != 0x80;

@@ -1,19 +1,12 @@
 #pragma once
 
-#include <cstdint>
 #include <string>
 
 #include "ObjectTypes.h"
 
+// User interface strings. The app is English only.
 namespace Localization
 {
-    enum class Language
-    {
-        English,
-        Russian,
-        Spanish
-    };
-
     enum class Text
     {
         Exit,
@@ -44,7 +37,6 @@ namespace Localization
         LoadMasterMode,
         LoadNormalMode,
         Controls,
-        LanguageName,
         Missing,
         Completed,
         All,
@@ -68,13 +60,6 @@ namespace Localization
     };
 
     const std::string& Get(Text text);
-    Language GetLanguage();
-    void SetLanguage(Language language);
     const std::string& GetShowModeName(int showMode);
     const std::string& GetObjectTypeName(Data::ObjectType objectType);
-    void ToggleLanguage();
-    void Load();
-    void Save();
-    const std::string& GetKorokGuide(int id, const std::string& fallback);
-    const std::string& GetLocationName(uint32_t hash, const std::string& fallback);
 }

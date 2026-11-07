@@ -114,7 +114,6 @@ namespace
 bool Map::Init()
 {
     Log("MAP: initialization begin");
-    Localization::Load();
     Data::LoadPaths();
 
     m_ProjectionMatrix = glm::ortho(-m_CameraWidth / 2, m_CameraWidth / 2, -m_CameraHeight / 2, m_CameraHeight / 2, -1.0f, 1.0f);
@@ -792,7 +791,7 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
         consider(Data::ObjectType::Molduga, Data::Moldugas[i].hash, m_Moldugas[i].m_Position, "", &m_Moldugas[i].m_Found);
     for (int i = 0; i < Data::LocationsCount; ++i)
         consider(Data::ObjectType::Location, Data::Locations[i].hash, m_Locations[i].m_Position,
-                 Localization::GetLocationName(Data::Locations[i].hash, Data::Locations[i].displayName), &m_Locations[i].m_Found);
+                 Data::Locations[i].displayName, &m_Locations[i].m_Found);
 
     if (best.found != nullptr)
     {

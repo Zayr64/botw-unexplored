@@ -4,14 +4,11 @@ BotW Unexplored is a Nintendo Switch homebrew map companion for *The Legend of Z
 
 This repository is the maintained fork of [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored). The current fork release is **v2.2.11**.
 
-[Русская версия документации](docs/README.ru.md)
-
 ## Features
 
-- English, Russian, and Spanish user interfaces. Russian Korok hints and location names use the Switch localization data.
 - Koroks, shrines, DLC shrines, locations, Hinoxes, Taluses, and Moldugas.
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
-- A localized object information card with type, name where available, game coordinates, icon, and completion state.
+- An object information card with type, name where available, game coordinates, icon, and completion state.
 - Existing Korok hints, guide images, and route rendering remain available through touch selection.
 - `Missing`, `Completed`, and `All` display modes for every category.
 - Per-profile and per-mode manual progress for every supported object type. It never modifies the BotW save.
@@ -20,7 +17,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - "You are here": a marker at the position of the last save; the map opens there and `ZR` measures distances from it.
 - Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays in the `Missing` view.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
-- Persisted camera, zoom, legend visibility, display mode, and language. Legacy settings are migrated safely.
+- Persisted camera, zoom, legend visibility, and display mode. Legacy settings are migrated safely.
 
 ## Installation
 
@@ -46,7 +43,6 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 | Map | Left-stick click | Reset the zoom and center on Link |
 | Object info | `B` | Mark a missing object as found while using a backup |
 | Legend | D-Pad, `A`, or touch | Select/toggle a category or cycle display mode |
-| Legend | `ZL` | Switch language |
 | Korok hint | `B` | Mark the Korok as found while using a backup and close the hint |
 
 ## Saved data
@@ -54,7 +50,6 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 The app stores its own files under `sdmc:/switch/botw-unexplored/`:
 
 - `settings.txt` is a versioned settings file. Older settings files are accepted and rewritten in the current format.
-- `language.txt` remains for compatibility with earlier releases.
 - `manual_progress.dat` is a versioned manual-progress file. Entries are keyed by Switch profile, Normal/Master Mode, object type, and completion hash. A completion later confirmed by a readable game save removes the corresponding override.
 
 No file in this directory changes the actual BotW save.
@@ -86,10 +81,6 @@ bash tests/run_host_tests.sh
 ```
 
 They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, and duplicate completion hashes. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
-
-## Localization sources
-
-The location-localization generator is in [`tools`](tools/README.md). It expects message archives extracted from a lawfully obtained Switch copy of the game; those game files are deliberately ignored by Git and are not distributed by this repository.
 
 ## Credits
 

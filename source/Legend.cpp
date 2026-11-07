@@ -23,8 +23,7 @@ namespace
         for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
 
-        const char separator = Localization::GetLanguage() == Localization::Language::English ? '.' : ',';
-        return MapCompletion::Format(MapCompletion::Hundredths(found), separator);
+        return MapCompletion::Format(MapCompletion::Hundredths(found), '.');
     }
 }
 
@@ -117,8 +116,6 @@ void Legend::Update()
     }
 
     u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
-    if (buttonsPressed & HidNpadButton_ZL)
-        Localization::ToggleLanguage();
     if (buttonsPressed & HidNpadButton_Down)
     {
         if (m_HighlightedButton < (int)m_Buttons.size() - 1)
@@ -167,7 +164,6 @@ void Legend::Render()
     float viewLeft = -Map::m_CameraWidth / 2;
     float viewTop = Map::m_CameraHeight / 2;
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Legend), glm::vec2(viewLeft + 25.0f, viewTop - 55.0f), 0.75f, glm::vec3(1.0));
-    Map::m_Font.AddTextToBatch("ZL - " + Localization::Get(Localization::Text::LanguageName), glm::vec2(viewLeft + m_Width - 26.0f, viewTop - 55.0f), 0.45f, glm::vec3(1.0), ALIGN_RIGHT);
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(viewLeft + m_Width - 26.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0), ALIGN_RIGHT);
     Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MapCompletion) + ": " + MapCompletionText(), glm::vec2(viewLeft + 25.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0));
 

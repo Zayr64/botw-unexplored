@@ -67,7 +67,7 @@ void KorokDialog::SetOpen(bool open)
 void KorokDialog::SetSeed(int seed, int korokIndex)
 {
     m_Seed = seed;
-    m_Text = Localization::GetKorokGuide(seed, Data::KorokInfos.at(seed).text);
+    m_Text = Data::KorokInfos.at(seed).text;
     m_KorokIndex = korokIndex;
 
     // Set image
