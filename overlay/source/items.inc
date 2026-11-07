@@ -52,7 +52,7 @@
 {Data::ObjectType::Korok, 242108902u, 1638.97f, 1376.29f, "Korok seed", "Toss a boulder into the circle of rocks found in the lake."},
 {Data::ObjectType::Korok, 245518156u, -1313.94f, 622.861f, "Korok seed", "Pick up the rock in the dried up well."},
 {Data::ObjectType::Korok, 256042272u, -4396.84f, -2049.89f, "Korok seed", "The seed platform is way to the north, at the southwest corner of the plateau the Hebra West Summit is on, next to a large flag. Shield surf or paraglide to the end location."},
-{Data::ObjectType::Korok, 261243628u, 3277.77f, 1436f, "Korok seed", "Use Magnesis to move the iron cube into the correct spot."},
+{Data::ObjectType::Korok, 261243628u, 3277.77f, 1436.0f, "Korok seed", "Use Magnesis to move the iron cube into the correct spot."},
 {Data::ObjectType::Korok, 285168710u, -1142.42f, -761.947f, "Korok seed", "Solve the block puzzle."},
 {Data::ObjectType::Korok, 299945877u, -1106.94f, 905.262f, "Korok seed", "Solve the cube puzzle."},
 {Data::ObjectType::Korok, 311516100u, -2099.38f, 1104.73f, "Korok seed", "Shoot the acorn hanging from a tree."},
