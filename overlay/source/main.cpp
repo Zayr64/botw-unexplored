@@ -25,8 +25,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Data.h"
 #include "ManualProgress.h"
+#include "ObjectTypes.h"
 #include "dmntcht.h"
 
 namespace
@@ -51,14 +51,30 @@ namespace
     enum class Filter { All, Koroks, Shrines, Locations, Bosses, Count };
     const char* FilterNames[] = {"All", "Koroks", "Shrines", "Locations", "Hinox, Talus, Molduga"};
 
+    // Constant table generated from the app's Data.cpp (overlay/tools/gen_items.py). Data.cpp itself is not
+    // compiled here: its global initializers need ~200 KB of stack and crashed the overlay loader.
+    struct ItemSource
+    {
+        Data::ObjectType type;
+        u32 hash;
+        float x;
+        float z;
+        const char* name;
+        const char* hint;
+    };
+
+    const ItemSource ItemTable[] = {
+#include "items.inc"
+    };
+
     struct Item
     {
         Data::ObjectType type;
         u32 hash;
         float x;
         float z;
-        std::string name;
-        std::string hint;
+        const char* name;
+        const char* hint;
         bool found = false;
     };
 
@@ -121,41 +137,16 @@ namespace
         }
     }
 
-    void AddItem(Data::ObjectType type, u32 hash, float x, float z, std::string name, std::string hint = "")
-    {
-        g_itemByHash[hash] = g_items.size();
-        g_items.push_back(Item{type, hash, x, z, std::move(name), std::move(hint)});
-    }
-
     void BuildItems()
     {
         g_items.clear();
         g_itemByHash.clear();
-        g_items.reserve(1400);
-        for (int i = 0; i < Data::KoroksCount; i++)
+        g_items.reserve(sizeof(ItemTable) / sizeof(ItemTable[0]));
+        for (const ItemSource& source : ItemTable)
         {
-            const Data::Korok& korok = Data::Koroks[i];
-            const auto info = Data::KorokInfos.find(korok.zeldaDungeonId);
-            AddItem(Data::ObjectType::Korok, korok.hash, korok.x, korok.y, "Korok seed",
-                    info != Data::KorokInfos.end() ? info->second.text : "");
+            g_itemByHash[source.hash] = g_items.size();
+            g_items.push_back(Item{source.type, source.hash, source.x, source.z, source.name, source.hint});
         }
-        for (int i = 0; i < Data::ShrineCount; i++)
-            AddItem(Data::ObjectType::Shrine, Data::Shrines[i].hash, Data::Shrines[i].x, Data::Shrines[i].y,
-                    Data::Shrines[i].displayName);
-        for (int i = 0; i < Data::DLCShrineCount; i++)
-            AddItem(Data::ObjectType::DLCShrine, Data::DLCShrines[i].hash, Data::DLCShrines[i].x,
-                    Data::DLCShrines[i].y, "DLC shrine");
-        for (int i = 0; i < Data::LocationsCount; i++)
-            AddItem(Data::ObjectType::Location, Data::Locations[i].hash, Data::Locations[i].x,
-                    Data::Locations[i].y, Data::Locations[i].displayName);
-        for (int i = 0; i < Data::HinoxesCount; i++)
-            AddItem(Data::ObjectType::Hinox, Data::Hinoxes[i].hash, Data::Hinoxes[i].x, Data::Hinoxes[i].y, "Hinox");
-        for (int i = 0; i < Data::TalusesCount; i++)
-            AddItem(Data::ObjectType::Talus, Data::Taluses[i].hash, Data::Taluses[i].x, Data::Taluses[i].y,
-                    "Stone Talus");
-        for (int i = 0; i < Data::MoldugasCount; i++)
-            AddItem(Data::ObjectType::Molduga, Data::Moldugas[i].hash, Data::Moldugas[i].x, Data::Moldugas[i].y,
-                    "Molduga");
     }
 
     // Streams game_data.sav (hash/value records after a 0x0c header) without holding the whole file in memory.
@@ -439,7 +430,7 @@ namespace
             ManualProgress::Load(input);
         input.close();
         if (ManualProgress::MarkFound(g_context, item.type, item.hash) && ManualProgress::Flush())
-            g_notice = "Marked as found: " + item.name;
+            g_notice = std::string("Marked as found: ") + item.name;
         else
             g_notice = "Could not save the mark.";
         g_confirmHash = 0;
@@ -497,7 +488,7 @@ namespace
             renderer->drawString(Shorten(item.name, 34), false, x + 76, top + 26, 18, white);
             std::snprintf(buffer, sizeof(buffer), "%.0f m  %s", near.distance, CompassName(near.bearing));
             renderer->drawString(buffer, false, x + 76, top + 50, 16, accent);
-            if (!item.hint.empty())
+            if (*item.hint)
                 renderer->drawString(Shorten(item.hint, 48), false, x + 76, top + 72, 13, grey);
         }
 
