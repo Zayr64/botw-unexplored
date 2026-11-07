@@ -29,7 +29,6 @@ namespace Localization
         Taluses,
         Moldugas,
         Locations,
-        ShowCompleted,
         MarkFound,
         OpenLegend,
         GameRunning,
@@ -37,9 +36,6 @@ namespace Localization
         LoadMasterMode,
         LoadNormalMode,
         Controls,
-        Missing,
-        Completed,
-        All,
         Position,
         Found,
         NotFound,
@@ -60,6 +56,5 @@ namespace Localization
     };
 
     const std::string& Get(Text text);
-    const std::string& GetShowModeName(int showMode);
     const std::string& GetObjectTypeName(Data::ObjectType objectType);
 }

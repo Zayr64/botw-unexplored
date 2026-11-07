@@ -11,5 +11,4 @@ int main()
     assert(Localization::GetObjectTypeName(Data::ObjectType::Count) ==
            Localization::Get(Localization::Text::ObjectInfo));
     assert(!Localization::Get(Localization::Text::ImageViewerBack).empty());
-    assert(Localization::GetShowModeName(1) == Localization::Get(Localization::Text::Completed));
 }

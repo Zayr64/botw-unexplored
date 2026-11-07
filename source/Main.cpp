@@ -43,7 +43,6 @@ static SettingsIO::Settings GetCurrentSettings()
     settings.legendOpen = Map::m_Legend->m_IsOpen;
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
         settings.visible[i] = Map::m_Legend->m_Show[i];
-    settings.showMode = static_cast<int>(Map::m_Legend->m_ShowMode);
     return settings;
 }
 
@@ -119,7 +118,6 @@ static void ApplySettings(const SettingsIO::Settings& settings)
     Map::m_CursorPosition = Map::m_CameraPosition;
     Map::m_Zoom = std::max(0.1f, std::min(10.0f, settings.zoom));
     Map::m_Legend->m_IsOpen = settings.legendOpen;
-    Map::m_Legend->m_ShowMode = static_cast<ShowMode>(settings.showMode);
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
         Map::m_Legend->m_Buttons[i]->Click(Map::m_Legend, settings.visible[i]);
 }

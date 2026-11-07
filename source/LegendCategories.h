@@ -12,7 +12,6 @@ namespace LegendCategories
         Taluses,
         Moldugas,
         Locations,
-        ShowCompleted,
         Count
     };
 

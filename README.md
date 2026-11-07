@@ -10,14 +10,14 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
 - An object information card with type, name where available, game coordinates, icon, and completion state.
 - Existing Korok hints, guide images, and route rendering remain available through touch selection.
-- `Missing`, `Completed`, and `All` display modes for every category.
+- The map shows only what is still missing.
 - Per-profile and per-mode manual progress for every supported object type. It never modifies the BotW save.
 - Controller cursor: D-Pad moves the cursor, `A` opens the nearest visible object, and `ZR` / `ZL` step forward / back through the 5 nearest missing visible objects, opening the Korok hint or the card of each one.
 - Map completion in the legend, computed like the game (Korok seeds, discovered shrines and locations over 1207).
 - "You are here": a marker at the position of the last save; the map opens there, `L` glides back to it, and `ZR` / `ZL` measure distances from it.
 - Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays in the `Missing` view.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
-- Persisted camera, zoom, legend visibility, and display mode. Legacy settings are migrated safely.
+- Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
 
 ## Installation
 
@@ -41,10 +41,9 @@ For backup-based use while BotW is running, start BotW Unexplored once with the 
 | Map | `A` | Open the full Korok guide for a Korok, or ObjectInfo for another object |
 | Map | `ZR` / `ZL` | Next / previous of the 5 nearest missing visible objects (from Link when the save has a position), with its hint or card open. Starts again from the nearest when the list changes |
 | Map | `L` | Center on Link, keeping the zoom |
-| Map | `R` | Cycle the display mode: `Missing`, `Completed`, `All` |
 | Map | Left-stick click | Reset the zoom and center on Link |
 | Object info | `B` | Mark a missing object as found while using a backup |
-| Legend | D-Pad, `A`, or touch | Select/toggle a category or cycle display mode |
+| Legend | D-Pad, `A`, or touch | Select/toggle a category |
 | Korok hint | `B` | Mark the Korok as found while using a backup and close the hint |
 
 ## Saved data

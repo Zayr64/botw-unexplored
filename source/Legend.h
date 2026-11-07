@@ -5,13 +5,6 @@
 
 class Legend;
 
-enum class ShowMode
-{
-    Missing = 0,
-    Completed = 1,
-    All = 2
-};
-
 class IconButton
 {
 public:
@@ -22,7 +15,6 @@ public:
     static constexpr ButtonTypes Taluses = ButtonTypes::Taluses;
     static constexpr ButtonTypes Moldugas = ButtonTypes::Moldugas;
     static constexpr ButtonTypes Locations = ButtonTypes::Locations;
-    static constexpr ButtonTypes ShowCompleted = ButtonTypes::ShowCompleted;
 
 public:
     IconButton();
@@ -84,7 +76,6 @@ public:
 
     int m_HighlightedButton = 0;
 
-    ShowMode m_ShowMode = ShowMode::Missing;
     bool m_IsOpen = true;
 
     bool m_Show[LegendCategories::ButtonCount];

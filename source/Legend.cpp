@@ -187,13 +187,10 @@ bool Legend::IsPositionOnLegend(glm::vec2 position)
     return false;
 }
 
+// The map shows only what is still missing.
 bool Legend::ShouldShow(bool found) const
 {
-    if (m_ShowMode == ShowMode::Missing)
-        return !found;
-    if (m_ShowMode == ShowMode::Completed)
-        return found;
-    return true;
+    return !found;
 }
 
 Legend::~Legend()
@@ -248,8 +245,6 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
         iconScale = 0.022f;
 
         break;
-    case ShowCompleted:
-        m_Text = "Show Completed";
 
     default:
         break;
@@ -358,22 +353,13 @@ void IconButton::Render()
         break;
     }
 
-    const std::string& label = m_Type == ShowCompleted ? Localization::GetShowModeName(static_cast<int>(Map::m_Legend->m_ShowMode)) :
-        Localization::Get(static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(m_Type)));
+    const std::string& label = Localization::Get(static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(m_Type)));
     Map::m_Font.AddTextToBatch(label, mainTextPosition, 0.40f, glm::vec3(1.0), ALIGN_LEFT, 150.0f);
     Map::m_Font.AddTextToBatch(countString, countTextPosition, 0.42f, glm::vec3(1.0), ALIGN_RIGHT);
 }
 
 bool IconButton::Click(Legend* legend)
 {
-    if (m_Type == ShowCompleted)
-    {
-        legend->m_ShowMode = static_cast<ShowMode>((static_cast<int>(legend->m_ShowMode) + 1) % 3);
-        m_IsToggled = legend->m_ShowMode != ShowMode::Missing;
-        legend->m_Show[m_Type] = m_IsToggled;
-        m_Button.m_Color = m_IsToggled ? HighlightedColor : DefaultColor;
-        return m_IsToggled;
-    }
     m_IsToggled = !m_IsToggled;
 
     if (m_IsToggled)
@@ -388,13 +374,6 @@ bool IconButton::Click(Legend* legend)
 
 bool IconButton::Click(Legend* legend, bool toggled)
 {
-    if (m_Type == ShowCompleted)
-    {
-        m_IsToggled = legend->m_ShowMode != ShowMode::Missing;
-        legend->m_Show[m_Type] = m_IsToggled;
-        m_Button.m_Color = m_IsToggled ? HighlightedColor : DefaultColor;
-        return m_IsToggled;
-    }
     m_IsToggled = toggled;
 
     if (m_IsToggled)

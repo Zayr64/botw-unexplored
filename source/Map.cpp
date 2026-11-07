@@ -408,10 +408,6 @@ void Map::Update()
         m_CursorFollowsTarget = true;
     }
 
-    // R cycles the display mode (Missing, Completed, All) like its button in the legend
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_R))
-        m_Legend->m_Buttons[IconButton::ShowCompleted]->Click(m_Legend);
-
     if (m_Zoom < minZoom) m_Zoom = minZoom;
 
     // Open profile picker
@@ -720,8 +716,7 @@ void Map::Render()
         m_MasterModeDialog->Render();
 
     if (!m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && SavefileIO::LoadedSavefile)
-        m_Font.AddTextToBatch(Localization::Get(Localization::Text::OpenLegend) + "   R: " +
-                              Localization::GetShowModeName(static_cast<int>(m_Legend->m_ShowMode)),
+        m_Font.AddTextToBatch(Localization::Get(Localization::Text::OpenLegend),
                               glm::vec2(m_ScreenLeft + 20, m_ScreenTop - 30), 0.42f);
 
     if (SavefileIO::LoadedSavefile)
