@@ -42,6 +42,17 @@ namespace
     constexpr u64 CameraXOffset = 0xCA4;
     constexpr int GuideRefreshFrames = 5;   // about 12 reads per second in guide mode
 
+    // Live progress, read once when the list opens and again on X (nothing runs in the background).
+    // main+2CC5FE8 is ksys::gdt::Manager::sInstance in 1.6.0 (the global uking::ui::PauseMenuDataMgr::saveToGameData
+    // loads before every flag call). Manager+0xBE0 is mParam.mParam (TriggerParam**, the buffer the game's getters
+    // read). TriggerParam keeps one sead::PtrArray {s32 size, s32 capacity, FlagBase** data} per flag type, sorted by
+    // hash: bool at +0x08, s32 at +0x18. FlagBool: value u8 at +0x0B, hash at +0x0C. FlagS32: value at +0x18, hash at
+    // +0x1C. Layouts from the zeldaret/botw decomp (1.5.0); the offsets above were checked in the 1.6.0 code.
+    constexpr u64 GameDataManagerPointer = 0x2CC5FE8;
+    constexpr u64 FlagBufferRefOffset = 0xBE0;
+    constexpr u64 FlagArraysOffset = 0x08;
+    constexpr s32 MaxFlagsPerType = 0x10000;
+
     constexpr const char* SavesDir = "sdmc:/switch/botw-unexplored/saves";
     constexpr const char* ManualProgressPath = "sdmc:/switch/botw-unexplored/manual_progress.dat";
     constexpr u32 PlaytimeHash = 0x73c29681;
@@ -114,6 +125,7 @@ namespace
     int g_missingInFilter = 0;
     int g_selected = 0;
     std::string g_notice;
+    bool g_liveSynced = false;
 
     constexpr const char* SelfPath = "sdmc:/switch/.overlays/ovlBotwUnexplored.ovl";
     constexpr u64 HoldToMarkNs = 1000000000ULL;
@@ -473,6 +485,167 @@ namespace
         }
     }
 
+    bool ReadGame(u64 address, void* out, size_t size)
+    {
+        return R_SUCCEEDED(dmntchtReadCheatProcessMemory(address, out, size));
+    }
+
+    // Reads the game's bool and s32 flags and applies the ones the item table knows. On any doubt (pointer not set,
+    // sizes out of range, hashes not sorted) it changes nothing and the save backup stays in use.
+    bool SyncFromGame(std::string& error)
+    {
+        g_liveSynced = false;
+        if (!g_attached)
+            g_attached = Attach();
+        if (!g_attached)
+        {
+            error = g_gameMessage;
+            return false;
+        }
+
+        u64 manager = 0, ref = 0, param = 0;
+        if (!ReadGame(g_mainBase + GameDataManagerPointer, &manager, sizeof(manager)) || manager == 0 ||
+            !ReadGame(manager + FlagBufferRefOffset, &ref, sizeof(ref)) || ref == 0 ||
+            !ReadGame(ref, &param, sizeof(param)) || param == 0)
+        {
+            error = "game data not ready.";
+            return false;
+        }
+        struct FlagArray
+        {
+            s32 size;
+            s32 capacity;
+            u64 data;
+        } arrays[2];
+        if (!ReadGame(param + FlagArraysOffset, arrays, sizeof(arrays)))
+        {
+            error = "could not read the flags.";
+            return false;
+        }
+        for (const FlagArray& array : arrays)
+            if (array.size <= 0 || array.size > array.capacity || array.capacity > MaxFlagsPerType || array.data == 0)
+            {
+                error = "flag table looks wrong.";
+                return false;
+            }
+
+        // Where every flag object lives, then the objects read in large windows sorted by address (a few dozen
+        // reads in total instead of one per flag).
+        struct FlagRef
+        {
+            u64 address;
+            u32 index;  // bit 31: s32 flag
+        };
+        std::vector<FlagRef> refs;
+        refs.reserve(arrays[0].size + arrays[1].size);
+        static u64 pointers[512];
+        for (u32 kind = 0; kind < 2; kind++)
+            for (s32 start = 0; start < arrays[kind].size; start += 512)
+            {
+                const s32 count = std::min<s32>(512, arrays[kind].size - start);
+                if (!ReadGame(arrays[kind].data + static_cast<u64>(start) * 8, pointers, count * 8))
+                {
+                    error = "could not read the flags.";
+                    return false;
+                }
+                for (s32 i = 0; i < count; i++)
+                    refs.push_back({pointers[i], static_cast<u32>(start + i) | (kind << 31)});
+            }
+        std::sort(refs.begin(), refs.end(), [](const FlagRef& a, const FlagRef& b) { return a.address < b.address; });
+
+        std::vector<u32> hashes[2] = {std::vector<u32>(arrays[0].size), std::vector<u32>(arrays[1].size)};
+        std::vector<s8> live(g_items.size(), -1);
+        s32 dlc = -1, playtime = -1;
+        static u8 window[0x10000];
+        size_t next = 0;
+        while (next < refs.size())
+        {
+            const u64 start = refs[next].address;
+            size_t length = sizeof(window);
+            while (length >= 0x20 && !ReadGame(start, window, length))
+                length /= 2;  // the window ran past the end of mapped memory
+            if (length < 0x20)
+            {
+                error = "could not read the flags.";
+                return false;
+            }
+            for (; next < refs.size(); next++)
+            {
+                const FlagRef& flag = refs[next];
+                const bool isS32 = flag.index >> 31;
+                const u64 offset = flag.address - start;
+                if (offset + (isS32 ? 0x20 : 0x10) > length)
+                    break;
+                u32 hash;
+                s32 value;
+                if (isS32)
+                {
+                    std::memcpy(&value, window + offset + 0x18, 4);
+                    std::memcpy(&hash, window + offset + 0x1C, 4);
+                }
+                else
+                {
+                    value = window[offset + 0x0B];
+                    std::memcpy(&hash, window + offset + 0x0C, 4);
+                }
+                hashes[isS32][flag.index & 0x7FFFFFFF] = hash;
+                if (hash == BalladOfHeroesReadyHash)
+                    dlc = value == 1;
+                else if (hash == PlaytimeHash)
+                    playtime = value;
+                const auto it = g_itemByHash.find(hash);
+                if (it != g_itemByHash.end())
+                    live[it->second] = value != 0;
+            }
+        }
+
+        // The arrays are kept sorted by hash; if they are not, the offsets do not match this game.
+        for (const auto& list : hashes)
+            for (size_t i = 1; i < list.size(); i++)
+                if (list[i - 1] >= list[i])
+                {
+                    error = "flag layout did not match.";
+                    return false;
+                }
+        if (playtime == 0)
+        {
+            error = "no save loaded yet.";
+            return false;
+        }
+
+        int matched = 0;
+        for (size_t i = 0; i < g_items.size(); i++)
+            if (live[i] >= 0)
+            {
+                g_items[i].found = live[i] != 0;
+                matched++;
+            }
+        if (dlc == 0)
+            for (Item& item : g_items)
+                if (item.type == Data::ObjectType::DLCShrine)
+                    item.found = true;
+
+        g_saveMessage = "Synced with the game (" + std::to_string(matched) + " of " + std::to_string(g_items.size()) +
+                        " items)";
+        g_saveLoaded = true;
+        g_liveSynced = true;
+        return true;
+    }
+
+    // Save backup first (profile for the manual marks, fallback values), then the game's live flags on top.
+    void LoadProgress(bool announce)
+    {
+        LoadSave();
+        std::string error;
+        if (SyncFromGame(error))
+        {
+            if (announce)
+                g_notice = "Synced with the game.";
+        }
+        else
+            g_notice = "Live sync failed: " + error;
+    }
+
     void ReloadManualProgress()
     {
         ManualProgress::Clear();
@@ -597,7 +770,7 @@ namespace
         else if (!g_notice.empty())
             renderer->drawString(g_notice, false, x + 20, bottom, 15, accent);
         renderer->drawString("ZR: guide (GPS)   hold A: found   -: undo", false, x + 20, bottom + 26, 13, grey);
-        renderer->drawString("Up/Down: select   Y: filter   X: reload save", false, x + 20, bottom + 44, 13, grey);
+        renderer->drawString("Up/Down: select   Y: filter   X: sync with the game", false, x + 20, bottom + 44, 13, grey);
     }
 
     // Guide (GPS) mode: a small box that stays on screen while the game keeps the controls.
@@ -653,7 +826,7 @@ namespace
             if (!m_loaded)
             {
                 tsl::gfx::Renderer::get().setLayerPos(0, 0);
-                LoadSave();
+                LoadProgress(false);
                 m_loaded = true;
                 m_frames = RefreshFrames;
             }
@@ -711,8 +884,7 @@ namespace
             }
             if (keysDown & KEY_X)
             {
-                LoadSave();
-                g_notice = "Save backup reloaded.";
+                LoadProgress(true);
                 UpdateNearby();
                 return true;
             }

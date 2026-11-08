@@ -14,7 +14,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 APP_TITLE		:=	BotW Unexplored
 APP_FILENAME	:=	ovlBotwUnexplored
 APP_AUTHOR		:=	Zayr64, data and parser from sklart
-APP_VERSION		:=	0.2.2-zayr
+APP_VERSION		:=	0.2.3-zayr
 
 TARGET			:=	ovlBotwUnexplored
 OUTDIR			:=	out
