@@ -37,6 +37,8 @@ CFLAGS	:=	-g -Wall -O2 -ffunction-sections -fdata-sections -flto \
 UI_OVERRIDE_PATH := /config/botw-unexplored-ovl/
 CFLAGS	+=	-DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
 CFLAGS	+=	-DUSE_EXCEPTION_WRAP=1
+# Enables FullMode/HeaderOverlayFrame(title, subtitle) for the guide box (same as Status Monitor mini mode).
+CFLAGS	+=	-DIS_STATUS_MONITOR_DIRECTIVE=1
 LDFLAGS	+=	-Wl,-wrap,__cxa_throw \
 			-Wl,-wrap,_Unwind_Resume \
 			-Wl,-wrap,__gxx_personality_v0
