@@ -36,6 +36,11 @@ namespace
     constexpr u64 PlayerPointer = 0x2CA1140;
     constexpr u64 ActorOffset = 0x60;
     constexpr u64 MatrixOffset = 0x398;
+    // Camera position, [[[main+2CA5520]+20]+558]+CA4/CA8/CAC (same 1.6.0 pointer list as Link's position).
+    constexpr u64 CameraPointer = 0x2CA5520;
+    constexpr u64 CameraOffsets[2] = {0x20, 0x558};
+    constexpr u64 CameraXOffset = 0xCA4;
+    constexpr int GuideRefreshFrames = 5;   // about 12 reads per second in guide mode
 
     constexpr const char* SavesDir = "sdmc:/switch/botw-unexplored/saves";
     constexpr const char* ManualProgressPath = "sdmc:/switch/botw-unexplored/manual_progress.dat";
@@ -80,7 +85,8 @@ namespace
     struct Pose
     {
         float x = 0, y = 0, z = 0;
-        float forwardX = 0, forwardZ = 1;
+        float forwardX = 0, forwardZ = 1;  // "up" for the dials: the camera's view, or Link's facing
+        bool fromCamera = false;
     };
 
     struct Nearby
@@ -372,10 +378,33 @@ namespace
         pose.z = matrix[11];
         pose.forwardX = matrix[2];
         pose.forwardZ = matrix[10];
+        pose.fromCamera = false;
         for (float value : {pose.x, pose.y, pose.z})
             if (!std::isfinite(value))
                 return false;
-        return pose.x != 0.0f || pose.y != 0.0f || pose.z != 0.0f;
+        if (pose.x == 0.0f && pose.y == 0.0f && pose.z == 0.0f)
+            return false;
+
+        u64 camera = 0;
+        bool ok = R_SUCCEEDED(dmntchtReadCheatProcessMemory(g_mainBase + CameraPointer, &camera, sizeof(camera))) &&
+                  camera != 0;
+        for (u64 offset : CameraOffsets)
+            ok = ok && R_SUCCEEDED(dmntchtReadCheatProcessMemory(camera + offset, &camera, sizeof(camera))) &&
+                 camera != 0;
+        float cameraPos[3];
+        if (ok && R_SUCCEEDED(dmntchtReadCheatProcessMemory(camera + CameraXOffset, cameraPos, sizeof(cameraPos))))
+        {
+            const float dx = pose.x - cameraPos[0], dz = pose.z - cameraPos[2];
+            const float distance = std::sqrt(dx * dx + dz * dz);
+            // A real camera sits a few metres from Link; anything else means the pointer is not valid right now.
+            if (std::isfinite(distance) && distance > 0.3f && distance < 60.0f)
+            {
+                pose.forwardX = dx;
+                pose.forwardZ = dz;
+                pose.fromCamera = true;
+            }
+        }
+        return true;
     }
 
     float BearingDegrees(float dx, float dz)
@@ -535,8 +564,9 @@ namespace
             renderer->drawString("Loading... (Link's position is not available yet)", false, x + 20, line, 15, warn);
         else
         {
-            std::snprintf(buffer, sizeof(buffer), "Link  X %.0f  Z %.0f  height %.0f m  facing %s", g_pose.x, g_pose.z,
-                          g_pose.y, CompassName(BearingDegrees(g_pose.forwardX, g_pose.forwardZ)));
+            std::snprintf(buffer, sizeof(buffer), "Link  X %.0f  Z %.0f  height %.0f m  %s %s", g_pose.x, g_pose.z,
+                          g_pose.y, g_pose.fromCamera ? "camera" : "facing",
+                          CompassName(BearingDegrees(g_pose.forwardX, g_pose.forwardZ)));
             renderer->drawString(buffer, false, x + 20, line, 14, grey);
         }
         line += 18;
@@ -574,7 +604,7 @@ namespace
     void DrawGuide(tsl::gfx::Renderer* renderer)
     {
         const tsl::Color white(15, 15, 15, 15), grey(11, 11, 11, 15), accent(0, 13, 15, 15), warn(15, 11, 4, 15);
-        const s32 bx = 12, by = 150, bw = 340, bh = 96;
+        const s32 bw = 340, bh = 96, bx = static_cast<s32>(tsl::cfg::FramebufferWidth) - bw - 12, by = 16;
         renderer->drawRect(bx, by, bw, bh, tsl::Color(0, 0, 0, 9));
         const auto found = g_itemByHash.find(g_guideHash);
         if (found == g_itemByHash.end())
@@ -603,7 +633,8 @@ namespace
         else
             std::snprintf(buffer, sizeof(buffer), "%.0f m  %s", distance, CompassName(bearing));
         renderer->drawString(buffer, false, bx + 96, by + 60, 21, arrived ? warn : accent);
-        renderer->drawString("Ultrahand combo: back to the list", false, bx + 96, by + 84, 12, grey);
+        renderer->drawString(g_pose.fromCamera ? "Up = camera view   Combo: list" : "Up = Link facing   Combo: list",
+                             false, bx + 96, by + 84, 12, grey);
     }
 
     class NearbyGui : public tsl::Gui
@@ -621,6 +652,7 @@ namespace
         {
             if (!m_loaded)
             {
+                tsl::gfx::Renderer::get().setLayerPos(0, 0);
                 LoadSave();
                 m_loaded = true;
                 m_frames = RefreshFrames;
@@ -745,7 +777,12 @@ namespace
                 tsl::Overlay::get()->close();
                 return;
             }
-            if (++m_frames >= RefreshFrames)
+            if (!m_placed)
+            {
+                tsl::gfx::Renderer::get().setLayerPos(tsl::cfg::ScreenWidth - tsl::cfg::LayerWidth, 0);
+                m_placed = true;
+            }
+            if (++m_frames >= GuideRefreshFrames)
             {
                 m_frames = 0;
                 RefreshPose();
@@ -753,7 +790,8 @@ namespace
         }
 
     private:
-        int m_frames = RefreshFrames;
+        int m_frames = GuideRefreshFrames;
+        bool m_placed = false;
         PadState m_pad{};
         bool m_padReady = false;
         bool m_armed = false;
