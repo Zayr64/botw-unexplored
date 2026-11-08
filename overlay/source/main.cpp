@@ -44,14 +44,16 @@ namespace
 
     // Live progress, read once when the list opens and again on X (nothing runs in the background).
     // main+2CC5FE8 is ksys::gdt::Manager::sInstance in 1.6.0 (the global uking::ui::PauseMenuDataMgr::saveToGameData
-    // loads before every flag call). Manager+0xBE0 is mParam.mParam (TriggerParam**, the buffer the game's getters
-    // read). TriggerParam keeps one sead::PtrArray {s32 size, s32 capacity, FlagBase** data} per flag type, sorted by
-    // hash: bool at +0x08, s32 at +0x18. FlagBool: value u8 at +0x0B, hash at +0x0C. FlagS32: value at +0x18, hash at
-    // +0x1C. Layouts from the zeldaret/botw decomp (1.5.0); the offsets above were checked in the 1.6.0 code.
+    // loads before every flag call). Manager+0xBD0 is a TriggerParamRef: +0xBD8 points at mFlagBuffer1 (written
+    // first by the setters), +0xBE0 at mFlagBuffer (read by the getters). One of the two buffers holds FlagProxy
+    // objects instead of the flags (decomp: Manager::allocParam1), so both layouts are tried. TriggerParam keeps one
+    // sead::PtrArray {s32 size, s32 capacity, FlagBase** data} per flag type, sorted by hash: bool at +0x08, s32 at
+    // +0x18. Layouts from the zeldaret/botw decomp (1.5.0); the offsets above were checked in the 1.6.0 code.
     constexpr u64 GameDataManagerPointer = 0x2CC5FE8;
-    constexpr u64 FlagBufferRefOffset = 0xBE0;
+    constexpr u64 FlagBufferRefOffsets[2] = {0xBE0, 0xBD8};
     constexpr u64 FlagArraysOffset = 0x08;
     constexpr s32 MaxFlagsPerType = 0x10000;
+    constexpr const char* SyncLogPath = "sdmc:/switch/botw-unexplored/overlay-sync.log";
 
     constexpr const char* SavesDir = "sdmc:/switch/botw-unexplored/saves";
     constexpr const char* ManualProgressPath = "sdmc:/switch/botw-unexplored/manual_progress.dat";
@@ -490,8 +492,172 @@ namespace
         return R_SUCCEEDED(dmntchtReadCheatProcessMemory(address, out, size));
     }
 
-    // Reads the game's bool and s32 flags and applies the ones the item table knows. On any doubt (pointer not set,
-    // sizes out of range, hashes not sorted) it changes nothing and the save backup stays in use.
+    // Reads objects scattered in the game's heap: sorted by address and read in 64 KB windows, so a few dozen reads
+    // cover thousands of objects. visit(i, bytes) gets the first `need` bytes of object i.
+    template <typename Visit>
+    bool ReadObjects(const std::vector<u64>& addresses, size_t need, Visit visit)
+    {
+        std::vector<u32> order(addresses.size());
+        for (u32 i = 0; i < order.size(); i++)
+        {
+            if (addresses[i] == 0)
+                return false;
+            order[i] = i;
+        }
+        std::sort(order.begin(), order.end(), [&](u32 a, u32 b) { return addresses[a] < addresses[b]; });
+        static u8 window[0x10000];
+        size_t next = 0;
+        while (next < order.size())
+        {
+            const u64 start = addresses[order[next]];
+            size_t length = sizeof(window);
+            while (length >= need && !ReadGame(start, window, length))
+                length /= 2;  // the window ran past the end of mapped memory
+            if (length < need)
+                return false;
+            for (; next < order.size(); next++)
+            {
+                const u64 offset = addresses[order[next]] - start;
+                if (offset + need > length)
+                    break;
+                visit(order[next], window + offset);
+            }
+        }
+        return true;
+    }
+
+    bool IsSorted(const std::vector<u32>& hashes)
+    {
+        bool asUnsigned = true, asSigned = true;
+        for (size_t i = 1; i < hashes.size() && (asUnsigned || asSigned); i++)
+        {
+            asUnsigned = asUnsigned && hashes[i - 1] < hashes[i];
+            asSigned = asSigned && static_cast<s32>(hashes[i - 1]) < static_cast<s32>(hashes[i]);
+        }
+        return asUnsigned || asSigned;
+    }
+
+    void AppendHex(std::string& log, const u8* bytes, size_t size)
+    {
+        char text[4];
+        for (size_t i = 0; i < size; i++)
+        {
+            std::snprintf(text, sizeof(text), "%02x", bytes[i]);
+            log += text;
+        }
+    }
+
+    struct LiveFlags
+    {
+        std::vector<u32> hashes[2];  // bool, s32
+        std::vector<s32> values[2];
+        const char* layout = "";
+    };
+
+    // One TriggerParam. Its arrays hold either the flags themselves (FlagBool: value bit 0 of the u8 at +0x0B, hash
+    // at +0x0C; FlagS32: value at +0x18, hash at +0x1C) or FlagProxy objects (flag pointer at +0x08, own value at
+    // +0x10). A layout is only accepted when its hashes come out sorted.
+    bool ReadTriggerParam(u64 param, LiveFlags& out, std::string& log)
+    {
+        struct FlagArray
+        {
+            s32 size;
+            s32 capacity;
+            u64 data;
+        } arrays[2];
+        if (!ReadGame(param + FlagArraysOffset, arrays, sizeof(arrays)))
+        {
+            log += " header unreadable;";
+            return false;
+        }
+        char text[96];
+        std::snprintf(text, sizeof(text), " bool %d/%d, s32 %d/%d;", arrays[0].size, arrays[0].capacity,
+                      arrays[1].size, arrays[1].capacity);
+        log += text;
+        for (const FlagArray& array : arrays)
+            if (array.size <= 0 || array.size > array.capacity || array.capacity > MaxFlagsPerType || array.data == 0)
+                return false;
+
+        std::vector<u64> inner[2];
+        std::vector<s32> proxyValues[2];
+        u8 sample[2][0x18] = {};
+        static u64 pointers[512];
+        for (int kind = 0; kind < 2; kind++)
+        {
+            const bool isS32 = kind == 1;
+            const s32 size = arrays[kind].size;
+            std::vector<u64> objects(size);
+            for (s32 start = 0; start < size; start += 512)
+            {
+                const s32 count = std::min<s32>(512, size - start);
+                if (!ReadGame(arrays[kind].data + static_cast<u64>(start) * 8, pointers, count * 8))
+                {
+                    log += " pointers unreadable;";
+                    return false;
+                }
+                std::copy(pointers, pointers + count, objects.begin() + start);
+            }
+            out.hashes[kind].assign(size, 0);
+            out.values[kind].assign(size, 0);
+            inner[kind].assign(size, 0);
+            proxyValues[kind].assign(size, 0);
+            const bool read = ReadObjects(objects, isS32 ? 0x20 : 0x18, [&](u32 i, const u8* bytes) {
+                std::memcpy(&out.hashes[kind][i], bytes + (isS32 ? 0x1C : 0x0C), 4);
+                std::memcpy(&inner[kind][i], bytes + 0x08, 8);
+                if (isS32)
+                {
+                    std::memcpy(&out.values[kind][i], bytes + 0x18, 4);
+                    std::memcpy(&proxyValues[kind][i], bytes + 0x10, 4);
+                }
+                else
+                {
+                    out.values[kind][i] = bytes[0x0B] & 1;
+                    proxyValues[kind][i] = bytes[0x10] & 1;
+                    if (i < 2)
+                        std::memcpy(sample[i], bytes, 0x18);
+                }
+            });
+            if (!read)
+            {
+                log += " objects unreadable;";
+                return false;
+            }
+        }
+        if (IsSorted(out.hashes[0]) && IsSorted(out.hashes[1]))
+        {
+            out.layout = "flags";
+            return true;
+        }
+        log += " first bool objects ";
+        AppendHex(log, sample[0], 0x18);
+        log += " ";
+        AppendHex(log, sample[1], 0x18);
+        log += ";";
+
+        for (int kind = 0; kind < 2; kind++)
+        {
+            const bool isS32 = kind == 1;
+            const bool read = ReadObjects(inner[kind], isS32 ? 0x20 : 0x10, [&](u32 i, const u8* bytes) {
+                std::memcpy(&out.hashes[kind][i], bytes + (isS32 ? 0x1C : 0x0C), 4);
+            });
+            if (!read)
+            {
+                log += " not proxies (targets unreadable);";
+                return false;
+            }
+            out.values[kind] = std::move(proxyValues[kind]);
+        }
+        if (IsSorted(out.hashes[0]) && IsSorted(out.hashes[1]))
+        {
+            out.layout = "proxies";
+            return true;
+        }
+        log += " not sorted as flags nor as proxies;";
+        return false;
+    }
+
+    // Reads the game's bool and s32 flags and applies the ones the item table knows. On any doubt it changes
+    // nothing and the save backup stays in use. A one-line report goes to SyncLogPath (overwritten each time).
     bool SyncFromGame(std::string& error)
     {
         g_liveSynced = false;
@@ -503,123 +669,73 @@ namespace
             return false;
         }
 
-        u64 manager = 0, ref = 0, param = 0;
-        if (!ReadGame(g_mainBase + GameDataManagerPointer, &manager, sizeof(manager)) || manager == 0 ||
-            !ReadGame(manager + FlagBufferRefOffset, &ref, sizeof(ref)) || ref == 0 ||
-            !ReadGame(ref, &param, sizeof(param)) || param == 0)
+        std::string log = "BotW overlay " APP_VERSION " live sync:";
+        u64 manager = 0;
+        if (!ReadGame(g_mainBase + GameDataManagerPointer, &manager, sizeof(manager)) || manager == 0)
         {
             error = "game data not ready.";
             return false;
         }
-        struct FlagArray
+        LiveFlags flags;
+        bool ok = false;
+        char text[96];
+        for (u64 offset : FlagBufferRefOffsets)
         {
-            s32 size;
-            s32 capacity;
-            u64 data;
-        } arrays[2];
-        if (!ReadGame(param + FlagArraysOffset, arrays, sizeof(arrays)))
+            u64 ref = 0, param = 0;
+            const bool set = ReadGame(manager + offset, &ref, sizeof(ref)) && ref != 0 &&
+                             ReadGame(ref, &param, sizeof(param)) && param != 0;
+            std::snprintf(text, sizeof(text), "\nManager+%lX -> %lX:", offset, set ? param : 0);
+            log += text;
+            if (set && ReadTriggerParam(param, flags, log))
+            {
+                log += std::string(" OK as ") + flags.layout;
+                ok = true;
+                break;
+            }
+        }
+
+        int matched = 0;
+        s32 dlc = -1, playtime = -1;
+        std::vector<s8> live(g_items.size(), -1);
+        if (ok)
+            for (int kind = 0; kind < 2; kind++)
+                for (size_t i = 0; i < flags.hashes[kind].size(); i++)
+                {
+                    const u32 hash = flags.hashes[kind][i];
+                    const s32 value = flags.values[kind][i];
+                    if (hash == BalladOfHeroesReadyHash)
+                        dlc = value == 1;
+                    else if (hash == PlaytimeHash)
+                        playtime = value;
+                    const auto it = g_itemByHash.find(hash);
+                    if (it != g_itemByHash.end())
+                        live[it->second] = value != 0;
+                }
+        for (s8 value : live)
+            matched += value >= 0;
+        std::snprintf(text, sizeof(text), "\nitems %d of %d, found %d, playtime %d, dlc %d\n", matched,
+                      static_cast<int>(g_items.size()),
+                      static_cast<int>(std::count(live.begin(), live.end(), static_cast<s8>(1))), playtime, dlc);
+        log += text;
+        if (FILE* file = fopen(SyncLogPath, "w"))
         {
-            error = "could not read the flags.";
+            fputs(log.c_str(), file);
+            fclose(file);
+        }
+
+        if (!ok)
+        {
+            error = "flag layout did not match.";
             return false;
         }
-        for (const FlagArray& array : arrays)
-            if (array.size <= 0 || array.size > array.capacity || array.capacity > MaxFlagsPerType || array.data == 0)
-            {
-                error = "flag table looks wrong.";
-                return false;
-            }
-
-        // Where every flag object lives, then the objects read in large windows sorted by address (a few dozen
-        // reads in total instead of one per flag).
-        struct FlagRef
-        {
-            u64 address;
-            u32 index;  // bit 31: s32 flag
-        };
-        std::vector<FlagRef> refs;
-        refs.reserve(arrays[0].size + arrays[1].size);
-        static u64 pointers[512];
-        for (u32 kind = 0; kind < 2; kind++)
-            for (s32 start = 0; start < arrays[kind].size; start += 512)
-            {
-                const s32 count = std::min<s32>(512, arrays[kind].size - start);
-                if (!ReadGame(arrays[kind].data + static_cast<u64>(start) * 8, pointers, count * 8))
-                {
-                    error = "could not read the flags.";
-                    return false;
-                }
-                for (s32 i = 0; i < count; i++)
-                    refs.push_back({pointers[i], static_cast<u32>(start + i) | (kind << 31)});
-            }
-        std::sort(refs.begin(), refs.end(), [](const FlagRef& a, const FlagRef& b) { return a.address < b.address; });
-
-        std::vector<u32> hashes[2] = {std::vector<u32>(arrays[0].size), std::vector<u32>(arrays[1].size)};
-        std::vector<s8> live(g_items.size(), -1);
-        s32 dlc = -1, playtime = -1;
-        static u8 window[0x10000];
-        size_t next = 0;
-        while (next < refs.size())
-        {
-            const u64 start = refs[next].address;
-            size_t length = sizeof(window);
-            while (length >= 0x20 && !ReadGame(start, window, length))
-                length /= 2;  // the window ran past the end of mapped memory
-            if (length < 0x20)
-            {
-                error = "could not read the flags.";
-                return false;
-            }
-            for (; next < refs.size(); next++)
-            {
-                const FlagRef& flag = refs[next];
-                const bool isS32 = flag.index >> 31;
-                const u64 offset = flag.address - start;
-                if (offset + (isS32 ? 0x20 : 0x10) > length)
-                    break;
-                u32 hash;
-                s32 value;
-                if (isS32)
-                {
-                    std::memcpy(&value, window + offset + 0x18, 4);
-                    std::memcpy(&hash, window + offset + 0x1C, 4);
-                }
-                else
-                {
-                    value = window[offset + 0x0B];
-                    std::memcpy(&hash, window + offset + 0x0C, 4);
-                }
-                hashes[isS32][flag.index & 0x7FFFFFFF] = hash;
-                if (hash == BalladOfHeroesReadyHash)
-                    dlc = value == 1;
-                else if (hash == PlaytimeHash)
-                    playtime = value;
-                const auto it = g_itemByHash.find(hash);
-                if (it != g_itemByHash.end())
-                    live[it->second] = value != 0;
-            }
-        }
-
-        // The arrays are kept sorted by hash; if they are not, the offsets do not match this game.
-        for (const auto& list : hashes)
-            for (size_t i = 1; i < list.size(); i++)
-                if (list[i - 1] >= list[i])
-                {
-                    error = "flag layout did not match.";
-                    return false;
-                }
         if (playtime == 0)
         {
             error = "no save loaded yet.";
             return false;
         }
-
-        int matched = 0;
         for (size_t i = 0; i < g_items.size(); i++)
             if (live[i] >= 0)
-            {
                 g_items[i].found = live[i] != 0;
-                matched++;
-            }
         if (dlc == 0)
             for (Item& item : g_items)
                 if (item.type == Data::ObjectType::DLCShrine)
@@ -745,20 +861,20 @@ namespace
         line += 18;
 
         const float facing = BearingDegrees(g_pose.forwardX, g_pose.forwardZ);
-        const s32 rowHeight = 88;
+        const s32 rowHeight = 74;
         for (size_t i = 0; i < g_nearby.size(); i++)
         {
             const Nearby& near = g_nearby[i];
             const Item& item = g_items[near.index];
             const s32 top = line + static_cast<s32>(i) * rowHeight;
             if (static_cast<int>(i) == g_selected)
-                renderer->drawRect(x + 8, top, w - 16, rowHeight - 6, tsl::Color(3, 5, 8, 10));
-            DrawDial(renderer, x + 42, top + 38, near.bearing - facing, 22.0f);
-            renderer->drawString(Shorten(item.name, 34), false, x + 76, top + 26, 18, white);
+                renderer->drawRect(x + 8, top, w - 16, rowHeight - 4, tsl::Color(3, 5, 8, 10));
+            DrawDial(renderer, x + 42, top + 35, near.bearing - facing, 22.0f);
+            renderer->drawString(Shorten(item.name, 34), false, x + 76, top + 23, 18, white);
             std::snprintf(buffer, sizeof(buffer), "%.0f m  %s", near.distance, CompassName(near.bearing));
-            renderer->drawString(buffer, false, x + 76, top + 50, 16, accent);
+            renderer->drawString(buffer, false, x + 76, top + 45, 16, accent);
             if (*item.hint)
-                renderer->drawString(Shorten(item.hint, 48), false, x + 76, top + 72, 13, grey);
+                renderer->drawString(Shorten(item.hint, 48), false, x + 76, top + 64, 13, grey);
         }
 
         const s32 bottom = y + h - 60;
