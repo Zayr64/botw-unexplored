@@ -7,8 +7,8 @@ namespace
     const std::string english[] = {
         "Exit", "Choose another profile", "No save data found for that user", "Make sure you chose the correct profile.",
         "BotW is running - can't load save", "Please run this app at least once without BotW running", "After that you can use it while playing.",
-        "No", "Yes", "Master mode save file detected", "Would you like to load it?", "Legend", "X - close", "B/X - back", "Koroks",
-        "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "B - mark as found",
+        "No", "Yes", "Master mode save file detected", "Would you like to load it?", "Legend", "B - close", "B - back", "Koroks",
+        "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "Y - mark as found",
         "Press X: legend", "BotW is running.", "Loaded older save", "Press Y: master mode",
         "Press Y: normal mode", "ZL/ZR: nearest  R: center  L: Link  (+): exit",
         "Position", "Found", "Not found", "Object info", "Nearest missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link"

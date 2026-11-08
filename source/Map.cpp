@@ -31,6 +31,7 @@ namespace
 {
     // "You are here": the position of the last save, and ZR cycling through the nearest missing objects.
     TexturedQuad s_PlayerMarker;
+    TexturedQuad s_Crosshair; // zayr7: aim fixed at the screen center
     constexpr int NextMissingCount = 5;
     bool s_NextMissingActive = false;
     std::vector<int> s_NextMissingList; // indices into CollectObjects(), nearest first
@@ -222,6 +223,11 @@ bool Map::Init()
     s_PlayerMarker.m_ProjectionMatrix = &m_ProjectionMatrix;
     s_PlayerMarker.m_ViewMatrix = nullptr;
 
+    s_Crosshair.Create("romfs:/crosshair.png");
+    s_Crosshair.m_Scale = 0.5f;
+    s_Crosshair.m_ProjectionMatrix = &m_ProjectionMatrix;
+    s_Crosshair.m_ViewMatrix = nullptr;
+
     // Create koroks
     m_Koroks = new MapObject<Data::Korok>[Data::KoroksCount];
     MapObject<Data::Korok>::Init("romfs:/korokseed.png", Data::KoroksCount);
@@ -374,7 +380,7 @@ void Map::Update()
     const bool imageViewerWasOpen = m_ImageViewer != nullptr && m_ImageViewer->IsOpen();
     if (imageViewerWasOpen)
     {
-        if (buttonsPressed & (HidNpadButton_B | HidNpadButton_X))
+        if (buttonsPressed & HidNpadButton_B) // zayr7: B goes back everywhere
             m_ImageViewer->Close();
         buttonsPressed = 0;
     }
@@ -412,16 +418,16 @@ void Map::Update()
 
     if (m_Zoom < minZoom) m_Zoom = minZoom;
 
-    // Toggle legend
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_X))
+    // zayr7: X only opens and closes the legend; an open card or Korok hint gives way to it
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_X) && !m_NoSavefileDialog->m_IsOpen)
     {
-        // Close the korok dialog first, then if it's not open close the legend
-        if (m_KorokDialog->m_IsOpen)
+        if (m_Legend->m_IsOpen)
+            m_Legend->m_IsOpen = false;
+        else
+        {
             CloseInfoPanels();
-        else if (m_ObjectInfo->m_IsOpen)
-            CloseInfoPanels();
-        else if (!m_NoSavefileDialog->m_IsOpen)
-            m_Legend->m_IsOpen = !m_Legend->m_IsOpen;
+            m_Legend->m_IsOpen = true;
+        }
     }
 
     // Toggle showing everything
@@ -430,8 +436,21 @@ void Map::Update()
     // if (buttonsUp & HidNpadButton_B)
     //     m_ShowAllObjects = false;
 
-    // Toggle master mode
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && !m_ObjectInfo->m_IsOpen)
+    // zayr7: Y marks the open Korok hint or card as found; with neither open it toggles master mode
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_KorokDialog->m_IsOpen)
+    {
+        if (SavefileIO::GameIsRunning && ManualProgress::CanPersist() && m_KorokDialog->m_KorokIndex >= 0 &&
+            !m_Koroks[m_KorokDialog->m_KorokIndex].m_Found)
+        {
+            m_Koroks[m_KorokDialog->m_KorokIndex].m_Found = true;
+            if (ManualProgress::MarkFound(CurrentProgressContext(), Data::ObjectType::Korok,
+                                          m_Koroks[m_KorokDialog->m_KorokIndex].m_ObjectData->hash))
+                ManualProgress::Flush();
+        }
+    }
+    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_ObjectInfo->m_IsOpen)
+        MarkSelectedObjectFound();
+    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y))
     {
         if (SavefileIO::MostRecentMasterModeFile != -1)
         {
@@ -444,22 +463,15 @@ void Map::Update()
         }
     }
 
+    // zayr7: B closes the panel on top (the image viewer is handled above)
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_B))
     {
         if (m_KorokDialog->m_IsOpen)
-        {
-            if (SavefileIO::GameIsRunning && ManualProgress::CanPersist() && m_KorokDialog->m_KorokIndex >= 0 &&
-                !m_Koroks[m_KorokDialog->m_KorokIndex].m_Found)
-            {
-                m_Koroks[m_KorokDialog->m_KorokIndex].m_Found = true;
-                if (ManualProgress::MarkFound(CurrentProgressContext(), Data::ObjectType::Korok,
-                                              m_Koroks[m_KorokDialog->m_KorokIndex].m_ObjectData->hash))
-                    ManualProgress::Flush();
-            }
             m_KorokDialog->SetOpen(false);
-        }
-        else
-            MarkSelectedObjectFound();
+        else if (m_ObjectInfo->m_IsOpen)
+            m_ObjectInfo->SetOpen(false);
+        else if (m_Legend->m_IsOpen)
+            m_Legend->m_IsOpen = false;
     }
 
     // Analog stick camera movement
@@ -480,12 +492,20 @@ void Map::Update()
     const bool modalDialogOpen = m_NoSavefileDialog->m_IsOpen || m_GameRunningDialog->m_IsOpen || m_MasterModeDialog->m_IsOpen;
     if (!imageViewerWasOpen && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen && !modalDialogOpen)
     {
+        // zayr7: the cursor is the crosshair at the screen center; the D-Pad moves the map under it
         const float cursorStep = 12.0f / m_Zoom;
-        if (buttonsPressed & HidNpadButton_Left) m_CursorPosition.x -= cursorStep;
-        if (buttonsPressed & HidNpadButton_Right) m_CursorPosition.x += cursorStep;
-        if (buttonsPressed & HidNpadButton_Up) m_CursorPosition.y += cursorStep;
-        if (buttonsPressed & HidNpadButton_Down) m_CursorPosition.y -= cursorStep;
-        if (buttonsPressed & HidNpadButton_A) OpenNearestObject(m_CursorPosition);
+        glm::vec2 step(0.0f, 0.0f);
+        if (buttonsPressed & HidNpadButton_Left) step.x -= cursorStep;
+        if (buttonsPressed & HidNpadButton_Right) step.x += cursorStep;
+        if (buttonsPressed & HidNpadButton_Up) step.y += cursorStep;
+        if (buttonsPressed & HidNpadButton_Down) step.y -= cursorStep;
+        if (step.x != 0.0f || step.y != 0.0f)
+        {
+            m_CameraPosition += step;
+            m_HasTargetCameraPosition = false;
+            m_CursorFollowsTarget = false;
+        }
+        if (buttonsPressed & HidNpadButton_A) OpenNearestObject(m_CameraPosition);
     }
     // ZR/ZL/R open the card of the object they pick, so they also work with a card or the legend open.
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZR))
@@ -689,8 +709,13 @@ void Map::Render()
         }
     }
 
-    if (SavefileIO::LoadedSavefile && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen)
-        m_Font.AddTextToBatch("+", m_CursorPosition, 0.7f / m_Zoom, glm::vec3(1.0f), ALIGN_CENTER);
+    // zayr7: crosshair fixed at the screen center; A and R pick from here
+    if (SavefileIO::LoadedSavefile && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen &&
+        s_Crosshair.m_Texture)
+    {
+        s_Crosshair.m_Position = glm::vec2(0.0f, 0.0f);
+        s_Crosshair.Render();
+    }
 
     m_Font.RenderBatch();
 
@@ -816,6 +841,7 @@ void Map::Destroy()
     m_MapBackground.Destroy();
     m_MasterModeIcon.Destroy();
     s_PlayerMarker.Destroy();
+    s_Crosshair.Destroy();
 }
 
 static void FocusObject(const MapEntry& target)
@@ -942,12 +968,8 @@ void Map::CloseInfoPanels()
 
 void Map::ClampCursorToViewport()
 {
-    Navigation::Viewport viewport;
-    viewport.center = {m_CameraPosition.x, m_CameraPosition.y};
-    viewport.halfWidth = m_CameraWidth / (2.0f * m_Zoom);
-    viewport.halfHeight = m_CameraHeight / (2.0f * m_Zoom);
-    const Navigation::Point cursor = Navigation::ClampToViewport({m_CursorPosition.x, m_CursorPosition.y}, viewport);
-    m_CursorPosition = glm::vec2(cursor.x, cursor.y);
+    // zayr7: the cursor is always the screen center (the crosshair)
+    m_CursorPosition = m_CameraPosition;
 }
 
 TexturedQuad Map::m_MapBackground;
