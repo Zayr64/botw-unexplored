@@ -46,7 +46,6 @@ namespace
     constexpr float Pi = 3.14159265f;
     constexpr int ShownCount = 5;
     constexpr int RefreshFrames = 15;      // about 4 position reads per second
-    constexpr u64 ConfirmTimeoutNs = 3000000000ULL;
 
     enum class Filter { All, Koroks, Shrines, Locations, Bosses, Count };
     const char* FilterNames[] = {"All", "Koroks", "Shrines", "Locations", "Hinox, Talus, Molduga"};
@@ -108,9 +107,23 @@ namespace
     std::vector<Nearby> g_nearby;
     int g_missingInFilter = 0;
     int g_selected = 0;
-    u32 g_confirmHash = 0;
-    u64 g_confirmTick = 0;
     std::string g_notice;
+
+    constexpr const char* SelfPath = "sdmc:/switch/.overlays/ovlBotwUnexplored.ovl";
+    constexpr u64 HoldToMarkNs = 1000000000ULL;
+    u32 g_holdHash = 0;
+    u64 g_holdTick = 0;
+    float g_holdProgress = 0.0f;
+    u32 g_guideHash = 0;
+
+    struct LastMark
+    {
+        Data::ObjectType type;
+        u32 hash;
+        const char* name;
+    };
+    LastMark g_lastMark{};
+    bool g_hasLastMark = false;
 
     std::string Shorten(const std::string& text, size_t maxChars)
     {
@@ -418,36 +431,89 @@ namespace
         UpdateNearby();
     }
 
-    void MarkSelectedFound()
+    void RefreshPose()
     {
-        if (g_selected >= static_cast<int>(g_nearby.size()))
-            return;
-        Item& item = g_items[g_nearby[g_selected].index];
-        // Reload first so marks made by the app since the overlay opened are kept.
+        if (!g_attached)
+            g_attached = Attach();
+        if (g_attached)
+        {
+            Pose pose;
+            g_hasPose = ReadPose(pose);
+            if (g_hasPose)
+                g_pose = pose;
+        }
+    }
+
+    void ReloadManualProgress()
+    {
         ManualProgress::Clear();
         std::ifstream input(ManualProgressPath);
         if (input.is_open())
             ManualProgress::Load(input);
-        input.close();
+    }
+
+    void MarkSelectedFound()
+    {
+        if (g_selected >= static_cast<int>(g_nearby.size()))
+            return;
+        const Item& item = g_items[g_nearby[g_selected].index];
+        // Reload first so marks made by the app since the overlay opened are kept.
+        ReloadManualProgress();
         if (ManualProgress::MarkFound(g_context, item.type, item.hash) && ManualProgress::Flush())
-            g_notice = std::string("Marked as found: ") + item.name;
+        {
+            g_lastMark = LastMark{item.type, item.hash, item.name};
+            g_hasLastMark = true;
+            g_notice = std::string("Marked: ") + item.name + "   (-: undo)";
+        }
         else
             g_notice = "Could not save the mark.";
-        g_confirmHash = 0;
         UpdateNearby();
     }
 
-    void DrawDial(tsl::gfx::Renderer* renderer, s32 cx, s32 cy, float relativeDegrees)
+    void UndoLastMark()
     {
-        renderer->drawCircle(cx, cy, 22, true, tsl::Color(2, 3, 4, 13));
+        if (!g_hasLastMark)
+        {
+            g_notice = "Nothing to undo.";
+            return;
+        }
+        g_hasLastMark = false;
+        ReloadManualProgress();
+        ManualProgress::State state = ManualProgress::CaptureState();
+        const auto it = std::find_if(state.entries.begin(), state.entries.end(), [](const ManualProgress::Entry& e) {
+            return e.type == g_lastMark.type && e.completionHash == g_lastMark.hash &&
+                   e.context.profileId1 == g_context.profileId1 && e.context.profileId2 == g_context.profileId2 &&
+                   e.context.masterMode == g_context.masterMode;
+        });
+        if (it == state.entries.end())
+        {
+            g_notice = "The last mark is already gone.";
+            return;
+        }
+        state.entries.erase(it);
+        ManualProgress::RestoreState(state);
+        std::ofstream output(ManualProgressPath);
+        if (output.is_open() && ManualProgress::Save(output))
+            g_notice = std::string("Undone: ") + g_lastMark.name;
+        else
+            g_notice = "Could not undo the mark.";
+        UpdateNearby();
+    }
+
+    void DrawDial(tsl::gfx::Renderer* renderer, s32 cx, s32 cy, float relativeDegrees, float radius)
+    {
+        renderer->drawCircle(cx, cy, static_cast<u16>(radius), true, tsl::Color(2, 3, 4, 13));
         renderer->drawCircle(cx, cy, 3, true, tsl::Color(8, 8, 8, 15));
         const float radians = relativeDegrees * Pi / 180.0f;
         const float sx = std::sin(radians), sy = -std::cos(radians);
-        const float steps[3] = {7.0f, 12.0f, 17.0f};
+        const float steps[3] = {0.32f, 0.55f, 0.78f};
         const u16 sizes[3] = {2, 3, 4};
         for (int i = 0; i < 3; i++)
-            renderer->drawCircle(cx + static_cast<s32>(sx * steps[i]), cy + static_cast<s32>(sy * steps[i]), sizes[i],
-                                 true, tsl::Color(0, 13, 15, 15));
+        {
+            const float r = steps[i] * radius;
+            renderer->drawCircle(cx + static_cast<s32>(sx * r), cy + static_cast<s32>(sy * r),
+                                 static_cast<u16>(sizes[i] * radius / 22.0f), true, tsl::Color(0, 13, 15, 15));
+        }
     }
 
     void Draw(tsl::gfx::Renderer* renderer, s32 x, s32 y, s32 w, s32 h)
@@ -476,7 +542,7 @@ namespace
         line += 18;
 
         const float facing = BearingDegrees(g_pose.forwardX, g_pose.forwardZ);
-        const s32 rowHeight = 92;
+        const s32 rowHeight = 88;
         for (size_t i = 0; i < g_nearby.size(); i++)
         {
             const Nearby& near = g_nearby[i];
@@ -484,7 +550,7 @@ namespace
             const s32 top = line + static_cast<s32>(i) * rowHeight;
             if (static_cast<int>(i) == g_selected)
                 renderer->drawRect(x + 8, top, w - 16, rowHeight - 6, tsl::Color(3, 5, 8, 10));
-            DrawDial(renderer, x + 42, top + 40, near.bearing - facing);
+            DrawDial(renderer, x + 42, top + 38, near.bearing - facing, 22.0f);
             renderer->drawString(Shorten(item.name, 34), false, x + 76, top + 26, 18, white);
             std::snprintf(buffer, sizeof(buffer), "%.0f m  %s", near.distance, CompassName(near.bearing));
             renderer->drawString(buffer, false, x + 76, top + 50, 16, accent);
@@ -492,13 +558,52 @@ namespace
                 renderer->drawString(Shorten(item.hint, 48), false, x + 76, top + 72, 13, grey);
         }
 
-        s32 bottom = y + h - 44;
-        if (g_confirmHash != 0)
-            renderer->drawString("Press A again to mark it as found", false, x + 20, bottom, 15, warn);
+        const s32 bottom = y + h - 60;
+        if (g_holdHash != 0)
+        {
+            renderer->drawString("Keep holding A to mark it as found", false, x + 20, bottom, 15, warn);
+            renderer->drawRect(x + 20, bottom + 6, static_cast<s32>((w - 40) * g_holdProgress), 4, warn);
+        }
         else if (!g_notice.empty())
             renderer->drawString(g_notice, false, x + 20, bottom, 15, accent);
-        renderer->drawString("Up/Down: select   A: found   Y: filter   X: reload save", false, x + 20, bottom + 24,
-                             13, grey);
+        renderer->drawString("ZR: guide (GPS)   hold A: found   -: undo", false, x + 20, bottom + 26, 13, grey);
+        renderer->drawString("Up/Down: select   Y: filter   X: reload save", false, x + 20, bottom + 44, 13, grey);
+    }
+
+    // Guide (GPS) mode: a small box that stays on screen while the game keeps the controls.
+    void DrawGuide(tsl::gfx::Renderer* renderer)
+    {
+        const tsl::Color white(15, 15, 15, 15), grey(11, 11, 11, 15), accent(0, 13, 15, 15), warn(15, 11, 4, 15);
+        const s32 bx = 12, by = 124, bw = 340, bh = 96;
+        renderer->drawRect(bx, by, bw, bh, tsl::Color(0, 0, 0, 9));
+        const auto found = g_itemByHash.find(g_guideHash);
+        if (found == g_itemByHash.end())
+        {
+            renderer->drawString("Guide: unknown object", false, bx + 12, by + 34, 16, warn);
+            return;
+        }
+        const Item& item = g_items[found->second];
+        if (!g_gameMessage.empty() || !g_hasPose)
+        {
+            renderer->drawString(Shorten(item.name, 28), false, bx + 12, by + 30, 17, white);
+            renderer->drawString(g_gameMessage.empty() ? std::string("Loading...") : g_gameMessage, false, bx + 12,
+                                 by + 58, 14, warn);
+            return;
+        }
+        const float dx = item.x - g_pose.x, dz = item.z - g_pose.z;
+        const float distance = std::sqrt(dx * dx + dz * dz);
+        const float bearing = BearingDegrees(dx, dz);
+        const float facing = BearingDegrees(g_pose.forwardX, g_pose.forwardZ);
+        DrawDial(renderer, bx + 48, by + bh / 2, bearing - facing, 36.0f);
+        renderer->drawString(Shorten(item.name, 26), false, bx + 96, by + 30, 17, white);
+        char buffer[64];
+        const bool arrived = distance < 12.0f;
+        if (arrived)
+            std::snprintf(buffer, sizeof(buffer), "You are there");
+        else
+            std::snprintf(buffer, sizeof(buffer), "%.0f m  %s", distance, CompassName(bearing));
+        renderer->drawString(buffer, false, bx + 96, by + 60, 21, arrived ? warn : accent);
+        renderer->drawString("Ultrahand combo: back to the list", false, bx + 96, by + 84, 12, grey);
     }
 
     class NearbyGui : public tsl::Gui
@@ -525,33 +630,50 @@ namespace
                 m_frames = 0;
                 Refresh();
             }
-            if (g_confirmHash != 0 && armGetSystemTick() - g_confirmTick > armNsToTicks(ConfirmTimeoutNs))
-                g_confirmHash = 0;
         }
 
         bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState& touchPos,
                          HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override
         {
             const int shown = static_cast<int>(g_nearby.size());
+            if (g_holdHash != 0)
+            {
+                if (!(keysHeld & KEY_A))
+                {
+                    g_holdHash = 0;
+                    g_holdProgress = 0.0f;
+                }
+                else
+                {
+                    const u64 elapsed = armTicksToNs(armGetSystemTick() - g_holdTick);
+                    g_holdProgress = std::min(1.0f, static_cast<float>(elapsed) / static_cast<float>(HoldToMarkNs));
+                    if (elapsed >= HoldToMarkNs)
+                    {
+                        const bool same = g_selected < shown && g_items[g_nearby[g_selected].index].hash == g_holdHash;
+                        g_holdHash = 0;
+                        g_holdProgress = 0.0f;
+                        if (same)
+                            MarkSelectedFound();
+                    }
+                    return true;
+                }
+            }
             if (keysDown & KEY_UP)
             {
                 if (shown > 0)
                     g_selected = (g_selected + shown - 1) % shown;
-                g_confirmHash = 0;
                 return true;
             }
             if (keysDown & KEY_DOWN)
             {
                 if (shown > 0)
                     g_selected = (g_selected + 1) % shown;
-                g_confirmHash = 0;
                 return true;
             }
             if (keysDown & KEY_Y)
             {
                 g_filter = static_cast<Filter>((static_cast<int>(g_filter) + 1) % static_cast<int>(Filter::Count));
                 g_selected = 0;
-                g_confirmHash = 0;
                 UpdateNearby();
                 return true;
             }
@@ -562,17 +684,24 @@ namespace
                 UpdateNearby();
                 return true;
             }
-            if ((keysDown & KEY_A) && g_selected < shown)
+            if (keysDown & KEY_MINUS)
+            {
+                UndoLastMark();
+                return true;
+            }
+            if ((keysDown & KEY_ZR) && g_selected < shown)
             {
                 const u32 hash = g_items[g_nearby[g_selected].index].hash;
-                if (g_confirmHash == hash)
-                    MarkSelectedFound();
-                else
-                {
-                    g_confirmHash = hash;
-                    g_confirmTick = armGetSystemTick();
-                    g_notice.clear();
-                }
+                tsl::setNextOverlay(SelfPath, "-guide " + std::to_string(hash));
+                tsl::Overlay::get()->close();
+                return true;
+            }
+            if ((keysDown & KEY_A) && g_selected < shown)
+            {
+                g_holdHash = g_items[g_nearby[g_selected].index].hash;
+                g_holdTick = armGetSystemTick();
+                g_holdProgress = 0.0f;
+                g_notice.clear();
                 return true;
             }
             return false;
@@ -581,6 +710,30 @@ namespace
     private:
         bool m_loaded = false;
         int m_frames = 0;
+    };
+
+    class GuideGui : public tsl::Gui
+    {
+    public:
+        tsl::elm::Element* createUI() override
+        {
+            auto* frame = new tsl::elm::HeaderOverlayFrame("", "");
+            frame->setContent(new tsl::elm::CustomDrawer(
+                [](tsl::gfx::Renderer* renderer, s32, s32, s32, s32) { DrawGuide(renderer); }));
+            return frame;
+        }
+
+        void update() override
+        {
+            if (++m_frames >= RefreshFrames)
+            {
+                m_frames = 0;
+                RefreshPose();
+            }
+        }
+
+    private:
+        int m_frames = RefreshFrames;
     };
 
     class NearbyOverlay : public tsl::Overlay
@@ -609,9 +762,48 @@ namespace
             return initially<NearbyGui>();
         }
     };
+
+    class GuideOverlay : public tsl::Overlay
+    {
+    public:
+        void initServices() override
+        {
+            if (CheatServiceRunning())
+                g_dmntReady = R_SUCCEEDED(dmntchtInitialize());
+            BuildItems();
+        }
+
+        void exitServices() override
+        {
+            if (g_dmntReady)
+                dmntchtExit();
+        }
+
+        void onShow() override
+        {
+            // Let the game keep the controls while the guide stays on screen (like Status Monitor's mini mode).
+            tsl::hlp::requestForeground(false);
+            g_attached = false;
+        }
+
+        std::unique_ptr<tsl::Gui> loadInitialGui() override
+        {
+            return initially<GuideGui>();
+        }
+    };
 }
 
 int main(int argc, char** argv)
 {
+    // The Ultrahand combo in guide mode brings back this overlay's list instead of the Ultrahand menu.
+    comboReturnToSelfMenu.store(true, std::memory_order_release);
+    for (int i = 1; i + 1 < argc; i++)
+        if (std::strcmp(argv[i], "-guide") == 0)
+            g_guideHash = static_cast<u32>(std::strtoul(argv[i + 1], nullptr, 10));
+    if (g_guideHash != 0)
+    {
+        FullMode = false;
+        return tsl::loop<GuideOverlay>(argc, argv);
+    }
     return tsl::loop<NearbyOverlay>(argc, argv);
 }
