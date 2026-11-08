@@ -574,7 +574,7 @@ namespace
     void DrawGuide(tsl::gfx::Renderer* renderer)
     {
         const tsl::Color white(15, 15, 15, 15), grey(11, 11, 11, 15), accent(0, 13, 15, 15), warn(15, 11, 4, 15);
-        const s32 bx = 12, by = 124, bw = 340, bh = 96;
+        const s32 bx = 12, by = 150, bw = 340, bh = 96;
         renderer->drawRect(bx, by, bw, bh, tsl::Color(0, 0, 0, 9));
         const auto found = g_itemByHash.find(g_guideHash);
         if (found == g_itemByHash.end())
@@ -725,6 +725,26 @@ namespace
 
         void update() override
         {
+            // The game keeps the controls, so read the pad directly: the Ultrahand combo (once it has been released
+            // after the guide opened) brings back the list, the same way libultrahand returns to an overlay's menu.
+            if (!m_padReady)
+            {
+                padInitializeAny(&m_pad);
+                m_padReady = true;
+            }
+            padUpdate(&m_pad);
+            const u64 held = padGetButtons(&m_pad);
+            const auto comboHeld = [held](u64 combo) { return combo != 0 && (held & combo) == combo; };
+            if (!comboHeld(tsl::cfg::launchCombo) && !comboHeld(tsl::cfg::launchCombo2))
+                m_armed = true;
+            else if (m_armed)
+            {
+                m_armed = false;
+                tsl::setNextOverlay(SelfPath, "--direct");
+                launchComboHasTriggered.store(true, std::memory_order_release);
+                tsl::Overlay::get()->close();
+                return;
+            }
             if (++m_frames >= RefreshFrames)
             {
                 m_frames = 0;
@@ -734,6 +754,9 @@ namespace
 
     private:
         int m_frames = RefreshFrames;
+        PadState m_pad{};
+        bool m_padReady = false;
+        bool m_armed = false;
     };
 
     class NearbyOverlay : public tsl::Overlay
@@ -803,6 +826,7 @@ int main(int argc, char** argv)
     if (g_guideHash != 0)
     {
         FullMode = false;
+        deactivateOriginalFooter = true;
         return tsl::loop<GuideOverlay>(argc, argv);
     }
     return tsl::loop<NearbyOverlay>(argc, argv);
