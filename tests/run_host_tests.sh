@@ -37,4 +37,8 @@ fi
 /tmp/test_live_game_data
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_chests.cpp source/ChestData.cpp -o /tmp/test_chests
 /tmp/test_chests
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_chests.cpp source/ShrineChests.cpp source/ShrineChestData.cpp -o /tmp/test_shrine_chests
+/tmp/test_shrine_chests
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_location_state.cpp source/LocationState.cpp source/ShrineFlags.cpp -o /tmp/test_location_state
+/tmp/test_location_state
 python3 tests/test_data_mapping.py
