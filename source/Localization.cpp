@@ -23,7 +23,8 @@ namespace
         "Chests", "Special chests", "Treasure chest", "Special chest", "Not opened", "Opened",
         "Hidden", "Contents", "A weapon", "A bow", "A shield", "Armor",
         "Arrows", "A gem or ore", "Rupees", "A material", "Horse gear", "A key item",
-        "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest"
+        "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest",
+        "Activated", "Not activated", "Awakened", "Not awakened"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

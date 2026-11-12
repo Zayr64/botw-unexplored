@@ -2,6 +2,7 @@
 
 #include "Graphics/ShapeBatch.h"
 #include "Localization.h"
+#include "LocationState.h"
 #include "Legend.h"
 #include "Map.h"
 #include "ObjectModel.h"
@@ -70,14 +71,33 @@ void ObjectInfo::Render()
             top = SavefileIO::IsShrineCleared(m_CompletionHash)
                 ? Ui::StatusRow(top, Localization::Get(Text::ShrineCompleted), Ui::Colors::Good)
                 : Ui::StatusRow(top, Localization::Get(Text::NotCompleted), Ui::Colors::Warn, false);
-            top = SavefileIO::HasAllShrineChests(m_CompletionHash)
-                ? Ui::StatusRow(top, Localization::Get(Text::AllChestsOpened), Ui::Colors::Good)
-                : Ui::StatusRow(top, Localization::Get(Text::ChestsLeft), Ui::Colors::Warn, false);
+            // How many chests the shrine has, from the flag of each one; the game's own flag tells when none is left.
+            int opened = 0, total = 0;
+            const bool counted = SavefileIO::GetShrineChests(m_CompletionHash, opened, total) && total > 0;
+            const bool noneLeft = SavefileIO::HasAllShrineChests(m_CompletionHash) || (counted && opened == total);
+            if (counted)
+                top = Ui::StatusRow(top, Localization::Get(Text::Chests) + " " + std::to_string(noneLeft ? total : opened) +
+                                             "/" + std::to_string(total),
+                                    noneLeft ? Ui::Colors::Good : Ui::Colors::Warn, noneLeft);
+            else
+                top = noneLeft ? Ui::StatusRow(top, Localization::Get(Text::AllChestsOpened), Ui::Colors::Good)
+                               : Ui::StatusRow(top, Localization::Get(Text::ChestsLeft), Ui::Colors::Warn, false);
         }
     }
     else if (m_Type == Data::ObjectType::Location)
+    {
         top = found ? Ui::StatusRow(top, Localization::Get(Text::Visited), Ui::Colors::Good)
                     : Ui::StatusRow(top, Localization::Get(Text::NotVisited), Ui::Colors::Warn, false);
+        // A tower is also activated and a great fairy awakened; told only once the place is known.
+        const LocationState::Entry* state = LocationState::ForLocation(m_CompletionHash);
+        if (found && state != nullptr)
+        {
+            const bool tower = state->kind == LocationState::Kind::Tower;
+            top = SavefileIO::IsLocationStateDone(m_CompletionHash)
+                ? Ui::StatusRow(top, Localization::Get(tower ? Text::Activated : Text::Awakened), Ui::Colors::Good)
+                : Ui::StatusRow(top, Localization::Get(tower ? Text::NotActivated : Text::NotAwakened), Ui::Colors::Warn, false);
+        }
+    }
     else if (m_Chest != nullptr)
         top = found ? Ui::StatusRow(top, Localization::Get(Text::Opened), Ui::Colors::Good)
                     : Ui::StatusRow(top, Localization::Get(Text::NotOpened), Ui::Colors::Warn, false);

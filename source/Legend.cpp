@@ -245,7 +245,7 @@ void IconButton::Count(int& found, int& total) const
     case Shrines:
         total = Data::ShrineCount;
         for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
-        if (SavefileIO::HasDLC)
+        if (SavefileIO::DlcShrinesAppear())
         {
             total += Data::DLCShrineCount;
             for (int i = 0; i < Data::DLCShrineCount; ++i) found += Map::m_DLCShrines[i].m_Found;

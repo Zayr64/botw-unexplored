@@ -22,6 +22,7 @@
 #include "ObjectModel.h"
 #include "Log.h"
 #include "Localization.h"
+#include "LocationState.h"
 #include "ManualProgress.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
@@ -168,7 +169,7 @@ namespace
         {
             bool visible = Map::m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex];
             if (type == Data::ObjectType::DLCShrine)
-                visible = visible && SavefileIO::HasDLC;
+                visible = visible && SavefileIO::DlcShrinesAppear();
             entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex, chest});
         };
 
@@ -188,7 +189,7 @@ namespace
             add(Data::ObjectType::Molduga, Data::Moldugas[i].hash, Map::m_Moldugas[i].m_Position, noName, &Map::m_Moldugas[i].m_Found);
         for (int i = 0; i < Data::LocationsCount; ++i)
             add(Data::ObjectType::Location, Data::Locations[i].hash, Map::m_Locations[i].m_Position, Data::Locations[i].displayName,
-                &Map::m_Locations[i].m_Found);
+                &Map::m_Locations[i].m_Found, Map::m_Locations[i].m_Pending);
         // Only the chests that exist in this game (mode and DLC)
         for (int i = 0; i < Data::ChestsCount; ++i)
             if (!Map::m_Chests[i].m_Excluded)
@@ -556,6 +557,9 @@ void Map::UpdateMapObjects(bool recenter)
             SavefileIO::visitedLocations.end(),
             &Data::Locations[i]) != SavefileIO::visitedLocations.end();
         m_Locations[i].m_Found = ResolveFound(Data::ObjectType::Location, Data::Locations[i].hash, foundInSave, manualProgressChanged);
+        // A visited tower still to be activated, or a fountain whose fairy still sleeps, stays on the map.
+        m_Locations[i].m_Pending = foundInSave && LocationState::ForLocation(Data::Locations[i].hash) != nullptr &&
+                                   !SavefileIO::IsLocationStateDone(Data::Locations[i].hash);
     }
 
     // Chests: those of Master Mode only exist there; those of the Expansion Pass need it (an opened one,
@@ -933,7 +937,7 @@ void Map::Render()
         }
         if (m_Legend->m_Show[IconButton::ButtonTypes::Shrines])
             MapObject<Data::Shrine>::Render();
-        if (m_Legend->m_Show[IconButton::ButtonTypes::Shrines] && SavefileIO::HasDLC)
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Shrines] && SavefileIO::DlcShrinesAppear())
             MapObject<Data::DLCShrine>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Hinoxes])
             MapObject<Data::Hinox>::Render();

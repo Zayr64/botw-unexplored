@@ -54,8 +54,13 @@ wait 45
 shot 11-shrine-card
 press B
 press X
+wait 14
+press DOWN
 press A
-press UP
+press DOWN
+press DOWN
+press DOWN
+press DOWN
 press A
 press B
 press R

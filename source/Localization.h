@@ -118,6 +118,10 @@ namespace Localization
         HintShowItem,
         ChestEnemyCamp,
         ChestSideQuest,
+        Activated,
+        NotActivated,
+        Awakened,
+        NotAwakened,
         Count
     };
 

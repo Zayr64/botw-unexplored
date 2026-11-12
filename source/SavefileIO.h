@@ -25,6 +25,9 @@ namespace SavefileIO
         std::vector<uint32_t> allChestsShrines; // by discovery hash (Location_DungeonNNN)
         std::vector<uint32_t> openedChests;     // flag hashes of the opened chests of the world map, sorted
         bool hasDlcChests = false;              // the chests of the Expansion Pass exist in this game
+        std::vector<uint32_t> openedShrineChests; // flag hashes of the opened chests inside the shrines, sorted
+        std::vector<uint32_t> doneLocationStates; // locations with the tower activated or the fairy awakened, sorted
+        bool balladStarted = false;               // the Champions' Ballad has begun: its shrines can exist
         std::vector<Data::Korok*> foundKoroks;
         std::vector<Data::Korok*> missingKoroks;
         std::vector<Data::Shrine*> foundShrines;
@@ -89,6 +92,12 @@ namespace SavefileIO
     bool IsShrineCleared(uint32_t locationHash);
     bool HasAllShrineChests(uint32_t locationHash);
     bool IsChestOpened(uint32_t flagHash);
+    // The chests inside a shrine: how many there are and how many are opened. False for a shrine not in the table.
+    bool GetShrineChests(uint32_t locationHash, int& opened, int& total);
+    // Whether the tower of this location is activated, or its great fairy awakened (see LocationState.h).
+    bool IsLocationStateDone(uint32_t locationHash);
+    // The shrines of the Champions' Ballad are not in the world before it begins.
+    bool DlcShrinesAppear();
     int GetMostRecentSavefile(const std::string& dir, bool masterMode = false); // Needs slash at end of dir
 
     void CopySavefiles();

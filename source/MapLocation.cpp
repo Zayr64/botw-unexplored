@@ -38,7 +38,7 @@ void MapLocation::Update()
 
 void MapLocation::Render(bool shadow)
 {
-    if (!Map::m_Legend->ShouldShow(m_Found)) return;
+    if (!Map::m_Legend->ShouldShow(m_Found && !m_Pending)) return;
 
     // The overview is too dense for readable labels. They become available while zooming in.
     if (Map::m_Zoom < 0.55f) return;

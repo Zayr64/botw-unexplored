@@ -14,12 +14,15 @@
 #include "Dialog.h"
 #include "GameMemory.h"
 #include "LiveGameData.h"
+#include "LocationState.h"
 #include "Log.h"
 #include "SaveLoadDecision.h"
 #include "SaveParser.h"
+#include "ShrineChests.h"
 #include "ShrineFlags.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <sstream>
 #include <sys/stat.h>
@@ -641,6 +644,30 @@ const std::unordered_map<uint32_t, ShrineFlagTarget>& GetShrineFlagTable()
     return table;
 }
 
+// The flags of the chests inside the shrines, sorted.
+const std::vector<uint32_t>& GetShrineChestFlags()
+{
+    static const std::vector<uint32_t> flags = []()
+    {
+        std::vector<uint32_t> result(Data::ShrineChestFlags, Data::ShrineChestFlags + Data::ShrineChestFlagsCount);
+        std::sort(result.begin(), result.end());
+        return result;
+    }();
+    return flags;
+}
+
+// Flags of the quest of the Champions' Ballad that are only set once it has begun. BalladOfHeroes_Ready is not
+// one of them: it is set early in the game, long before the quest (and its shrines) can be reached.
+const std::array<uint32_t, 3>& GetBalladStartedFlags()
+{
+    static const std::array<uint32_t, 3> flags = {{
+        ShrineFlags::Crc32("BalladOfHeroes_Activated"),
+        ShrineFlags::Crc32("BalladOfHeroes_Step01"),
+        ShrineFlags::Crc32("BalladOfHeroes_Finish"),
+    }};
+    return flags;
+}
+
 // Every flag the map shows, by hash. A hash may belong to more than one list.
 struct TrackedFlag
 {
@@ -682,6 +709,8 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
 {
     const std::unordered_map<uint32_t, ShrineFlagTarget>& shrineFlags = GetShrineFlagTable();
     const std::unordered_multimap<uint32_t, TrackedFlag>& tracked = GetTrackedFlags();
+    const std::vector<uint32_t>& shrineChestFlags = GetShrineChestFlags();
+    const std::array<uint32_t, 3>& balladFlags = GetBalladStartedFlags();
     for (const SaveParser::Record& record : bufferState.records)
     {
         const uint32_t hashValue = record.hash;
@@ -692,6 +721,16 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
         if (shrineFlag != shrineFlags.end() && set)
             (shrineFlag->second.allChests ? parsedState.allChestsShrines : parsedState.clearedShrines)
                 .push_back(shrineFlag->second.locationHash);
+
+        if (set)
+        {
+            if (std::binary_search(shrineChestFlags.begin(), shrineChestFlags.end(), hashValue))
+                parsedState.openedShrineChests.push_back(hashValue);
+            if (const LocationState::Entry* state = LocationState::ForFlag(hashValue))
+                parsedState.doneLocationStates.push_back(state->locationHash);
+            if (std::find(balladFlags.begin(), balladFlags.end(), hashValue) != balladFlags.end())
+                parsedState.balladStarted = true;
+        }
 
         const auto range = tracked.equal_range(hashValue);
         for (auto it = range.first; it != range.second; ++it)
@@ -737,6 +776,8 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     }
 
     std::sort(parsedState.openedChests.begin(), parsedState.openedChests.end());
+    std::sort(parsedState.openedShrineChests.begin(), parsedState.openedShrineChests.end());
+    std::sort(parsedState.doneLocationStates.begin(), parsedState.doneLocationStates.end());
     parsedState.hasDLC = bufferState.hasDLC;
     parsedState.hasDlcChests = parsedState.hasDlcChests || bufferState.hasDLC;
     parsedState.hasPlayerPosition = bufferState.hasPlayerPosition;
@@ -981,6 +1022,28 @@ bool SavefileIO::IsShrineCleared(uint32_t locationHash)
 bool SavefileIO::IsChestOpened(uint32_t flagHash)
 {
     return std::binary_search(CurrentState.openedChests.begin(), CurrentState.openedChests.end(), flagHash);
+}
+
+bool SavefileIO::GetShrineChests(uint32_t locationHash, int& opened, int& total)
+{
+    const Data::ShrineChestList* list = ShrineChests::Find(locationHash);
+    if (list == nullptr)
+        return false;
+    total = list->count;
+    opened = ShrineChests::CountOpened(*list, CurrentState.openedShrineChests.data(),
+                                       static_cast<int>(CurrentState.openedShrineChests.size()));
+    return true;
+}
+
+bool SavefileIO::IsLocationStateDone(uint32_t locationHash)
+{
+    return std::binary_search(CurrentState.doneLocationStates.begin(), CurrentState.doneLocationStates.end(), locationHash);
+}
+
+bool SavefileIO::DlcShrinesAppear()
+{
+    // One of them already found also tells that the quest has begun.
+    return CurrentState.balladStarted || !CurrentState.foundDLCShrines.empty();
 }
 
 bool SavefileIO::HasAllShrineChests(uint32_t locationHash)

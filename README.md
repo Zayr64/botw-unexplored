@@ -18,7 +18,9 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Per-profile and per-mode manual progress (`Y`) for every supported object type, only while a save backup is shown. It never modifies the BotW save.
 - `ZR` / `ZL` step forward / back through the 5 nearest missing visible objects, opening the Korok hint or the card of each one.
 - "You are here": a marker where Link is (right now when read from the game, otherwise the last save); the map opens there and `L` glides back to it. Inside a shrine the marker is on the shrine.
-- Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays on the map.
+- Shrine cards show whether the shrine is completed and how many of its chests are opened (`Chests 2/3`); a discovered shrine with something left stays on the map.
+- The same for the 15 towers and the great fairy fountains: one that was visited but not activated (or whose fairy still sleeps) stays on the map, and its card says so.
+- The shrines of the Champions' Ballad show only once that quest has begun, when they can exist in the world. Before that the legend counts 120 shrines.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
 - Optional high-resolution map (4x) when zoomed in, read from the SD card (see below).
 - Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
@@ -106,13 +108,13 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, and the chest table. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), and the tower and fountain flags. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 
 - [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored) — original application and codebase.
 - [marcrobledo/savegame-editors](https://github.com/marcrobledo/savegame-editors), [MrCheeze/botw-waypoint-map](https://github.com/MrCheeze/botw-waypoint-map), [Zelda Dungeon](https://www.zeldadungeon.net/), and [d4mation/botw-unexplored-viewer](https://github.com/d4mation/botw-unexplored-viewer) — original data, research, and guide references.
-- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`).
+- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, and `tools/gen_shrine_chests.py` does the same for the chests inside the shrines).
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.
