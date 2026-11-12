@@ -1,0 +1,17 @@
+pos -700 180 1500
+wait 20
+shot ovl-01-list
+press DOWN
+wait 2
+press DOWN
+wait 2
+shot ovl-02-list-third
+press Y
+wait 2
+shot ovl-03-filter-koroks
+press X
+wait 2
+shot ovl-04-sync
+hold A 30
+shot ovl-05-hold-a
+press ZR

@@ -1,0 +1,14 @@
+pos -700 180 1500
+wait 30
+shot ovl-10-guide-far
+pos -660 180 1420
+wait 10
+shot ovl-11-guide-near
+pos -655 180 1392
+wait 10
+shot ovl-12-guide-there
+setflag 1615115873
+wait 100
+shot ovl-13-guide-found
+wait 170
+shot ovl-14-guide-next
