@@ -19,6 +19,8 @@ public:
     static constexpr ButtonTypes Taluses = ButtonTypes::Taluses;
     static constexpr ButtonTypes Moldugas = ButtonTypes::Moldugas;
     static constexpr ButtonTypes Locations = ButtonTypes::Locations;
+    static constexpr ButtonTypes Chests = ButtonTypes::Chests;
+    static constexpr ButtonTypes SpecialChests = ButtonTypes::SpecialChests;
 
 public:
     // Position is the top-left corner

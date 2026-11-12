@@ -43,7 +43,7 @@ static SettingsIO::Settings GetCurrentSettings()
     settings.zoom = Map::m_Zoom;
     settings.legendOpen = Map::m_Legend->m_IsOpen;
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
-        settings.visible[i] = Map::m_Legend->m_Show[i];
+        settings.visible[SettingsIO::CategoryIndex(i)] = Map::m_Legend->m_Show[i];
     return settings;
 }
 
@@ -120,7 +120,7 @@ static void ApplySettings(const SettingsIO::Settings& settings)
     Map::m_Zoom = std::max(0.1f, std::min(10.0f, settings.zoom));
     Map::m_Legend->m_IsOpen = settings.legendOpen;
     for (int i = 0; i < IconButton::ButtonTypes::Count; ++i)
-        Map::m_Legend->m_Buttons[i]->Click(Map::m_Legend, settings.visible[i]);
+        Map::m_Legend->m_Buttons[i]->Click(Map::m_Legend, settings.visible[SettingsIO::CategoryIndex(i)]);
 }
 
 static void deinitNxLink()

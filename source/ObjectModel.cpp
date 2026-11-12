@@ -10,7 +10,9 @@ namespace
         {"romfs:/village.png", true, static_cast<int>(LegendCategories::ButtonTypes::Locations)},
         {"romfs:/hinox.png", false, static_cast<int>(LegendCategories::ButtonTypes::Hinoxes)},
         {"romfs:/talus.png", false, static_cast<int>(LegendCategories::ButtonTypes::Taluses)},
-        {"romfs:/molduga.png", false, static_cast<int>(LegendCategories::ButtonTypes::Moldugas)}
+        {"romfs:/molduga.png", false, static_cast<int>(LegendCategories::ButtonTypes::Moldugas)},
+        {"romfs:/chest.png", false, static_cast<int>(LegendCategories::ButtonTypes::Chests)},
+        {"romfs:/chestspecial.png", false, static_cast<int>(LegendCategories::ButtonTypes::SpecialChests)}
     }};
     static_assert(metadata.size() == static_cast<size_t>(Data::ObjectType::Count), "Object metadata must cover every type");
 }

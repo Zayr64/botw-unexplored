@@ -8,6 +8,7 @@
 #include <switch.h>
 #include <thread>
 
+#include "Chests.h"
 #include "Data.h"
 
 namespace SavefileIO
@@ -22,6 +23,8 @@ namespace SavefileIO
         bool playerInsideShrine = false;   // the position is the entrance of the shrine Link is in
         std::vector<uint32_t> clearedShrines;   // by discovery hash (Location_DungeonNNN)
         std::vector<uint32_t> allChestsShrines; // by discovery hash (Location_DungeonNNN)
+        std::vector<uint32_t> openedChests;     // flag hashes of the opened chests of the world map, sorted
+        bool hasDlcChests = false;              // the chests of the Expansion Pass exist in this game
         std::vector<Data::Korok*> foundKoroks;
         std::vector<Data::Korok*> missingKoroks;
         std::vector<Data::Shrine*> foundShrines;
@@ -85,6 +88,7 @@ namespace SavefileIO
     uint32_t GetSavefileTimestamp(const std::string& captionPath);
     bool IsShrineCleared(uint32_t locationHash);
     bool HasAllShrineChests(uint32_t locationHash);
+    bool IsChestOpened(uint32_t flagHash);
     int GetMostRecentSavefile(const std::string& dir, bool masterMode = false); // Needs slash at end of dir
 
     void CopySavefiles();

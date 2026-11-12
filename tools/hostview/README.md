@@ -45,6 +45,9 @@ touch 900 300 2    a finger at pixel 900,300 for two frames
 shot 06-korok      save <output folder>/06-korok.png
 ```
 
+`scripts/tour.txt` walks through the main screens and `scripts/tour-chests.txt` through the chests (legend,
+map, card and what `A` reveals).
+
 The game running behind the app, with its memory read:
 
 ```bash

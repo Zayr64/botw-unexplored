@@ -27,10 +27,14 @@ public:
     bool m_Found = false;
     // Found, but something is still left to do (a shrine not completed or with chests left).
     bool m_Pending = false;
+    // Not part of this game: never drawn, counted or picked (a chest of the other mode or of the DLC).
+    bool m_Excluded = false;
 
     static bool m_ShowAnyway;
 
     static float m_Scale;
+    // 1 for an image drawn at its own size; an image four times larger than it is drawn uses 0.25.
+    static float m_SizeFactor;
 
 public:
     MapObject();
@@ -114,7 +118,8 @@ template <typename T>
 void MapObject<T>::AddToMesh()
 {   
     glm::vec3 vertexPositions[4];
-    BasicVertices::Quad::Construct(vertexPositions, m_Position, m_Texture->m_Width * m_Scale, m_Texture->m_Height * m_Scale);
+    BasicVertices::Quad::Construct(vertexPositions, m_Position, m_Texture->m_Width * m_Scale * m_SizeFactor,
+                                   m_Texture->m_Height * m_Scale * m_SizeFactor);
 
     for (int i = 0; i < 4; i++)
     {
@@ -145,11 +150,11 @@ void MapObject<T>::Update(bool clear)
 
     if (clear) m_Mesh.Clear();
 
-    if (!Map::m_Legend->ShouldShow(m_Found && !m_Pending))
+    if (m_Excluded || !Map::m_Legend->ShouldShow(m_Found && !m_Pending))
         return;
     
     // Culling 
-    float margin = m_Texture->m_Width + 10.0f;
+    float margin = m_Texture->m_Width * m_SizeFactor + 10.0f;
     if (!Map::IsInView(m_Position, margin)) 
       return;
 
@@ -185,8 +190,8 @@ bool MapObject<T>::IsClicked(glm::vec2 position)
     glm::vec2 worldPos = position / Map::m_Zoom + Map::m_CameraPosition;
 
     float largerHitbox = 1.25f;
-    float width = m_Texture->m_Width * m_Scale * largerHitbox;
-    float height = m_Texture->m_Height * m_Scale * largerHitbox; 
+    float width = m_Texture->m_Width * m_Scale * m_SizeFactor * largerHitbox;
+    float height = m_Texture->m_Height * m_Scale * m_SizeFactor * largerHitbox; 
 
     if (worldPos.x > m_Position.x - width / 2 && worldPos.x < m_Position.x + width / 2)
     {
@@ -227,3 +232,5 @@ template <typename T>
 bool MapObject<T>::m_ShowAnyway = false;
 template <typename T>
 float MapObject<T>::m_Scale;
+template <typename T>
+float MapObject<T>::m_SizeFactor = 1.0f;

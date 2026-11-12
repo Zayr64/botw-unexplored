@@ -58,10 +58,13 @@ namespace
         if (!ReadLine(input, value) || !ParseFloat(value, settings.cameraY)) return false;
         if (!ReadLine(input, value) || !ParseFloat(value, settings.zoom)) return false;
         if (!ReadLine(input, value) || !ParseBool(value, settings.legendOpen)) return false;
-        for (size_t i = 0; i < SettingsIO::CategoryCount; ++i)
+        for (size_t i = 0; i < SettingsIO::BaseCategoryCount; ++i)
             if (!ReadLine(input, value) || !ParseBool(value, settings.visible[i])) return false;
         if (!ReadLine(input, value) || !ParseInt(value, settings.showMode) || settings.showMode < 0 || settings.showMode > 2) return false;
         if (!ReadLine(input, value) || !ParseInt(value, settings.language) || settings.language < -1 || settings.language > 2) return false;
+        // The categories added later: the file of a release without them ends here, and they stay as they are.
+        for (size_t i = SettingsIO::BaseCategoryCount; i < SettingsIO::CategoryCount && ReadLine(input, value); ++i)
+            if (!ParseBool(value, settings.visible[i])) return false;
         return true;
     }
 
@@ -72,7 +75,7 @@ namespace
         if (!ReadLine(input, value) || !ParseFloat(value, settings.cameraY)) return false;
         if (!ReadLine(input, value) || !ParseFloat(value, settings.zoom)) return false;
         if (!ReadLine(input, value) || !ParseBool(value, settings.legendOpen)) return false;
-        for (size_t i = 0; i < SettingsIO::CategoryCount && ReadLine(input, value); ++i)
+        for (size_t i = 0; i < SettingsIO::BaseCategoryCount && ReadLine(input, value); ++i)
         {
             if (!ParseBool(value, settings.visible[i]))
                 return false;
@@ -106,8 +109,10 @@ bool SettingsIO::Save(std::ostream& output, const Settings& settings)
     output << Header << '\n' << CurrentVersion << '\n'
            << settings.cameraX << '\n' << settings.cameraY << '\n' << settings.zoom << '\n'
            << static_cast<int>(settings.legendOpen) << '\n';
-    for (size_t i = 0; i < CategoryCount; ++i)
+    for (size_t i = 0; i < BaseCategoryCount; ++i)
         output << static_cast<int>(settings.visible[i]) << '\n';
     output << settings.showMode << '\n' << settings.language << '\n';
+    for (size_t i = BaseCategoryCount; i < CategoryCount; ++i)
+        output << static_cast<int>(settings.visible[i]) << '\n';
     return static_cast<bool>(output);
 }

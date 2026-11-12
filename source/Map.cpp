@@ -153,6 +153,7 @@ namespace
         bool pending; // a discovered shrine with something left still counts as missing
         bool visible; // its category is on in the legend
         int korokIndex;
+        const Data::Chest* chest; // for the two chest types
     };
 
     void CollectObjects(std::vector<MapEntry>& entries)
@@ -160,14 +161,15 @@ namespace
         static const std::string noName;
         entries.clear();
         entries.reserve(Data::KoroksCount + Data::ShrineCount + Data::DLCShrineCount + Data::HinoxesCount +
-                        Data::TalusesCount + Data::MoldugasCount + Data::LocationsCount);
+                        Data::TalusesCount + Data::MoldugasCount + Data::LocationsCount + Data::ChestsCount +
+                        Data::SpecialChestsCount);
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
-                             bool* found, bool pending = false, int korokIndex = -1)
+                             bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr)
         {
             bool visible = Map::m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex];
             if (type == Data::ObjectType::DLCShrine)
                 visible = visible && SavefileIO::HasDLC;
-            entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex});
+            entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex, chest});
         };
 
         for (int i = 0; i < Data::KoroksCount; ++i)
@@ -187,6 +189,15 @@ namespace
         for (int i = 0; i < Data::LocationsCount; ++i)
             add(Data::ObjectType::Location, Data::Locations[i].hash, Map::m_Locations[i].m_Position, Data::Locations[i].displayName,
                 &Map::m_Locations[i].m_Found);
+        // Only the chests that exist in this game (mode and DLC)
+        for (int i = 0; i < Data::ChestsCount; ++i)
+            if (!Map::m_Chests[i].m_Excluded)
+                add(Data::ObjectType::Chest, Data::Chests[i].hash, Map::m_Chests[i].m_Position, noName,
+                    &Map::m_Chests[i].m_Found, false, -1, &Data::Chests[i]);
+        for (int i = 0; i < Data::SpecialChestsCount; ++i)
+            if (!Map::m_SpecialChests[i].m_Excluded)
+                add(Data::ObjectType::SpecialChest, Data::SpecialChests[i].hash, Map::m_SpecialChests[i].m_Position, noName,
+                    &Map::m_SpecialChests[i].m_Found, false, -1, &Data::SpecialChests[i]);
     }
 
     // The object A would open at this map position: the nearest one shown, within 60 pixels. -1 for none.
@@ -221,7 +232,7 @@ namespace
             Map::m_KorokDialog->SetOpen(true);
             return;
         }
-        Map::m_ObjectInfo->SetObject(entry.type, entry.hash, entry.position, *entry.name, entry.found);
+        Map::m_ObjectInfo->SetObject(entry.type, entry.hash, entry.position, *entry.name, entry.found, entry.chest);
         Map::m_ObjectInfo->SetOpen(true);
     }
 
@@ -250,6 +261,8 @@ namespace
         for (int i = 0; i < Data::TalusesCount; ++i) found += Map::m_Taluses[i].m_Found;
         for (int i = 0; i < Data::MoldugasCount; ++i) found += Map::m_Moldugas[i].m_Found;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
+        for (int i = 0; i < Data::ChestsCount; ++i) found += Map::m_Chests[i].m_Found;
+        for (int i = 0; i < Data::SpecialChestsCount; ++i) found += Map::m_SpecialChests[i].m_Found;
         return found;
     }
 
@@ -298,6 +311,8 @@ namespace
                 add("A", Text::HintPhoto);
             const bool found = korokCard ? Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Found
                                          : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
+            if (objectCard && Map::m_ObjectInfo->CanReveal())
+                add("A", Map::m_ObjectInfo->RevealLevel() == 0 ? Text::HintReveal : Text::HintShowItem);
             if (CanMarkByHand() && !found)
                 add("Y", Text::HintMarkFound);
             add("ZL ZR", Text::HintPreviousNext);
@@ -429,6 +444,14 @@ bool Map::Init()
     m_Moldugas = new MapObject<Data::Molduga>[Data::MoldugasCount];
     MapObject<Data::Molduga>::Init("romfs:/molduga.png", Data::MoldugasCount);
 
+    // Create chests. Their images are four times the size they are drawn at.
+    m_Chests = new MapObject<Data::ChestIcon>[Data::ChestsCount];
+    MapObject<Data::ChestIcon>::Init("romfs:/chest.png", Data::ChestsCount);
+    MapObject<Data::ChestIcon>::m_SizeFactor = 0.25f;
+    m_SpecialChests = new MapObject<Data::SpecialChestIcon>[Data::SpecialChestsCount];
+    MapObject<Data::SpecialChestIcon>::Init("romfs:/chestspecial.png", Data::SpecialChestsCount);
+    MapObject<Data::SpecialChestIcon>::m_SizeFactor = 0.25f;
+
     // Create locations
     m_Locations = new MapLocation[Data::LocationsCount];
 
@@ -534,6 +557,22 @@ void Map::UpdateMapObjects(bool recenter)
             &Data::Locations[i]) != SavefileIO::visitedLocations.end();
         m_Locations[i].m_Found = ResolveFound(Data::ObjectType::Location, Data::Locations[i].hash, foundInSave, manualProgressChanged);
     }
+
+    // Chests: those of Master Mode only exist there; those of the Expansion Pass need it (an opened one,
+    // the Champions' Ballad or a Master Mode save show that the game has it).
+    const bool dlcChests = SavefileIO::CurrentState.hasDlcChests || SavefileIO::MasterModeFileExists;
+    const auto placeChest = [&](auto& object, const Data::Chest& chest, Data::ObjectType type)
+    {
+        object.m_Position = glm::vec2(chest.x, -chest.y) * MapScale;
+        object.m_Excluded = ((chest.flags & Data::ChestMasterModeOnly) && !m_LoadMasterMode) ||
+                            ((chest.flags & Data::ChestDlc) && !dlcChests);
+        object.m_Found = !object.m_Excluded &&
+                         ResolveFound(type, chest.hash, SavefileIO::IsChestOpened(chest.hash), manualProgressChanged);
+    };
+    for (int i = 0; i < Data::ChestsCount; i++)
+        placeChest(m_Chests[i], Data::Chests[i], Data::ObjectType::Chest);
+    for (int i = 0; i < Data::SpecialChestsCount; i++)
+        placeChest(m_SpecialChests[i], Data::SpecialChests[i], Data::ObjectType::SpecialChest);
 
     if (manualProgressChanged)
         ManualProgress::Flush();
@@ -652,9 +691,11 @@ void Map::Update()
             m_Legend->m_IsOpen = false;
     }
 
-    // A on a Korok card shows its photo full screen
+    // A on a Korok card shows its photo full screen; on a chest card it tells a bit more of what is inside
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_A) && m_KorokDialog->m_IsOpen && m_KorokDialog->HasImage())
         m_ImageViewer->Open(m_KorokDialog->m_Image);
+    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_A) && m_ObjectInfo->m_IsOpen && m_ObjectInfo->CanReveal())
+        m_ObjectInfo->RevealMore();
 
     // Analog stick camera movement
     // Read the sticks' position
@@ -822,6 +863,13 @@ void Map::Update()
             m_Taluses[i].Update(i == 0);
         for (int i = 0; i < Data::MoldugasCount; i++)
             m_Moldugas[i].Update(i == 0);
+        // The chests are many and start switched off: their meshes are only built while they show.
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Chests])
+            for (int i = 0; i < Data::ChestsCount; i++)
+                m_Chests[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
+            for (int i = 0; i < Data::SpecialChestsCount; i++)
+                m_SpecialChests[i].Update(i == 0);
         for (int i = 0; i < Data::LocationsCount; i++)
             m_Locations[i].Update();
 
@@ -842,6 +890,10 @@ void Map::Render()
 
     if (SavefileIO::LoadedSavefile)
     {
+        // The many ordinary chests go under everything else
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Chests])
+            MapObject<Data::ChestIcon>::Render();
+
         if (m_Legend->m_Show[IconButton::ButtonTypes::Koroks])
         {
             // Render korok paths
@@ -889,6 +941,8 @@ void Map::Render()
             MapObject<Data::Talus>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Moldugas])
            MapObject<Data::Molduga>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
+            MapObject<Data::SpecialChestIcon>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
         {
             // Names of the locations, in map coordinates: the dark edge first, the text over it.
@@ -1001,6 +1055,10 @@ void Map::Destroy()
     m_Taluses = nullptr;
     delete[] m_Moldugas;
     m_Moldugas = nullptr;
+    delete[] m_Chests;
+    m_Chests = nullptr;
+    delete[] m_SpecialChests;
+    m_SpecialChests = nullptr;
     delete[] m_Locations;
     m_Locations = nullptr;
 
@@ -1249,6 +1307,8 @@ MapObject<Data::DLCShrine>* Map::m_DLCShrines;
 MapObject<Data::Hinox>* Map::m_Hinoxes;
 MapObject<Data::Talus>* Map::m_Taluses;
 MapObject<Data::Molduga>* Map::m_Moldugas;
+MapObject<Data::ChestIcon>* Map::m_Chests;
+MapObject<Data::SpecialChestIcon>* Map::m_SpecialChests;
 MapLocation* Map::m_Locations;
 
 Legend* Map::m_Legend;

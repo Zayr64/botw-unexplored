@@ -13,6 +13,7 @@
 
 #include <switch.h>
 
+#include "Chests.h"
 #include "Data.h"
 
 template <typename T> class MapObject;
@@ -104,6 +105,8 @@ namespace Map
     extern MapObject<Data::Hinox>* m_Hinoxes;
     extern MapObject<Data::Talus>* m_Taluses;
     extern MapObject<Data::Molduga>* m_Moldugas;
+    extern MapObject<Data::ChestIcon>* m_Chests;               // one per entry of Data::Chests
+    extern MapObject<Data::SpecialChestIcon>* m_SpecialChests; // one per entry of Data::SpecialChests
 
     extern MapLocation* m_Locations;
 

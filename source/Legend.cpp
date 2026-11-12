@@ -13,9 +13,34 @@
 namespace
 {
     constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
-    constexpr float RowHeight = 62.0f;
-    constexpr float RowGap = 10.0f;
+    constexpr float RowHeight = 56.0f; // eight rows end just above the bottom bar
+    constexpr float RowGap = 8.0f;
     constexpr float RowRadius = 8.0f;
+
+    Localization::Text LabelOf(IconButton::ButtonTypes type)
+    {
+        switch (type)
+        {
+        case IconButton::Chests: return Localization::Text::Chests;
+        case IconButton::SpecialChests: return Localization::Text::SpecialChests;
+        default:
+            // Koroks to Locations, in the order of the categories
+            return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
+        }
+    }
+
+    // Opened and existing chests of one of the two kinds (those of the other mode or of the DLC do not count).
+    template <typename T>
+    void CountChests(const MapObject<T>* chests, int count, int& found, int& total)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            if (chests[i].m_Excluded)
+                continue;
+            ++total;
+            found += chests[i].m_Found;
+        }
+    }
 
     int MapEntriesFound()
     {
@@ -194,13 +219,15 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case Taluses: iconPath = "romfs:/talus.png"; break;
     case Moldugas: iconPath = "romfs:/molduga.png"; break;
     case Locations: iconPath = "romfs:/village.png"; break;
+    case Chests: iconPath = "romfs:/chest.png"; break;
+    case SpecialChests: iconPath = "romfs:/chestspecial.png"; break;
     default: break;
     }
 
     m_Icon.Create(iconPath);
-    // Every icon about 34 pixels tall, whatever the size of its image.
+    // Every icon about 30 pixels tall, whatever the size of its image.
     if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
-        m_Icon.m_Scale = (type == Locations ? 28.0f : 34.0f) / static_cast<float>(m_Icon.m_Texture->m_Height);
+        m_Icon.m_Scale = (type == Locations ? 25.0f : 30.0f) / static_cast<float>(m_Icon.m_Texture->m_Height);
     m_Icon.m_Position = glm::vec2(position.x + 34.0f, position.y - height / 2.0f);
     m_Icon.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
 }
@@ -240,6 +267,12 @@ void IconButton::Count(int& found, int& total) const
         total = Data::LocationsCount;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
         break;
+    case Chests:
+        CountChests(Map::m_Chests, Data::ChestsCount, found, total);
+        break;
+    case SpecialChests:
+        CountChests(Map::m_SpecialChests, Data::SpecialChestsCount, found, total);
+        break;
     default:
         break;
     }
@@ -264,7 +297,7 @@ void IconButton::DrawShapes()
 
     int found = 0, total = 0;
     Count(found, total);
-    Ui::ProgressBar(left + 64.0f, bottom + 11.0f, m_Width - 64.0f - 14.0f, 4.0f,
+    Ui::ProgressBar(left + 64.0f, bottom + 9.0f, m_Width - 64.0f - 14.0f, 4.0f,
                     total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
                     m_IsToggled ? Ui::Colors::Accent : Ui::Colors::TextDim);
 }
@@ -282,8 +315,8 @@ void IconButton::DrawText()
     Count(found, total);
 
     const glm::vec3& color = m_IsToggled ? Ui::Colors::Text : Ui::Colors::TextDim;
-    const float baseline = m_Position.y - 33.0f;
-    const std::string& label = Localization::Get(static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(m_Type)));
+    const float baseline = m_Position.y - 30.0f;
+    const std::string& label = Localization::Get(LabelOf(m_Type));
     Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
     Ui::Text(std::to_string(found) + "/" + std::to_string(total), glm::vec2(m_Position.x + m_Width - 14.0f, baseline),
              0.40f, color, ALIGN_RIGHT);

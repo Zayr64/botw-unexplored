@@ -667,6 +667,11 @@ const std::unordered_multimap<uint32_t, TrackedFlag>& GetTrackedFlags()
             result.insert({Data::Taluses[i].hash, {Data::ObjectType::Talus, &Data::Taluses[i]}});
         for (int i = 0; i < Data::MoldugasCount; ++i)
             result.insert({Data::Moldugas[i].hash, {Data::ObjectType::Molduga, &Data::Moldugas[i]}});
+        for (int i = 0; i < Data::ChestsCount; ++i)
+            result.insert({Data::Chests[i].hash, {Data::ObjectType::Chest, const_cast<Data::Chest*>(&Data::Chests[i])}});
+        for (int i = 0; i < Data::SpecialChestsCount; ++i)
+            result.insert({Data::SpecialChests[i].hash,
+                           {Data::ObjectType::SpecialChest, const_cast<Data::Chest*>(&Data::SpecialChests[i])}});
         return result;
     }();
     return table;
@@ -715,13 +720,25 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
             case Data::ObjectType::Molduga:
                 (set ? parsedState.defeatedMoldugas : parsedState.undefeatedMoldugas).push_back(static_cast<Data::Molduga*>(object));
                 break;
+            case Data::ObjectType::Chest:
+            case Data::ObjectType::SpecialChest:
+                if (set)
+                {
+                    parsedState.openedChests.push_back(hashValue);
+                    // An opened chest of the Expansion Pass: this game has it.
+                    if (static_cast<const Data::Chest*>(object)->flags & Data::ChestDlc)
+                        parsedState.hasDlcChests = true;
+                }
+                break;
             default:
                 break;
             }
         }
     }
 
+    std::sort(parsedState.openedChests.begin(), parsedState.openedChests.end());
     parsedState.hasDLC = bufferState.hasDLC;
+    parsedState.hasDlcChests = parsedState.hasDlcChests || bufferState.hasDLC;
     parsedState.hasPlayerPosition = bufferState.hasPlayerPosition;
     parsedState.playerX = bufferState.playerPosition[0];
     parsedState.playerZ = bufferState.playerPosition[2];
@@ -959,6 +976,11 @@ bool SavefileIO::IsShrineCleared(uint32_t locationHash)
 {
     const std::vector<uint32_t>& cleared = CurrentState.clearedShrines;
     return std::find(cleared.begin(), cleared.end(), locationHash) != cleared.end();
+}
+
+bool SavefileIO::IsChestOpened(uint32_t flagHash)
+{
+    return std::binary_search(CurrentState.openedChests.begin(), CurrentState.openedChests.end(), flagHash);
 }
 
 bool SavefileIO::HasAllShrineChests(uint32_t locationHash)

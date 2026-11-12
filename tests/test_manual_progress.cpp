@@ -42,4 +42,28 @@ int main()
     file.seekg(0);
     assert(ManualProgress::Load(file) == ManualProgress::LoadResult::Current);
     assert(ManualProgress::CanPersist());
+
+    // Without a mark on a chest the file is version 1, which every release reads. With one it is version 2,
+    // which the releases from before the chests leave alone instead of calling it invalid.
+    ManualProgress::Clear();
+    ManualProgress::MarkFound(normal, Data::ObjectType::Molduga, 100);
+    std::stringstream base;
+    assert(ManualProgress::Save(base));
+    assert(base.str() == "BOTW_UNEXPLORED_MANUAL_PROGRESS\n1\n1 2 0 6 100\n");
+    assert(ManualProgress::MarkFound(normal, Data::ObjectType::SpecialChest, 500));
+    std::stringstream withChest;
+    assert(ManualProgress::Save(withChest));
+    assert(withChest.str() == "BOTW_UNEXPLORED_MANUAL_PROGRESS\n2\n1 2 0 6 100\n1 2 0 8 500\n");
+    ManualProgress::Clear();
+    assert(ManualProgress::Load(withChest) == ManualProgress::LoadResult::Current);
+    assert(ManualProgress::Entries().size() == 2);
+    assert(ManualProgress::IsMarkedFound(normal, Data::ObjectType::SpecialChest, 500));
+    assert(!ManualProgress::IsMarkedFound(normal, Data::ObjectType::Chest, 500));
+    // The save confirms the chest: the mark goes, and the file is version 1 again.
+    assert(ManualProgress::ConfirmFromSave(normal, Data::ObjectType::SpecialChest, 500));
+    std::stringstream again;
+    assert(ManualProgress::Save(again));
+    assert(again.str() == base.str());
+    std::stringstream zero("BOTW_UNEXPLORED_MANUAL_PROGRESS\n0\n");
+    assert(ManualProgress::Load(zero) == ManualProgress::LoadResult::Invalid);
 }

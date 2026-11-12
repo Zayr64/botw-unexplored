@@ -10,7 +10,12 @@
 namespace
 {
     const char* Header = "BOTW_UNEXPLORED_MANUAL_PROGRESS";
-    const int Version = 1;
+    // Version 1 holds marks on the object types up to Molduga. A release from before the chests calls a file
+    // with a mark on a chest invalid, so such a file is written as version 2, which it leaves untouched;
+    // without those marks the file stays version 1 and both read it.
+    const int Version = 2;
+    const int BaseVersion = 1;
+    const Data::ObjectType FirstLaterType = Data::ObjectType::Chest;
     const char* FilePath = "sdmc:/switch/botw-unexplored/manual_progress.dat";
     std::vector<ManualProgress::Entry> entries;
     bool dirty = false;
@@ -71,7 +76,7 @@ ManualProgress::LoadResult ManualProgress::Load(std::istream& input)
         preserveFutureFile = true;
         return LoadResult::FutureVersion;
     }
-    if (version != Version)
+    if (version < BaseVersion)
         return LoadResult::Invalid;
 
     std::vector<Entry> parsedEntries;
@@ -99,7 +104,11 @@ ManualProgress::LoadResult ManualProgress::Load(std::istream& input)
 
 bool ManualProgress::Save(std::ostream& output)
 {
-    output << Header << '\n' << Version << '\n';
+    const bool laterTypes = std::any_of(entries.begin(), entries.end(), [](const Entry& entry)
+    {
+        return entry.type >= FirstLaterType;
+    });
+    output << Header << '\n' << (laterTypes ? Version : BaseVersion) << '\n';
     for (const Entry& entry : entries)
         output << entry.context.profileId1 << ' ' << entry.context.profileId2 << ' '
                << static_cast<int>(entry.context.masterMode) << ' ' << static_cast<int>(entry.type) << ' '

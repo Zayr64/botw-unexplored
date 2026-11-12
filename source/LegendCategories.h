@@ -12,6 +12,8 @@ namespace LegendCategories
         Taluses,
         Moldugas,
         Locations,
+        Chests,
+        SpecialChests,
         Count
     };
 
