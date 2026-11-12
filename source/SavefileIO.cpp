@@ -763,7 +763,7 @@ public:
     bool hasSavePosition = false;
     float savePosition[3] = {};
 
-    void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value) override
+    void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value, uint64_t) override
     {
         switch (kind)
         {

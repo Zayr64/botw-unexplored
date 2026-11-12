@@ -64,8 +64,9 @@ namespace
             pages.insert(place, page);
     }
 
-    // Visits the flag objects that start in the first `length` bytes of the window (`available` bytes were read).
-    void VisitWindow(const uint8_t* window, size_t length, size_t available, const uint64_t vtables[KindCount],
+    // Visits the flag objects that start in the first `length` bytes of the window, which holds the
+    // `available` bytes read from `address`.
+    void VisitWindow(uint64_t address, const uint8_t* window, size_t length, size_t available, const uint64_t vtables[KindCount],
                      const LiveGameData::Layout& layout, LiveGameData::Visitor& visitor, LiveGameData::Report& report)
     {
         size_t offset = 0;
@@ -84,7 +85,8 @@ namespace
             const LiveGameData::Layout::Kind& info = layout.kinds[kind];
             uint32_t hash;
             std::memcpy(&hash, window + offset + info.hashOffset, sizeof(hash));
-            visitor.OnFlag(static_cast<LiveGameData::FlagKind>(kind), hash, window + offset + info.valueOffset);
+            visitor.OnFlag(static_cast<LiveGameData::FlagKind>(kind), hash, window + offset + info.valueOffset,
+                           address + offset + info.valueOffset);
             ++report.objects[kind];
             offset += info.size;
         }
@@ -173,18 +175,18 @@ bool LiveGameData::Scan(Memory& memory, uint64_t mainBase, const Layout& layout,
         const uint64_t address = page << PageBits;
         // The tail catches an object that starts at the end of this page; the next page may not be mapped.
         if (memory.Read(address, s_Window, PageSize + PageTail))
-            VisitWindow(s_Window, PageSize, PageSize + PageTail, vtables, layout, visitor, report);
+            VisitWindow(address, s_Window, PageSize, PageSize + PageTail, vtables, layout, visitor, report);
         else if (memory.Read(address, s_Window, PageSize))
-            VisitWindow(s_Window, PageSize, PageSize, vtables, layout, visitor, report);
+            VisitWindow(address, s_Window, PageSize, PageSize, vtables, layout, visitor, report);
         else
         {
             // Part of the 64 KB is not mapped: go through it 4 KB at a time.
             for (size_t part = 0; part < PageSize; part += SmallPage)
             {
                 if (memory.Read(address + part, s_Window, SmallPage + PageTail))
-                    VisitWindow(s_Window, SmallPage, SmallPage + PageTail, vtables, layout, visitor, report);
+                    VisitWindow(address + part, s_Window, SmallPage, SmallPage + PageTail, vtables, layout, visitor, report);
                 else if (memory.Read(address + part, s_Window, SmallPage))
-                    VisitWindow(s_Window, SmallPage, SmallPage, vtables, layout, visitor, report);
+                    VisitWindow(address + part, s_Window, SmallPage, SmallPage, vtables, layout, visitor, report);
                 else
                     ++unreadable;
             }
