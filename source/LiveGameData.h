@@ -35,7 +35,8 @@ namespace LiveGameData
     {
     public:
         virtual ~Visitor() {}
-        virtual void OnFlag(FlagKind kind, uint32_t hash, const uint8_t* value) = 0;
+        // `address` is where the value is in the game's memory, to read that one flag again later.
+        virtual void OnFlag(FlagKind kind, uint32_t hash, const uint8_t* value, uint64_t address) = 0;
     };
 
     struct Layout

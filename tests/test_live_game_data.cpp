@@ -14,11 +14,21 @@ namespace
     {
         // kind, hash -> every value seen for it
         std::multimap<std::pair<int, uint32_t>, std::string> seen;
+        FakeGameMemory* memory = nullptr;
+        bool addressesMatch = true;
 
-        void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value) override
+        void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value, uint64_t address) override
         {
             const size_t size = kind == LiveGameData::FlagKind::Bool ? 1 : kind == LiveGameData::FlagKind::S32 ? 4 :
                                 kind == LiveGameData::FlagKind::String32 ? 32 : 12;
+            // The address given is where that same value is in the game's memory.
+            uint8_t again[32] = {};
+            if (memory)
+            {
+                if (!memory->Read(address, again, size) || std::memcmp(again, value, size) != 0)
+                    addressesMatch = false;
+                --memory->readCount; // this check is not one of the reads being counted
+            }
             seen.insert(std::make_pair(std::make_pair(static_cast<int>(kind), hash),
                                        std::string(reinterpret_cast<const char*>(value), size)));
         }
@@ -95,11 +105,13 @@ int main()
         FakeGame game;
         game.Build(layout, flags, perBuffer);
         Collector collector;
+        collector.memory = &game.memory;
         LiveGameData::Report report;
         const bool ok = LiveGameData::Scan(game.memory, game.mainBase, layout, collector, report);
         if (!ok)
             std::printf("%s\n%s\n", report.error.c_str(), report.details.c_str());
         assert(ok && report.ok && report.error.empty());
+        assert(collector.addressesMatch);
         assert(report.tableSize[0] == 5001 && report.objects[0] == 5001);
         assert(report.tableSize[1] == 300 && report.objects[1] == 300);
         assert(report.tableSize[2] == 3 && report.tableSize[3] == 2);
