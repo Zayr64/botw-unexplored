@@ -1,21 +1,14 @@
 #include "ObjectInfo.h"
 
-#include <glm/geometric.hpp>
-
 #include "Localization.h"
 #include "Legend.h"
 #include "Map.h"
 #include "ObjectModel.h"
-#include "ManualProgress.h"
 #include "SavefileIO.h"
+#include "Ui.h"
 
 ObjectInfo::ObjectInfo()
 {
-    m_Background.Create(glm::vec2(Map::m_ScreenLeft, Map::m_ScreenBottom),
-                        glm::vec2(Map::m_ScreenLeft + 390.0f, Map::m_ScreenBottom),
-                        glm::vec2(Map::m_ScreenLeft + 390.0f, Map::m_ScreenTop),
-                        glm::vec2(Map::m_ScreenLeft, Map::m_ScreenTop));
-    m_Background.m_Color = glm::vec4(0.0f, 0.0f, 0.0f, 0.75f);
 }
 
 void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const glm::vec2& mapPosition,
@@ -34,7 +27,6 @@ void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const
     {
         m_Icon = new TexturedQuad();
         m_Icon->Create(metadata.iconPath);
-        m_Icon->m_Scale = type == Data::ObjectType::Location ? 0.035f : 0.8f;
     }
 }
 
@@ -52,70 +44,55 @@ void ObjectInfo::Render()
     if (!m_IsOpen)
         return;
 
-    m_Background.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-    m_Background.m_ViewMatrix = nullptr;
-    m_Background.Render();
-
-    if (m_Icon && m_Icon->m_Texture)
-    {
-        m_Icon->m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-        m_Icon->m_ViewMatrix = nullptr;
-        m_Icon->m_Position = glm::vec2(Map::m_ScreenLeft + 340.0f, Map::m_ScreenTop - 100.0f);
-        m_Icon->Render();
-    }
-
-    const float left = Map::m_ScreenLeft + 25.0f;
-    float y = Map::m_ScreenTop - 60.0f;
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ObjectInfo), glm::vec2(left, y), 0.45f, glm::vec3(1.0f));
-    y -= 55.0f;
-    Map::m_Font.AddTextToBatch(Localization::GetObjectTypeName(m_Type), glm::vec2(left, y), 0.68f, glm::vec3(1.0f), ALIGN_LEFT, 285.0f);
-    y -= 62.0f;
-    if (!m_Name.empty())
-    {
-        const glm::vec2 size = Map::m_Font.AddTextToBatch(m_Name, glm::vec2(left, y), 0.42f, glm::vec3(1.0f), ALIGN_LEFT, 340.0f);
-        y -= size.y + 25.0f;
-    }
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Position), glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
-    y -= 35.0f;
-    const int gameX = static_cast<int>(m_MapPosition.x / 0.25f);
-    const int gameY = static_cast<int>(-m_MapPosition.y / 0.25f);
-    Map::m_Font.AddTextToBatch(std::to_string(gameX) + ", " + std::to_string(gameY), glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
-    y -= 55.0f;
-    Map::m_Font.AddTextToBatch(m_Found && *m_Found ? Localization::Get(Localization::Text::Found) : Localization::Get(Localization::Text::NotFound),
-                              glm::vec2(left, y), 0.46f, glm::vec3(1.0f));
-
+    using Localization::Text;
+    const bool found = m_Found && *m_Found;
     const bool isShrine = m_Type == Data::ObjectType::Shrine || m_Type == Data::ObjectType::DLCShrine;
-    if (isShrine && m_Found && *m_Found)
-    {
-        const auto yesNo = [](bool value) -> const std::string& {
-            return Localization::Get(value ? Localization::Text::Yes : Localization::Text::No);
-        };
-        y -= 45.0f;
-        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ShrineCompleted) + ": " +
-                                   yesNo(SavefileIO::IsShrineCleared(m_CompletionHash)),
-                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
-        y -= 38.0f;
-        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ShrineAllChests) + ": " +
-                                   yesNo(SavefileIO::HasAllShrineChests(m_CompletionHash)),
-                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
-    }
 
-    if (SavefileIO::LoadedSavefile && SavefileIO::CurrentState.hasPlayerPosition)
+    Ui::PanelBackground();
+    float top = Ui::CardHeader(m_Icon, m_Type == Data::ObjectType::Location ? 34.0f : 40.0f,
+                               Localization::GetObjectTypeName(m_Type), Map::NearestRankText());
+
+    if (!m_Name.empty())
+        top = Ui::Paragraph(top, m_Name, 0.50f, Ui::Colors::Gold) - 6.0f;
+
+    // What was done and what is left, one line each
+    if (found && Map::IsManuallyMarked(m_Type, m_CompletionHash))
+        top = Ui::StatusRow(top, Localization::Get(Text::MarkedByYou), Ui::Colors::Good);
+    else if (isShrine)
     {
-        const glm::vec2 player(SavefileIO::CurrentState.playerX * 0.25f, -SavefileIO::CurrentState.playerZ * 0.25f);
-        const int meters = static_cast<int>(glm::distance(m_MapPosition, player) / 0.25f + 0.5f);
-        y -= 45.0f;
-        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::DistanceFromLink) + ": " + std::to_string(meters) + " m",
-                                   glm::vec2(left, y), 0.42f, glm::vec3(1.0f));
+        top = found ? Ui::StatusRow(top, Localization::Get(Text::Discovered), Ui::Colors::Good)
+                    : Ui::StatusRow(top, Localization::Get(Text::NotDiscovered), Ui::Colors::Warn, false);
+        if (found)
+        {
+            top = SavefileIO::IsShrineCleared(m_CompletionHash)
+                ? Ui::StatusRow(top, Localization::Get(Text::ShrineCompleted), Ui::Colors::Good)
+                : Ui::StatusRow(top, Localization::Get(Text::NotCompleted), Ui::Colors::Warn, false);
+            top = SavefileIO::HasAllShrineChests(m_CompletionHash)
+                ? Ui::StatusRow(top, Localization::Get(Text::AllChestsOpened), Ui::Colors::Good)
+                : Ui::StatusRow(top, Localization::Get(Text::ChestsLeft), Ui::Colors::Warn, false);
+        }
     }
-    if (SavefileIO::GameIsRunning && m_Found && !*m_Found && ManualProgress::CanPersist())
-        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MarkFound), glm::vec2(left, Map::m_ScreenBottom + 45.0f), 0.35f, glm::vec3(1.0f));
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(Map::m_ScreenLeft + 370.0f, Map::m_ScreenBottom + 45.0f), 0.35f, glm::vec3(1.0f), ALIGN_RIGHT);
+    else if (m_Type == Data::ObjectType::Location)
+        top = found ? Ui::StatusRow(top, Localization::Get(Text::Visited), Ui::Colors::Good)
+                    : Ui::StatusRow(top, Localization::Get(Text::NotVisited), Ui::Colors::Warn, false);
+    else
+        top = found ? Ui::StatusRow(top, Localization::Get(Text::Defeated), Ui::Colors::Good)
+                    : Ui::StatusRow(top, Localization::Get(Text::NotDefeated), Ui::Colors::Warn, false);
+
+    const std::string distance = Ui::DistanceText(m_MapPosition);
+    if (!distance.empty())
+        top = Ui::Paragraph(top - 2.0f, distance, 0.40f, Ui::Colors::TextDim);
+
+    Ui::Coordinates(m_MapPosition);
+
+    Ui::FlushShapes();
+    if (m_Icon && m_Icon->m_Texture)
+        m_Icon->Render();
 }
 
 bool ObjectInfo::IsPositionOn(const glm::vec2& position) const
 {
-    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + 390.0f &&
+    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + Ui::PanelWidth &&
            position.y >= Map::m_ScreenBottom && position.y <= Map::m_ScreenTop;
 }
 

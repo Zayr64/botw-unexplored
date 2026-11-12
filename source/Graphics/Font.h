@@ -71,5 +71,8 @@ public:
 
     glm::vec2 RenderText(const std::string& text, glm::vec2 position, float scale, glm::vec3 color, int align = ALIGN_LEFT);
 
+    // Width of one line of text.
+    float MeasureText(const std::string& text, float scale);
+
     ~Font();
 };

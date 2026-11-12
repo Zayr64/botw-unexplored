@@ -1,21 +1,23 @@
 # BotW Unexplored
 
-BotW Unexplored is a Nintendo Switch homebrew map companion for *The Legend of Zelda: Breath of the Wild*. It reads the selected local save (or a previously created backup while the game is running) and shows collectible progress directly on the console.
+BotW Unexplored is a Nintendo Switch homebrew map companion for *The Legend of Zelda: Breath of the Wild*. It reads the selected local save and shows collectible progress directly on the console. Opened from the Album while BotW 1.6.0 is running, it reads the progress (and where Link is) straight from the game's memory, read only, through Atmosphere's cheat service; a save backup made earlier is the fallback.
 
 This repository is the maintained fork of [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored). The current fork release is **v2.2.11**.
 
 ## Features
 
 - Koroks, shrines, DLC shrines, locations, Hinoxes, Taluses, and Moldugas.
+- **Live progress while playing**: with BotW 1.6.0 running behind the app (opened from the Album), the game's own flags are read from its memory every time the app opens, and again with `-`. Nothing is written to the game. The chip at the top right tells where the progress comes from: `Live from the game`, `Save backup` (the memory could not be read; the reason shows for a few seconds and goes to `log.txt`) or `Save`.
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
-- An object information card with type, name where available, game coordinates, icon, and completion state.
-- Existing Korok hints, guide images, and route rendering remain available through touch selection.
-- The map shows only what is still missing.
-- Per-profile and per-mode manual progress for every supported object type. It never modifies the BotW save.
-- Controller cursor: D-Pad moves the cursor, `A` opens the nearest visible object, and `ZR` / `ZL` step forward / back through the 5 nearest missing visible objects, opening the Korok hint or the card of each one.
-- Map completion in the legend, computed like the game (Korok seeds, discovered shrines and locations over 1207).
-- "You are here": a marker at the position of the last save; the map opens there, `L` glides back to it, and `ZR` / `ZL` measure distances from it.
-- Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays in the `Missing` view.
+- A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
+- Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
+- The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category.
+- The map shows only what is still missing. Icons shrink on the overview, where they pile up; location names have a dark edge.
+- While the legend or a card is open the map slides to the right, so that the selected object stays in view, inside a ring.
+- Per-profile and per-mode manual progress (`Y`) for every supported object type, only while a save backup is shown. It never modifies the BotW save.
+- `ZR` / `ZL` step forward / back through the 5 nearest missing visible objects, opening the Korok hint or the card of each one.
+- "You are here": a marker where Link is (right now when read from the game, otherwise the last save); the map opens there and `L` glides back to it. Inside a shrine the marker is on the shrine.
+- Shrine cards show whether the shrine is completed and all of its chests are open; a discovered shrine with something left stays on the map.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
 - Optional high-resolution map (4x) when zoomed in, read from the SD card (see below).
 - Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
@@ -26,26 +28,29 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 2. Copy it to `sdmc:/switch/botw-unexplored/botw-unexplored.nro`.
 3. Start it from the Homebrew Menu and select the Switch profile that owns the BotW save.
 
-For backup-based use while BotW is running, start BotW Unexplored once with the game closed first. This creates a backup of the selected save.
+Start BotW Unexplored once with the game closed: it keeps a backup of the selected save, shown when the memory of the running game cannot be read (another game version, for instance).
 
 ## Controls
 
+The bar at the bottom of the screen always shows the buttons that do something.
+
 | Context | Control | Action |
 | --- | --- | --- |
-| Map | Left stick or touch drag | Move the map |
+| Map | Left stick, D-Pad or touch drag | Move the map under the aim |
 | Map | Right-stick Y | Zoom |
-| Map | `X` | Open or close the legend / close an information panel |
-| Map | `Y` | Switch Normal Mode / Master Mode when available |
-| Map | `+` | Exit |
-| Map | D-Pad | Move the controller cursor |
-| Map | `A` | Open the full Korok guide for a Korok, or ObjectInfo for another object |
-| Map | `ZR` / `ZL` | Next / previous of the 5 nearest missing visible objects (from Link when the save has a position), with its hint or card open. Starts again from the nearest when the list changes |
-| Map | `R` | Open the missing visible object nearest to the screen center, gliding to it |
+| Map | `A` or touch | Open the object under the aim (its name shows at the bottom left) |
+| Map | `ZR` / `ZL` | Next / previous of the 5 nearest missing visible objects (from Link when his position is known), with its hint or card open. Starts again from the nearest when the list changes |
+| Map | `R` | Open the missing visible object nearest to the aim, gliding to it |
 | Map | `L` | Center on Link, keeping the zoom |
 | Map | Left-stick click | Reset the zoom and center on Link |
-| Object info | `B` | Mark a missing object as found while using a backup |
+| Map | `X` | Open or close the legend |
+| Map | `Y` | Switch Normal Mode / Master Mode when available |
+| Map | `-` | With BotW running: read its progress again |
+| Map | `+` | Exit |
+| Card | `B` | Back |
+| Card | `A` | Korok: the guide's photo full screen |
+| Card | `Y` | Mark as found, while a save backup is shown |
 | Legend | D-Pad, `A`, or touch | Select/toggle a category |
-| Korok hint | `B` | Mark the Korok as found while using a backup and close the hint |
 
 ## High-resolution map (optional)
 
@@ -109,3 +114,8 @@ They cover settings migration and validation, UTF-8 decoding, manual-progress pr
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.
+
+## Looking at the interface on a PC
+
+`tools/hostview/` builds the app for Linux (WSL works) against a small fake of libnx and renders it off screen with
+Mesa, driven by a script of button presses, saving screenshots. See `tools/hostview/README.md`.

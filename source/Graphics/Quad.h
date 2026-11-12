@@ -65,4 +65,5 @@ public:
 
     glm::vec2 m_Position = glm::vec3(0.0f); 
     float m_Scale = 1.0f;
+    glm::vec4 m_Tint = glm::vec4(1.0f); // multiplies the image (alpha below 1 dims it)
 };

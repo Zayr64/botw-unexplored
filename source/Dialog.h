@@ -75,6 +75,7 @@ public:
     std::string m_Title;
     std::string m_Description;
     std::string m_Description2;
+    std::string m_Note; // small print under the descriptions
 
     int m_PrevTouchCount = 0;
     unsigned int m_SelectedButton = 1;

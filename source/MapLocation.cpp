@@ -36,7 +36,7 @@ void MapLocation::Update()
         m_Scale = minScale;
 }
 
-void MapLocation::Render()
+void MapLocation::Render(bool shadow)
 {
     if (!Map::m_Legend->ShouldShow(m_Found)) return;
 
@@ -73,7 +73,17 @@ void MapLocation::Render()
     }
     m_LabelBounds.push_back(bounds);
 
-    Map::m_Font.AddTextToBatch(label, m_Position, textScale, m_Color, ALIGN_CENTER);
+    if (!shadow)
+    {
+        Map::m_Font.AddTextToBatch(label, m_Position, textScale, m_Color, ALIGN_CENTER);
+        return;
+    }
+    // A dark edge all around keeps the name readable over snow and sand.
+    const float offset = 1.3f / Map::m_Zoom;
+    const glm::vec3 dark(0.03f, 0.04f, 0.05f);
+    for (int corner = 0; corner < 4; ++corner)
+        Map::m_Font.AddTextToBatch(label, m_Position + glm::vec2(corner & 1 ? offset : -offset, corner & 2 ? offset : -offset),
+                                   textScale, dark, ALIGN_CENTER);
 }
 
 void MapLocation::BeginLabelPass()

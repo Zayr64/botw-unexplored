@@ -1,19 +1,23 @@
 #include "Legend.h"
 #include "MapCompletion.h"
 
-#include <iostream>
-
-#include <glm/gtc/matrix_inverse.hpp>
-
+#include "Graphics/ShapeBatch.h"
+#include "Graphics/Texture2D.h"
 #include "Map.h"
 #include "MapObject.hpp"
 #include "MapLocation.h"
 #include "SavefileIO.h"
 #include "Localization.h"
+#include "Ui.h"
 
 namespace
 {
-    std::string MapCompletionText()
+    constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
+    constexpr float RowHeight = 62.0f;
+    constexpr float RowGap = 10.0f;
+    constexpr float RowRadius = 8.0f;
+
+    int MapEntriesFound()
     {
         static_assert(Data::KoroksCount + Data::ShrineCount + Data::LocationsCount == MapCompletion::TotalEntries,
                       "Map completion total must match the tracked data");
@@ -22,53 +26,26 @@ namespace
         for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
         for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
-
-        return MapCompletion::Format(MapCompletion::Hundredths(found), '.');
+        return found;
     }
 }
 
 Legend::Legend()
 {
-    float left = -Map::m_CameraWidth / 2.0f;
-    float top = Map::m_CameraHeight / 2.0f;
-    float bottom = -Map::m_CameraHeight / 2.0f;
+    m_Width = Ui::PanelWidth;
+    const float left = Ui::PanelLeft();
+    const float top = Map::m_ScreenTop;
 
-    m_Background.Create(
-        glm::vec2(left, bottom),
-        glm::vec2(left + m_Width, bottom),
-        glm::vec2(left + m_Width, top),
-        glm::vec2(left, top)
-    );
-
-    m_Background.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-
-    m_Background.m_Color = glm::vec4(0.0f, 0.0f, 0.0f, 0.68f);
-
-    float buttonPadding = 25.0f;
-    float buttonVerticalPadding = 25.0f;
-
-    float topOffset = 80.0f;
-    float buttonHeight = 65.0f;
     for (int i = 0; i < IconButton::ButtonTypes::Count; i++)
     {
-        float topY = top - (buttonHeight * i) - (topOffset + buttonVerticalPadding * i);
-
-        float posLeft = left + buttonPadding;
-        float buttonWidth = m_Width - (buttonPadding * 2);
-
-        IconButton* button = new IconButton((IconButton::ButtonTypes)i, glm::vec2(posLeft, topY), buttonWidth, buttonHeight, 1.25f * 0.5f);
-        button->m_Button.m_Color = IconButton::DefaultColor;
-
-        m_Buttons.push_back(button);
-
+        const float rowTop = top - RowsTop - (RowHeight + RowGap) * i;
+        m_Buttons.push_back(new IconButton((IconButton::ButtonTypes)i, glm::vec2(left, rowTop), Ui::PanelInner(), RowHeight));
         m_Show[i] = false;
     }
 
     // Show koroks and shrines by default
     m_Buttons[0]->Click(this, true);
-    m_Show[0] = true;
     m_Buttons[1]->Click(this, true);
-    m_Show[1] = true;
 
     // Set first highlighted button
     UpdateSelectedButton();
@@ -115,64 +92,66 @@ void Legend::Update()
         }
     }
 
+    // Up and down go around
+    const int count = static_cast<int>(m_Buttons.size());
     u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
     if (buttonsPressed & HidNpadButton_Down)
     {
-        if (m_HighlightedButton < (int)m_Buttons.size() - 1)
-        {
-            m_HighlightedButton++;
-
-            UpdateSelectedButton();
-        }
+        m_HighlightedButton = (m_HighlightedButton + 1) % count;
+        UpdateSelectedButton();
     }
     if (buttonsPressed & HidNpadButton_Up)
     {
-        if (m_HighlightedButton > 0)
-        {
-            m_HighlightedButton--;
-
-            UpdateSelectedButton();
-        }
+        m_HighlightedButton = (m_HighlightedButton + count - 1) % count;
+        UpdateSelectedButton();
     }
     if (buttonsPressed & HidNpadButton_A)
     {
         // Bounds check
-        if (m_HighlightedButton >= 0 && m_HighlightedButton < (int)m_Buttons.size())
+        if (m_HighlightedButton >= 0 && m_HighlightedButton < count)
             m_Buttons[m_HighlightedButton]->Click(this);
     }
 }
 
 void Legend::UpdateSelectedButton()
 {
-    for (unsigned int i = 0; i < m_Buttons.size(); i++) {
-        if (m_Buttons[i]->m_Button.m_Color == IconButton::SelectedColor)
-            m_Buttons[i]->m_Button.m_Color = IconButton::DefaultColor;
-
+    for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->m_IsSelected = false;
-    }
 
     m_Buttons[m_HighlightedButton]->m_IsSelected = true;
 }
 
 void Legend::Render()
 {
-    m_Background.Render();
+    const float left = Ui::PanelLeft();
+    const float right = left + Ui::PanelInner();
+    const float top = Map::m_ScreenTop;
 
-    glm::mat4 empty(1.0);
-    Map::m_Font.m_ViewMatrix = &empty;
+    Ui::PanelBackground();
 
-    float viewLeft = -Map::m_CameraWidth / 2;
-    float viewTop = Map::m_CameraHeight / 2;
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Legend), glm::vec2(viewLeft + 25.0f, viewTop - 55.0f), 0.75f, glm::vec3(1.0));
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(viewLeft + m_Width - 26.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0), ALIGN_RIGHT);
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MapCompletion) + ": " + MapCompletionText(), glm::vec2(viewLeft + 25.0f, viewTop - 82.0f), 0.4f, glm::vec3(1.0));
+    Ui::Text(Localization::Get(Localization::Text::Legend), glm::vec2(left, top - 52.0f), 0.60f, Ui::Colors::Gold);
+
+    // What the game calls map completion: Koroks, shrines and locations.
+    const int found = MapEntriesFound();
+    Ui::Text(Localization::Get(Localization::Text::MapCompletionLong), glm::vec2(left, top - 88.0f), 0.36f, Ui::Colors::TextDim);
+    Ui::Text(MapCompletion::Format(MapCompletion::Hundredths(found), '.'), glm::vec2(right, top - 88.0f), 0.40f,
+             Ui::Colors::Text, ALIGN_RIGHT);
+    Ui::ProgressBar(left, top - 106.0f, Ui::PanelInner(), 6.0f,
+                    static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
+
+    glm::vec3 dotColor;
+    bool hasDot = false;
+    Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - 132.0f), 0.32f, Ui::Colors::TextDim);
+
+    for (unsigned int i = 0; i < m_Buttons.size(); i++)
+        m_Buttons[i]->DrawShapes();
+    Ui::FlushShapes();
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
     {
-        m_Buttons[i]->Render();
+        m_Buttons[i]->DrawIcon();
+        m_Buttons[i]->DrawText();
     }
-
-    Map::m_Font.m_ViewMatrix = &Map::m_ViewMatrix;
 }
 
 bool Legend::IsPositionOnLegend(glm::vec2 position)
@@ -199,12 +178,7 @@ Legend::~Legend()
         delete m_Buttons[i];
 }
 
-IconButton::IconButton()
-{
-
-}
-
-IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float height, float iconScale)
+IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float height)
 {
     m_Width = width;
     m_Height = height;
@@ -214,183 +188,115 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     std::string iconPath;
     switch (type)
     {
-    case Koroks:
-        m_Text = "Koroks";
-        iconPath = "romfs:/korokseed.png";
-
-        break;
-    case Shrines:
-        m_Text = "Shrines";
-        iconPath = "romfs:/shrine.png";
-
-        break;
-    case Hinoxes:
-        m_Text = "Hinoxes";
-        iconPath = "romfs:/hinox.png";
-
-        break;
-    case Taluses:
-        m_Text = "Taluses";
-        iconPath = "romfs:/talus.png";
-
-        break;
-    case Moldugas:
-        m_Text = "Moldugas";
-        iconPath = "romfs:/molduga.png";
-
-        break;
-    case Locations:
-        m_Text = "Locations";
-        iconPath = "romfs:/village.png";
-        iconScale = 0.022f;
-
-        break;
-
-    default:
-        break;
+    case Koroks: iconPath = "romfs:/korokseed.png"; break;
+    case Shrines: iconPath = "romfs:/shrine.png"; break;
+    case Hinoxes: iconPath = "romfs:/hinox.png"; break;
+    case Taluses: iconPath = "romfs:/talus.png"; break;
+    case Moldugas: iconPath = "romfs:/molduga.png"; break;
+    case Locations: iconPath = "romfs:/village.png"; break;
+    default: break;
     }
 
-    m_Button.Create(
-        glm::vec2(position.x, position.y - height),
-        glm::vec2(position.x + width, position.y - height),
-        glm::vec2(position.x + width, position.y),
-        glm::vec2(position.x, position.y)
-    );
-
-    m_Button.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-
-    m_Border.Create(
-        "romfs:/buttonborder.png",
-        glm::vec2(position.x, position.y - height),
-        glm::vec2(position.x + width, position.y - height),
-        glm::vec2(position.x + width, position.y),
-        glm::vec2(position.x, position.y)
-    );
-    m_Border.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-
     m_Icon.Create(iconPath);
-    m_Icon.m_Scale = iconScale;
-
-    float iconLeftMargin = 35.0f;
-    m_Icon.m_Position = glm::vec2(position.x + iconLeftMargin, position.y - height / 2.0f);
-
+    // Every icon about 34 pixels tall, whatever the size of its image.
+    if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
+        m_Icon.m_Scale = (type == Locations ? 28.0f : 34.0f) / static_cast<float>(m_Icon.m_Texture->m_Height);
+    m_Icon.m_Position = glm::vec2(position.x + 34.0f, position.y - height / 2.0f);
     m_Icon.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
 }
 
-void IconButton::Render()
+void IconButton::Count(int& found, int& total) const
 {
-    m_Button.Render();
-    if (m_IsSelected) m_Border.Render();
-
-    m_Icon.Render();
-
-    float mainTextMargin = 35.0f;
-    glm::vec2 mainTextPosition(
-        m_Icon.m_Position.x + mainTextMargin,
-        m_Icon.m_Position.y - m_Height / 8.0f
-    );
-
-    float countTextMargin = 20.0f;
-    glm::vec2 countTextPosition(
-        m_Position.x + m_Width - countTextMargin,
-        mainTextPosition.y
-    );
-
-    std::string countString = "";
+    found = 0;
+    total = 0;
     switch (m_Type)
     {
     case Koroks:
-    {
-        int found = 0;
+        total = Data::KoroksCount;
         for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
-        countString = std::to_string(found) + "/" + std::to_string(Data::KoroksCount);
         break;
-    }
     case Shrines:
-    {
-        int found = 0;
+        total = Data::ShrineCount;
         for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
-        if (!SavefileIO::HasDLC)
-            countString = std::to_string(found) + "/" + std::to_string(Data::ShrineCount);
-        else
+        if (SavefileIO::HasDLC)
         {
+            total += Data::DLCShrineCount;
             for (int i = 0; i < Data::DLCShrineCount; ++i) found += Map::m_DLCShrines[i].m_Found;
-            countString = std::to_string(found) + "/" +
-                          std::to_string(Data::ShrineCount + Data::DLCShrineCount);
         }
         break;
-    }
     case Hinoxes:
-    {
-        int found = 0;
+        total = Data::HinoxesCount;
         for (int i = 0; i < Data::HinoxesCount; ++i) found += Map::m_Hinoxes[i].m_Found;
-        countString = std::to_string(found) + "/" + std::to_string(Data::HinoxesCount);
         break;
-    }
     case Taluses:
-    {
-        int found = 0;
+        total = Data::TalusesCount;
         for (int i = 0; i < Data::TalusesCount; ++i) found += Map::m_Taluses[i].m_Found;
-        countString = std::to_string(found) + "/" + std::to_string(Data::TalusesCount);
         break;
-    }
     case Moldugas:
-    {
-        int found = 0;
+        total = Data::MoldugasCount;
         for (int i = 0; i < Data::MoldugasCount; ++i) found += Map::m_Moldugas[i].m_Found;
-        countString = std::to_string(found) + "/" + std::to_string(Data::MoldugasCount);
         break;
-    }
     case Locations:
-    {
-        int found = 0;
+        total = Data::LocationsCount;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
-        countString = std::to_string(found) + "/" + std::to_string(Data::LocationsCount);
         break;
-    }
-
     default:
         break;
     }
+}
 
+void IconButton::DrawShapes()
+{
+    const float left = m_Position.x, right = m_Position.x + m_Width;
+    const float top = m_Position.y, bottom = m_Position.y - m_Height;
+    ShapeBatch& shapes = Ui::Shapes();
+
+    if (m_IsSelected)
+    {
+        // An outline in the accent colour around an opaque row
+        shapes.AddRoundedRect(left - 2.0f, bottom - 2.0f, right + 2.0f, top + 2.0f, RowRadius + 2.0f,
+                              glm::vec4(Ui::Colors::Accent, 1.0f));
+        shapes.AddRoundedRect(left, bottom, right, top, RowRadius,
+                              m_IsToggled ? glm::vec4(0.17f, 0.36f, 0.48f, 1.0f) : glm::vec4(0.10f, 0.13f, 0.15f, 1.0f));
+    }
+    else
+        shapes.AddRoundedRect(left, bottom, right, top, RowRadius, m_IsToggled ? Ui::Colors::RowOn : Ui::Colors::RowOff);
+
+    int found = 0, total = 0;
+    Count(found, total);
+    Ui::ProgressBar(left + 64.0f, bottom + 11.0f, m_Width - 64.0f - 14.0f, 4.0f,
+                    total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
+                    m_IsToggled ? Ui::Colors::Accent : Ui::Colors::TextDim);
+}
+
+void IconButton::DrawIcon()
+{
+    // A category that is off looks faded
+    m_Icon.m_Tint = glm::vec4(1.0f, 1.0f, 1.0f, m_IsToggled ? 1.0f : 0.4f);
+    m_Icon.Render();
+}
+
+void IconButton::DrawText()
+{
+    int found = 0, total = 0;
+    Count(found, total);
+
+    const glm::vec3& color = m_IsToggled ? Ui::Colors::Text : Ui::Colors::TextDim;
+    const float baseline = m_Position.y - 33.0f;
     const std::string& label = Localization::Get(static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(m_Type)));
-    Map::m_Font.AddTextToBatch(label, mainTextPosition, 0.40f, glm::vec3(1.0), ALIGN_LEFT, 150.0f);
-    Map::m_Font.AddTextToBatch(countString, countTextPosition, 0.42f, glm::vec3(1.0), ALIGN_RIGHT);
+    Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
+    Ui::Text(std::to_string(found) + "/" + std::to_string(total), glm::vec2(m_Position.x + m_Width - 14.0f, baseline),
+             0.40f, color, ALIGN_RIGHT);
 }
 
 bool IconButton::Click(Legend* legend)
 {
-    m_IsToggled = !m_IsToggled;
-
-    if (m_IsToggled)
-        m_Button.m_Color = IconButton::HighlightedColor;
-    else
-        m_Button.m_Color = IconButton::DefaultColor;
-
-    legend->m_Show[m_Type] = m_IsToggled;
-
-    return m_IsToggled;
+    return Click(legend, !m_IsToggled);
 }
 
 bool IconButton::Click(Legend* legend, bool toggled)
 {
     m_IsToggled = toggled;
-
-    if (m_IsToggled)
-        m_Button.m_Color = IconButton::HighlightedColor;
-    else
-        m_Button.m_Color = IconButton::DefaultColor;
-
     legend->m_Show[m_Type] = m_IsToggled;
-
     return m_IsToggled;
 }
-
-IconButton::~IconButton()
-{
-
-}
-
-constexpr glm::vec4 IconButton::HighlightedColor;
-constexpr glm::vec4 IconButton::DefaultColor;
-constexpr glm::vec4 IconButton::SelectedColor;

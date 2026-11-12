@@ -203,6 +203,14 @@ glm::vec2 Font::RenderText(const std::string& text, glm::vec2 position, float sc
     return textSize;
 }
 
+float Font::MeasureText(const std::string& text, float scale)
+{
+    float width = 0.0f;
+    for (uint32_t character : Utf8::Decode(text))
+        width += (GetCharacter(character).Advance >> 6) * scale;
+    return width;
+}
+
 void Font::BeginBatch()
 {
     m_CharsToRender.clear();

@@ -1,29 +1,28 @@
 #pragma once
 
+#include <string>
+
 #include "Graphics/Quad.h"
 
+// The card of a Korok seed: where it is from Link, the guide's photo and how to get it.
 class KorokDialog
 {
 public:
     KorokDialog();
 
     void Render();
-    
+
     void SetSeed(int seed, int korokIndex);
     void SetOpen(bool open);
 
-    void SetPosition(glm::vec2 position);
-    glm::vec2 GetPosition();
     bool IsPositionOn(const glm::vec2& position) const;
     bool IsImagePositionOn(const glm::vec2& position) const;
+    bool HasImage() const;
 
     ~KorokDialog();
 
 public:
-    const int Width = 350.0f;
-    const int m_Margin = 30.0f;
-
-    Quad m_Background;
+    TexturedQuad m_Icon;
     TexturedQuad* m_Image = nullptr;
 
     std::string m_Text;

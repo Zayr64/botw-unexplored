@@ -26,6 +26,7 @@
 #include "Settings.h"
 #include "ManualProgress.h"
 #include "LegacyKorokMigration.h"
+#include "Ui.h"
 
 bool openGLInitialized = false;
 bool romfsInitialized = false;
@@ -301,7 +302,7 @@ int main()
         if (Map::m_ShouldExit)
             break;
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(0.035f, 0.05f, 0.06f, 1.0f); // dark slate around the map
         glClear(GL_COLOR_BUFFER_BIT);
 
         // Update
@@ -313,11 +314,16 @@ int main()
         if (hasDoneFirstDraw && !hasLoadedSave)
         {
             hasLoadedSave = true;
-            const bool loadSucceeded = SavefileIO::LoadGamesave();
+            // With the game running behind the app, its own progress (and mode) is read from memory.
+            const bool loadSucceeded = SavefileIO::LoadGamesave(false, false, true);
             Log("LoadGamesave() status:", loadSucceeded ? "true" : "false");
             if (loadSucceeded)
             {
+                Map::m_LoadMasterMode = SavefileIO::MasterModeFileLoaded;
                 Map::UpdateMapObjects();
+                if (SavefileIO::GameIsRunning && !SavefileIO::LiveSynced)
+                    Ui::Toast(Localization::Get(Localization::Text::ToastSyncFailed) + ": " +
+                              SavefileIO::CurrentState.liveMessage, true);
                 MigrateLegacyKorokProgress();
             }
 

@@ -35,7 +35,8 @@ public:
     void Init();
 
     void Update();
-    void Render();
+    // The names are drawn twice: first a dark edge (shadow), then the text itself.
+    void Render(bool shadow);
 
     static void BeginLabelPass();
 

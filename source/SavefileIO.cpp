@@ -12,12 +12,17 @@
 #include "Accounts.h"
 #include "Map.h"
 #include "Dialog.h"
+#include "GameMemory.h"
+#include "LiveGameData.h"
 #include "Log.h"
 #include "SaveLoadDecision.h"
 #include "SaveParser.h"
 #include "ShrineFlags.h"
 
 #include <algorithm>
+#include <cstring>
+#include <sstream>
+#include <sys/stat.h>
 #include <unordered_map>
 
 namespace
@@ -25,6 +30,24 @@ namespace
     bool saveMounted = false;
 
     bool ParseFileIntoState(const char* filepath, SavefileIO::ParsedSaveState& parsedState);
+
+    // What the running game holds in memory.
+    struct LiveState
+    {
+        SavefileIO::ParsedSaveState parsed;
+        bool masterMode = false;
+        std::string message; // why it could not be read
+    };
+    bool LoadLive(LiveState& live);
+
+    // When a file was last written (POSIX time), 0 when unknown.
+    uint32_t FileTime(const std::string& path)
+    {
+        struct stat info;
+        if (stat(path.c_str(), &info) != 0 || info.st_mtime <= 0)
+            return 0;
+        return static_cast<uint32_t>(info.st_mtime);
+    }
 
     bool ReadFileBuffer(const char* filepath, std::vector<uint8_t>& buffer)
     {
@@ -66,7 +89,7 @@ namespace
     };
 }
 
-bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile)
+bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool followGameMode)
 {
     Log("Loading gamesave. Master mode: " + std::string(loadMasterMode ? "true" : "false") + 
        ", Choose profile (instead of automatic): " + std::string(chooseProfile ? "true" : "false"));
@@ -101,6 +124,10 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile)
         candidate.gameIsRunning = false;
         candidate.noSavefileForUser = false;
         candidate.masterModeFileLoaded = loadMasterMode;
+        candidate.liveSynced = false;
+        candidate.liveMessage.clear();
+        candidate.loadedSlot = saveSlot;
+        candidate.saveTime = GetSavefileTimestamp("save:/" + std::to_string(saveSlot) + "/caption.sav");
         CommitState(candidate);
         Map::m_GameRunningDialog->SetOpen(false);
         Map::m_MasterModeDialog->SetOpen(false);
@@ -117,15 +144,39 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile)
         return false;
     }
     if (mountStatus == SaveLoadDecision::MountStatus::SaveInaccessible) {
-        Log("Game is running. Loading backup...");
+        Log("Game is running. Reading its memory...");
 
+        // The game's own flags are newer than any save. The backup stays as the fallback (and tells which
+        // slots exist) when the memory cannot be read or the game runs the other mode.
+        LiveState live;
+        const bool liveRead = LoadLive(live);
+        if (liveRead && followGameMode)
+            loadMasterMode = live.masterMode;
+        const bool useLive = liveRead && live.masterMode == loadMasterMode;
+
+        Log("Loading backup...");
         const bool loadedBackupSuccess = LoadBackup(loadMasterMode, candidate);
 
-        if (!loadedBackupSuccess) 
+        if (!loadedBackupSuccess && !useLive)
         {
+            CurrentState.liveMessage = live.message; // shown by the dialog
             Map::m_GameRunningDialog->SetOpen(true);
             return false;
         }
+        if (useLive)
+        {
+            ApplyParsedState(candidate, live.parsed);
+            if (!loadedBackupSuccess)
+            {
+                candidate.loadedSlot = -1;
+                candidate.saveTime = 0;
+            }
+        }
+        candidate.liveSynced = useLive;
+        candidate.liveMessage = useLive ? std::string()
+                              : liveRead ? std::string("the game is running the other mode") : live.message;
+        Log(useLive ? std::string("Showing the progress read from the running game")
+                    : "Showing the save backup: " + candidate.liveMessage);
         candidate.loadedSavefile = true;
         candidate.gameIsRunning = true;
         candidate.noSavefileForUser = false;
@@ -395,6 +446,11 @@ bool SavefileIO::LoadBackup(bool masterMode, SaveState& candidate)
     candidate.mostRecentNormalModeFile = mostRecentNormalModeFile;
     candidate.mostRecentMasterModeFile = mostRecentMasterModeFile;
     candidate.masterModeFileExists = mostRecentMasterModeFile != -1;
+    candidate.loadedSlot = saveSlot;
+    // Backups made before zayr8 have no caption.sav: then the time the backup was made.
+    candidate.saveTime = GetSavefileTimestamp(savesFolder + std::to_string(saveSlot) + "/caption.sav");
+    if (candidate.saveTime == 0)
+        candidate.saveTime = FileTime(savefilePath);
     return true;
 }
 
@@ -474,6 +530,8 @@ void SavefileIO::CopySavefiles()
         std::string target = savesFolder + "/" + savefileFolders[i] + "/game_data.sav";
 
         CopyFile("save:/" + savefileFolders[i] + "/game_data.sav", target);
+        // The save time, so that the backup can tell how old it is.
+        CopyFile("save:/" + savefileFolders[i] + "/caption.sav", savesFolder + "/" + savefileFolders[i] + "/caption.sav");
 
         Log("Copied savefile " + savefileFolders[i] + " to " + target);
     }
@@ -483,12 +541,12 @@ void SavefileIO::CopySavefiles()
 s32 SavefileIO::CopyFile(const std::string &srcPath, const std::string &dstPath)
 {
     FILE *src = fopen(srcPath.c_str(), "rb");
+    if (src == nullptr)
+        return -1;
     FILE *dst = fopen(dstPath.c_str(), "wb+");
-
-    if (src == nullptr || dst == nullptr)
+    if (dst == nullptr)
     {
-        if (src) fclose(src);
-        if (dst) fclose(dst);
+        fclose(src);
         return -1;
     }
 
@@ -583,6 +641,94 @@ const std::unordered_map<uint32_t, ShrineFlagTarget>& GetShrineFlagTable()
     return table;
 }
 
+// Every flag the map shows, by hash. A hash may belong to more than one list.
+struct TrackedFlag
+{
+    Data::ObjectType type;
+    void* object;
+};
+
+const std::unordered_multimap<uint32_t, TrackedFlag>& GetTrackedFlags()
+{
+    static const std::unordered_multimap<uint32_t, TrackedFlag> table = []()
+    {
+        std::unordered_multimap<uint32_t, TrackedFlag> result;
+        for (int i = 0; i < Data::KoroksCount; ++i)
+            result.insert({Data::Koroks[i].hash, {Data::ObjectType::Korok, &Data::Koroks[i]}});
+        for (int i = 0; i < Data::ShrineCount; ++i)
+            result.insert({Data::Shrines[i].hash, {Data::ObjectType::Shrine, &Data::Shrines[i]}});
+        for (int i = 0; i < Data::DLCShrineCount; ++i)
+            result.insert({Data::DLCShrines[i].hash, {Data::ObjectType::DLCShrine, &Data::DLCShrines[i]}});
+        for (int i = 0; i < Data::LocationsCount; ++i)
+            result.insert({Data::Locations[i].hash, {Data::ObjectType::Location, &Data::Locations[i]}});
+        for (int i = 0; i < Data::HinoxesCount; ++i)
+            result.insert({Data::Hinoxes[i].hash, {Data::ObjectType::Hinox, &Data::Hinoxes[i]}});
+        for (int i = 0; i < Data::TalusesCount; ++i)
+            result.insert({Data::Taluses[i].hash, {Data::ObjectType::Talus, &Data::Taluses[i]}});
+        for (int i = 0; i < Data::MoldugasCount; ++i)
+            result.insert({Data::Moldugas[i].hash, {Data::ObjectType::Molduga, &Data::Moldugas[i]}});
+        return result;
+    }();
+    return table;
+}
+
+// Sorts the hash/value records (of a save file or of the running game) into the lists the map uses.
+void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::ParsedSaveState& parsedState)
+{
+    const std::unordered_map<uint32_t, ShrineFlagTarget>& shrineFlags = GetShrineFlagTable();
+    const std::unordered_multimap<uint32_t, TrackedFlag>& tracked = GetTrackedFlags();
+    for (const SaveParser::Record& record : bufferState.records)
+    {
+        const uint32_t hashValue = record.hash;
+        // A value other than 0 means found, discovered, visited or defeated.
+        const bool set = record.value != 0;
+
+        const auto shrineFlag = shrineFlags.find(hashValue);
+        if (shrineFlag != shrineFlags.end() && set)
+            (shrineFlag->second.allChests ? parsedState.allChestsShrines : parsedState.clearedShrines)
+                .push_back(shrineFlag->second.locationHash);
+
+        const auto range = tracked.equal_range(hashValue);
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            void* object = it->second.object;
+            switch (it->second.type)
+            {
+            case Data::ObjectType::Korok:
+                (set ? parsedState.foundKoroks : parsedState.missingKoroks).push_back(static_cast<Data::Korok*>(object));
+                break;
+            case Data::ObjectType::Shrine:
+                (set ? parsedState.foundShrines : parsedState.missingShrines).push_back(static_cast<Data::Shrine*>(object));
+                break;
+            case Data::ObjectType::DLCShrine:
+                (set ? parsedState.foundDLCShrines : parsedState.missingDLCShrines).push_back(static_cast<Data::DLCShrine*>(object));
+                break;
+            case Data::ObjectType::Location:
+                (set ? parsedState.visitedLocations : parsedState.unexploredLocations).push_back(static_cast<Data::Location*>(object));
+                break;
+            case Data::ObjectType::Hinox:
+                (set ? parsedState.defeatedHinoxes : parsedState.undefeatedHinoxes).push_back(static_cast<Data::Hinox*>(object));
+                break;
+            case Data::ObjectType::Talus:
+                (set ? parsedState.defeatedTaluses : parsedState.undefeatedTaluses).push_back(static_cast<Data::Talus*>(object));
+                break;
+            case Data::ObjectType::Molduga:
+                (set ? parsedState.defeatedMoldugas : parsedState.undefeatedMoldugas).push_back(static_cast<Data::Molduga*>(object));
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    parsedState.hasDLC = bufferState.hasDLC;
+    parsedState.hasPlayerPosition = bufferState.hasPlayerPosition;
+    parsedState.playerX = bufferState.playerPosition[0];
+    parsedState.playerZ = bufferState.playerPosition[2];
+    parsedState.playerPositionIsLive = false;
+    parsedState.playerInsideShrine = false;
+}
+
 bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parsedState)
 {
     Log("Opening savefile", filepath);
@@ -592,98 +738,178 @@ bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parse
     if (!ReadFileBuffer(filepath, buffer) || !SaveParser::ParseSaveBuffer(buffer.data(), buffer.size(), bufferState))
         return false;
 
-    const std::unordered_map<uint32_t, ShrineFlagTarget>& shrineFlags = GetShrineFlagTable();
-    for (const SaveParser::Record& record : bufferState.records)
-    {
-        const uint32_t hashValue = record.hash;
-        const uint32_t value = record.value;
-
-        const auto shrineFlag = shrineFlags.find(hashValue);
-        if (shrineFlag != shrineFlags.end() && value != 0)
-            (shrineFlag->second.allChests ? parsedState.allChestsShrines : parsedState.clearedShrines)
-                .push_back(shrineFlag->second.locationHash);
-
-        // Check if a korok with the hash exists
-        Data::Korok *korok = Data::KorokExists(hashValue);
-        if (korok)
-        {
-            // Read the 4 bytes after the hash. If it's not 0, then the seed has been found.
-            bool found = value != 0;
-
-            found ? parsedState.foundKoroks.push_back(korok) : parsedState.missingKoroks.push_back(korok);
-        }
-        
-
-        // Check if a shrine with the hash exists
-        Data::Shrine *shrine = Data::ShrineExists(hashValue);
-        if (shrine)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the shrine has been found.
-            bool defeated = value != 0;
-
-            defeated ? parsedState.foundShrines.push_back(shrine) : parsedState.missingShrines.push_back(shrine);
-        }
-
-        // Check for dlc shrines
-        Data::DLCShrine *dlcShrine = Data::DLCShrineExists(hashValue);
-        if (dlcShrine)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the shrine has been found.
-            bool defeated = value != 0;
-
-            defeated ? parsedState.foundDLCShrines.push_back(dlcShrine) : parsedState.missingDLCShrines.push_back(dlcShrine);
-        }
-
-        // Check if a location with the hash exists
-        Data::Location *location = Data::LocationExists(hashValue);
-        if (location)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the location has been visited.
-            bool visited = value != 0;
-
-            visited ? parsedState.visitedLocations.push_back(location) : parsedState.unexploredLocations.push_back(location);
-        }
-
-        // Check if a hinox with the hash exists
-        Data::Hinox *hinox = Data::HinoxExists(hashValue);
-        if (hinox)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the hinox has been defeated.
-            bool defeated = value != 0;
-
-            defeated ? parsedState.defeatedHinoxes.push_back(hinox) : parsedState.undefeatedHinoxes.push_back(hinox);
-        }
-
-        // Check if a talus with the hash exists
-        Data::Talus *talus = Data::TalusExists(hashValue);
-        if (talus)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the talus has been defeated.
-            bool defeated = value != 0;
-
-            defeated ? parsedState.defeatedTaluses.push_back(talus) : parsedState.undefeatedTaluses.push_back(talus);
-        }
-
-        // Check if a molduga with the hash exists
-        Data::Molduga *molduga = Data::MoldugaExists(hashValue);
-        if (molduga)
-        {
-            // Read the 4 bytes after the hash. If it is not 0, then the molduga has been defeated.
-            bool defeated = value != 0;
-
-            defeated ? parsedState.defeatedMoldugas.push_back(molduga) : parsedState.undefeatedMoldugas.push_back(molduga);
-        }
-
-    }
-
-    parsedState.hasDLC = bufferState.hasDLC;
-    parsedState.hasPlayerPosition = bufferState.hasPlayerPosition;
-    parsedState.playerX = bufferState.playerPosition[0];
-    parsedState.playerZ = bufferState.playerPosition[2];
+    ApplyRecords(bufferState, parsedState);
     Log("User has DLC:", parsedState.hasDLC ? "true" : "false");
 
     Log("Successfully parsed file", filepath);
 
+    return true;
+}
+
+// AoC_HardMode_Enabled: set by the game while it runs in Master Mode (not stored in the save).
+constexpr uint32_t HardModeEnabledHash = 0xE51256E2;
+// Text flags that say which map the game is on: its type ("MainField", "CDungeon"...) and its name
+// ("E-6" for a piece of the world, "Dungeon042" for a shrine). The game writes them with every save.
+constexpr uint32_t MapTypeHash = 0xD913B769;
+constexpr uint32_t MapNameHash = 0x0BEE9E46;
+
+class LiveCollector : public LiveGameData::Visitor
+{
+public:
+    SaveParser::ParsedSaveState state;
+    bool hardMode = false;
+    char mapType[33] = {};
+    char mapName[33] = {};
+    bool hasSavePosition = false;
+    float savePosition[3] = {};
+
+    void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value) override
+    {
+        switch (kind)
+        {
+        case LiveGameData::FlagKind::Bool:
+        {
+            const bool set = (value[0] & 1) != 0;
+            SaveParser::Record record;
+            record.hash = hash;
+            record.value = set ? 1u : 0u;
+            state.records.push_back(record);
+            if (hash == SaveParser::BalladOfHeroesReadyHash && set)
+                state.hasDLC = true;
+            else if (hash == HardModeEnabledHash && set)
+                hardMode = true;
+            break;
+        }
+        case LiveGameData::FlagKind::S32:
+        {
+            SaveParser::Record record;
+            record.hash = hash;
+            std::memcpy(&record.value, value, sizeof(record.value));
+            state.records.push_back(record);
+            if (hash == SaveParser::PlaytimeHash && record.value > state.playtime)
+                state.playtime = record.value;
+            break;
+        }
+        case LiveGameData::FlagKind::String32:
+            if (hash == MapTypeHash)
+                std::memcpy(mapType, value, 32);
+            else if (hash == MapNameHash)
+                std::memcpy(mapName, value, 32);
+            break;
+        case LiveGameData::FlagKind::Vector3f:
+            if (hash == SaveParser::PlayerSavePosHash)
+            {
+                std::memcpy(savePosition, value, sizeof(savePosition));
+                hasSavePosition = true;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+};
+
+// World position of the shrine whose map is "DungeonNNN".
+bool ShrinePosition(const char* mapName, float& x, float& z)
+{
+    int number = -1;
+    if (std::sscanf(mapName, "Dungeon%3d", &number) != 1 || number < 0)
+        return false;
+    char flagName[40];
+    std::snprintf(flagName, sizeof(flagName), "Location_Dungeon%03d", number);
+    const uint32_t hash = ShrineFlags::Crc32(flagName);
+    if (const Data::Shrine* shrine = Data::ShrineExists(hash))
+    {
+        x = shrine->x;
+        z = shrine->y;
+        return true;
+    }
+    if (const Data::DLCShrine* shrine = Data::DLCShrineExists(hash))
+    {
+        x = shrine->x;
+        z = shrine->y;
+        return true;
+    }
+    return false;
+}
+
+bool LoadLive(LiveState& live)
+{
+    const GameMemory::Status status = GameMemory::Open(live.message);
+    if (status != GameMemory::Status::Ready)
+    {
+        Log("LIVE: not available:", live.message);
+        return false;
+    }
+
+    const LiveGameData::Layout& layout = LiveGameData::Botw160();
+    LiveCollector collector;
+    collector.state.records.reserve(70000);
+    LiveGameData::Report report;
+    const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), layout, collector, report);
+    std::istringstream details(report.details);
+    for (std::string line; std::getline(details, line);)
+        Log("LIVE: " + line);
+    if (!scanned)
+    {
+        GameMemory::Close();
+        live.message = report.error;
+        return false;
+    }
+
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    const bool hasLivePosition = LiveGameData::ReadPlayerPosition(GameMemory::Reader(), GameMemory::MainBase(), layout, position) &&
+                                 SaveParser::IsPlausiblePosition(position);
+    GameMemory::Close();
+
+    if (collector.state.playtime == 0)
+    {
+        Log("LIVE: no playtime, the game is still at the title screen");
+        live.message = "the game has not loaded a save yet";
+        return false;
+    }
+
+    ApplyRecords(collector.state, live.parsed);
+    const size_t koroks = live.parsed.foundKoroks.size() + live.parsed.missingKoroks.size();
+    const size_t shrines = live.parsed.foundShrines.size() + live.parsed.missingShrines.size();
+    const size_t locations = live.parsed.visitedLocations.size() + live.parsed.unexploredLocations.size();
+    Log("LIVE: records " + std::to_string(collector.state.records.size()) + ", koroks " + std::to_string(koroks) +
+        ", shrines " + std::to_string(shrines) + ", locations " + std::to_string(locations) + ", playtime " +
+        std::to_string(collector.state.playtime) + ", map " + collector.mapType + " " + collector.mapName);
+    // The flags this app is about must all be there, or this is not the data it expects.
+    if (koroks < static_cast<size_t>(Data::KoroksCount) || shrines < static_cast<size_t>(Data::ShrineCount) ||
+        locations < static_cast<size_t>(Data::LocationsCount))
+    {
+        live.message = "the game's flags do not match this app";
+        return false;
+    }
+
+    live.masterMode = collector.hardMode;
+    live.parsed.hasPlayerPosition = false;
+    const bool onWorldMap = collector.mapType[0] == '\0' || std::strcmp(collector.mapType, "MainField") == 0;
+    if (!onWorldMap)
+    {
+        // Inside a shrine (or another map of its own) Link's coordinates are not those of the world map.
+        if (ShrinePosition(collector.mapName, live.parsed.playerX, live.parsed.playerZ))
+        {
+            live.parsed.hasPlayerPosition = true;
+            live.parsed.playerPositionIsLive = true;
+            live.parsed.playerInsideShrine = true;
+        }
+    }
+    else if (hasLivePosition)
+    {
+        live.parsed.hasPlayerPosition = true;
+        live.parsed.playerPositionIsLive = true;
+        live.parsed.playerX = position[0];
+        live.parsed.playerZ = position[2];
+    }
+    else if (collector.hasSavePosition && SaveParser::IsPlausiblePosition(collector.savePosition))
+    {
+        live.parsed.hasPlayerPosition = true;
+        live.parsed.playerX = collector.savePosition[0];
+        live.parsed.playerZ = collector.savePosition[2];
+    }
     return true;
 }
 }
@@ -722,6 +948,7 @@ int& SavefileIO::MostRecentNormalModeFile = CurrentState.mostRecentNormalModeFil
 int& SavefileIO::MostRecentMasterModeFile = CurrentState.mostRecentMasterModeFile;
 bool& SavefileIO::LoadedSavefile = CurrentState.loadedSavefile;
 bool& SavefileIO::GameIsRunning = CurrentState.gameIsRunning;
+bool& SavefileIO::LiveSynced = CurrentState.liveSynced;
 bool& SavefileIO::NoSavefileForUser = CurrentState.noSavefileForUser;
 bool& SavefileIO::MasterModeFileExists = CurrentState.masterModeFileExists;
 bool& SavefileIO::MasterModeFileLoaded = CurrentState.masterModeFileLoaded;

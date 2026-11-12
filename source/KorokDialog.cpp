@@ -1,60 +1,68 @@
 #include "KorokDialog.h"
 
+#include <algorithm>
+
 #include "Data.h"
+#include "Graphics/Texture2D.h"
 #include "Map.h"
 #include "MapObject.hpp"
 #include "SavefileIO.h"
-#include "Log.h"
 #include "Localization.h"
-#include "ManualProgress.h"
+#include "Ui.h"
 
 KorokDialog::KorokDialog()
 {
-    m_Background.Create(
-        glm::vec2(Map::m_ScreenLeft, Map::m_ScreenBottom),
-        glm::vec2(Map::m_ScreenLeft + Width, Map::m_ScreenBottom),
-        glm::vec2(Map::m_ScreenLeft + Width, Map::m_ScreenTop),
-        glm::vec2(Map::m_ScreenLeft, Map::m_ScreenTop)
-    );
-    m_Background.m_Color = glm::vec4(0.0f, 0.0f, 0.0f, 0.75f);
+    m_Icon.Create("romfs:/korokseed.png");
 }
 
 void KorokDialog::Render()
 {
-    if (!m_IsOpen)
+    if (!m_IsOpen || m_KorokIndex < 0 || m_KorokIndex >= Data::KoroksCount)
         return;
 
-    m_Background.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
-    m_Background.m_ViewMatrix = nullptr;
+    const float left = Ui::PanelLeft();
+    const float inner = Ui::PanelInner();
+    const glm::vec2& mapPosition = Map::m_Koroks[m_KorokIndex].m_Position;
 
-    m_Background.Render();
+    Ui::PanelBackground();
 
-    // Image
-    if (m_Image && m_Image->m_Texture != nullptr)
+    const std::string title = Localization::Get(Localization::Text::KorokSeed) + " #" + std::to_string(m_Seed);
+    float top = Ui::CardHeader(&m_Icon, 40.0f, title, Map::NearestRankText());
+
+    const bool found = Map::m_Koroks[m_KorokIndex].m_Found;
+    if (found)
+        top = Ui::StatusRow(top, Localization::Get(Map::IsManuallyMarked(Data::ObjectType::Korok, Map::m_Koroks[m_KorokIndex].m_ObjectData->hash)
+                                                       ? Localization::Text::MarkedByYou : Localization::Text::Found),
+                            Ui::Colors::Good);
+    else
+        top = Ui::StatusRow(top, Localization::Get(Localization::Text::NotFound), Ui::Colors::Warn, false);
+
+    const std::string distance = Ui::DistanceText(mapPosition);
+    if (!distance.empty())
+        top = Ui::Paragraph(top, distance, 0.40f, Ui::Colors::TextDim);
+    top -= 8.0f;
+
+    // The photo of the guide, as wide as the panel
+    if (HasImage())
+    {
+        const float width = static_cast<float>(m_Image->m_Texture->m_Width);
+        const float height = static_cast<float>(m_Image->m_Texture->m_Height);
+        m_Image->m_Scale = std::min(inner / width, 240.0f / height);
+        m_Image->m_Position = glm::vec2(left + width * m_Image->m_Scale / 2.0f, top - height * m_Image->m_Scale / 2.0f);
+        top -= height * m_Image->m_Scale + 18.0f;
+    }
+
+    Ui::Paragraph(top, m_Text, 0.42f, Ui::Colors::Text);
+    Ui::Coordinates(mapPosition);
+
+    Ui::FlushShapes();
+    m_Icon.Render();
+    if (HasImage())
     {
         m_Image->m_ProjectionMatrix = &Map::m_ProjectionMatrix;
         m_Image->m_ViewMatrix = nullptr;
         m_Image->Render();
     }
-
-    const std::string title = Localization::Get(Localization::Text::Korok) + " #" + std::to_string(m_Seed);
-    Map::m_Font.AddTextToBatch(title, glm::vec2(Map::m_ScreenLeft + m_Margin, Map::m_ScreenTop - 38.0f), 0.42f, glm::vec3(1.0f));
-
-    // Place the text just below the image.
-    float textY = 0.0f;
-    if (m_Image)
-        textY = m_Image->m_Position.y - (m_Image->m_Texture->m_Height * m_Image->m_Scale / 2.0f) - 50.0f;
-    else
-        textY = Map::m_ScreenTop - 110.0f;
-
-    // Render text
-    glm::vec2 startPos(Map::m_ScreenLeft + m_Margin, textY);
-
-    Map::m_Font.AddTextToBatch(m_Text, startPos, 0.46f, glm::vec3(1.0f), ALIGN_LEFT, Width - m_Margin * 2);
-
-    if (SavefileIO::GameIsRunning && m_KorokIndex >= 0 && !Map::m_Koroks[m_KorokIndex].m_Found && ManualProgress::CanPersist())
-        Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::MarkFound), glm::vec2(Map::m_ScreenLeft + 15, Map::m_ScreenBottom + 38.0f), 0.34f, glm::vec3(1.0f), ALIGN_LEFT);
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::Close), glm::vec2(Map::m_ScreenLeft + Width - 20.0f, Map::m_ScreenBottom + 38.0f), 0.34f, glm::vec3(1.0f), ALIGN_RIGHT);
 }
 
 void KorokDialog::SetOpen(bool open)
@@ -97,22 +105,6 @@ void KorokDialog::SetSeed(int seed, int korokIndex)
 
     m_Image = new TexturedQuad();
     m_Image->Create(path);
-    m_Image->m_Scale = 1.25f;
-
-    float w = m_Image->m_Texture->m_Width * m_Image->m_Scale;
-    float h = m_Image->m_Texture->m_Height * m_Image->m_Scale;
-
-    m_Image->m_Position = glm::vec2(Map::m_ScreenLeft + m_Margin + w / 2.0f, Map::m_ScreenTop - 100.0f - h / 2.0f);
-}
-
-void KorokDialog::SetPosition(glm::vec2 position)
-{
-    m_Background.m_Position = position;
-}
-
-glm::vec2 KorokDialog::GetPosition()
-{
-    return m_Background.m_Position;
 }
 
 KorokDialog::~KorokDialog()
@@ -121,15 +113,20 @@ KorokDialog::~KorokDialog()
     m_Image = nullptr;
 }
 
+bool KorokDialog::HasImage() const
+{
+    return m_Image && m_Image->m_Texture && m_Image->m_Texture->m_Width > 0 && m_Image->m_Texture->m_Height > 0;
+}
+
 bool KorokDialog::IsPositionOn(const glm::vec2& position) const
 {
-    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + Width &&
+    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + Ui::PanelWidth &&
            position.y >= Map::m_ScreenBottom && position.y <= Map::m_ScreenTop;
 }
 
 bool KorokDialog::IsImagePositionOn(const glm::vec2& position) const
 {
-    if (!m_Image || !m_Image->m_Texture)
+    if (!HasImage())
         return false;
 
     const float halfWidth = m_Image->m_Texture->m_Width * m_Image->m_Scale / 2.0f;

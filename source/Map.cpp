@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <vector>
 #include <switch.h>
 
 #include "Graphics/BasicVertices.h"
 #include "Graphics/LineRenderer.h"
 #include "Graphics/Quad.h"
+#include "Graphics/ShapeBatch.h"
 #include "MapLocation.h"
 #include "Legend.h"
 #include "Dialog.h"
@@ -16,12 +18,14 @@
 #include "ObjectInfo.h"
 #include "ImageViewer.h"
 #include "MapHd.h"
+#include "MapCompletion.h"
 #include "ObjectModel.h"
 #include "Log.h"
 #include "Localization.h"
 #include "ManualProgress.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
+#include "Ui.h"
 
 #include "SavefileIO.h"
 
@@ -31,13 +35,21 @@ namespace
 {
     // "You are here": the position of the last save, and ZR cycling through the nearest missing objects.
     TexturedQuad s_PlayerMarker;
+    TexturedQuad s_Crosshair; // zayr7: aim fixed at the screen center
     constexpr int NextMissingCount = 5;
     bool s_NextMissingActive = false;
     std::vector<int> s_NextMissingList; // indices into CollectObjects(), nearest first
     glm::vec2 s_NextMissingOrigin(0.0f);
     glm::vec2 s_NextMissingTarget(0.0f);
     int s_NextMissingRank = 0; // 0-based position in s_NextMissingList
-    float s_NextMissingMeters = 0.0f;
+
+    // The map itself: 3000 x 2500 units centred on the origin.
+    constexpr float MapHalfWidth = 1500.0f;
+    constexpr float MapHalfHeight = 1250.0f;
+    constexpr float MinZoom = 0.2f;
+    constexpr float MaxZoom = 10.0f;
+
+    int s_DpadHeldFrames = 0;
 
     bool HasPlayerPosition()
     {
@@ -47,6 +59,32 @@ namespace
     glm::vec2 PlayerMapPosition()
     {
         return glm::vec2(SavefileIO::CurrentState.playerX, -SavefileIO::CurrentState.playerZ) * MapScale;
+    }
+
+    bool ModalDialogOpen()
+    {
+        return Map::m_NoSavefileDialog->m_IsOpen || Map::m_GameRunningDialog->m_IsOpen || Map::m_MasterModeDialog->m_IsOpen;
+    }
+
+    // The legend or a card covers the left of the screen.
+    bool LeftPanelOpen()
+    {
+        return Map::m_Legend->m_IsOpen || Map::m_KorokDialog->m_IsOpen || Map::m_ObjectInfo->m_IsOpen;
+    }
+
+    void UpdateViewMatrix()
+    {
+        Map::m_ViewMatrix = glm::mat4(1.0f); // Reset (important)
+        Map::m_ViewMatrix = glm::translate(Map::m_ViewMatrix, glm::vec3(Map::m_ViewShift, 0.0f, 0.0f));
+        Map::m_ViewMatrix = glm::scale(Map::m_ViewMatrix, glm::vec3(Map::m_Zoom, Map::m_Zoom, 0.0f));
+        Map::m_ViewMatrix = glm::translate(Map::m_ViewMatrix, glm::vec3(-Map::m_CameraPosition, 1.0));
+    }
+
+    void ClampCamera()
+    {
+        Map::m_CameraPosition.x = std::max(-MapHalfWidth, std::min(MapHalfWidth, Map::m_CameraPosition.x));
+        Map::m_CameraPosition.y = std::max(-MapHalfHeight, std::min(MapHalfHeight, Map::m_CameraPosition.y));
+        Map::m_Zoom = std::max(MinZoom, std::min(MaxZoom, Map::m_Zoom));
     }
 }
 
@@ -61,18 +99,30 @@ namespace
         return context;
     }
 
+    // A save read with the game closed and the flags of the running game are the truth. A save backup
+    // (game running, memory not readable) may be old: only then the marks made by hand count.
+    bool ProgressIsCurrent()
+    {
+        return !SavefileIO::GameIsRunning || SavefileIO::LiveSynced;
+    }
+
+    bool CanMarkByHand()
+    {
+        return !ProgressIsCurrent() && ManualProgress::CanPersist();
+    }
+
     bool ResolveFound(Data::ObjectType type, uint32_t hash, bool foundInSave, bool& manualProgressChanged)
     {
         const ManualProgress::Context context = CurrentProgressContext();
         if (foundInSave)
         {
-            if (!SavefileIO::GameIsRunning)
+            if (ProgressIsCurrent())
             {
                 manualProgressChanged = ManualProgress::ConfirmFromSave(context, type, hash) || manualProgressChanged;
             }
             return true;
         }
-        return SavefileIO::GameIsRunning && ManualProgress::IsMarkedFound(context, type, hash);
+        return !ProgressIsCurrent() && ManualProgress::IsMarkedFound(context, type, hash);
     }
 
     // Map position of the object whose card is open.
@@ -139,6 +189,28 @@ namespace
                 &Map::m_Locations[i].m_Found);
     }
 
+    // The object A would open at this map position: the nearest one shown, within 60 pixels. -1 for none.
+    int ObjectAt(const std::vector<MapEntry>& entries, const glm::vec2& mapPosition)
+    {
+        const float radius = 60.0f / Map::m_Zoom;
+        const float maxDistanceSquared = radius * radius;
+        int best = -1;
+        float bestDistanceSquared = 0.0f;
+        for (int i = 0; i < static_cast<int>(entries.size()); ++i)
+        {
+            const MapEntry& entry = entries[i];
+            if (!entry.visible || !Map::m_Legend->ShouldShow(*entry.found && !entry.pending))
+                continue;
+            const float distanceSquared = glm::dot(entry.position - mapPosition, entry.position - mapPosition);
+            if (distanceSquared <= maxDistanceSquared && (best < 0 || distanceSquared < bestDistanceSquared))
+            {
+                best = i;
+                bestDistanceSquared = distanceSquared;
+            }
+        }
+        return best;
+    }
+
     // Opens the Korok hint or the object card.
     void OpenObject(const MapEntry& entry)
     {
@@ -153,27 +225,133 @@ namespace
         Map::m_ObjectInfo->SetOpen(true);
     }
 
+    // A ring that breathes around the object whose card is open.
     void RenderSelectedObjectHighlight()
     {
-        if (Map::m_LineRenderer == nullptr)
-            return;
-
         glm::vec2 position;
         if (!SelectedObjectPosition(position) || !Map::IsInView(position, 30.0f))
             return;
 
-        const float halfSize = 18.0f / Map::m_Zoom;
-        const float width = 2.0f / Map::m_Zoom;
-        const glm::vec4 color(0.0f, 0.82f, 1.0f, 1.0f);
-        const glm::vec2 left = position + glm::vec2(-halfSize, 0.0f);
-        const glm::vec2 bottom = position + glm::vec2(0.0f, -halfSize);
-        const glm::vec2 right = position + glm::vec2(halfSize, 0.0f);
-        const glm::vec2 top = position + glm::vec2(0.0f, halfSize);
-        Map::m_LineRenderer->AddLine(left, bottom, width, color);
-        Map::m_LineRenderer->AddLine(bottom, right, width, color);
-        Map::m_LineRenderer->AddLine(right, top, width, color);
-        Map::m_LineRenderer->AddLine(top, left, width, color);
-        Map::m_LineRenderer->RenderLines(Map::m_ProjectionMatrix, Map::m_ViewMatrix);
+        const glm::vec2 center = Map::MapToScreen(position);
+        const float pulse = std::sin(static_cast<float>(Ui::Frame()) * 0.09f);
+        const float radius = 23.0f + pulse * 3.0f;
+        Ui::Shapes().AddRing(center, radius + 2.0f, radius + 7.0f, glm::vec4(Ui::Colors::Accent, 0.22f));
+        Ui::Shapes().AddRing(center, radius - 1.5f, radius + 1.5f, glm::vec4(Ui::Colors::Accent, 1.0f));
+        Ui::FlushShapes();
+    }
+
+    int CountFound()
+    {
+        int found = 0;
+        for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
+        for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
+        for (int i = 0; i < Data::DLCShrineCount; ++i) found += Map::m_DLCShrines[i].m_Found;
+        for (int i = 0; i < Data::HinoxesCount; ++i) found += Map::m_Hinoxes[i].m_Found;
+        for (int i = 0; i < Data::TalusesCount; ++i) found += Map::m_Taluses[i].m_Found;
+        for (int i = 0; i < Data::MoldugasCount; ++i) found += Map::m_Moldugas[i].m_Found;
+        for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
+        return found;
+    }
+
+    int MapEntriesFound()
+    {
+        int found = 0;
+        for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
+        for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
+        for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
+        return found;
+    }
+
+    // What each button does right now, for the bar at the bottom. `context` goes on its left.
+    void BuildHints(std::vector<Ui::Hint>& hints, std::string& context)
+    {
+        using Localization::Text;
+        const auto add = [&](const char* buttons, Text label) { hints.push_back({buttons, Localization::Get(label)}); };
+
+        if (Map::m_ImageViewer->IsOpen())
+        {
+            add("B", Text::HintBack);
+            return;
+        }
+        if (ModalDialogOpen())
+        {
+            add("A", Text::HintSelect);
+            add("+", Text::HintExit);
+            return;
+        }
+        if (!SavefileIO::LoadedSavefile)
+        {
+            add("+", Text::HintExit);
+            return;
+        }
+
+        const bool korokCard = Map::m_KorokDialog->m_IsOpen;
+        const bool objectCard = Map::m_ObjectInfo->m_IsOpen;
+        if (Map::m_Legend->m_IsOpen)
+        {
+            add("A", Text::HintShowHide);
+            add("B", Text::HintClose);
+        }
+        else if (korokCard || objectCard)
+        {
+            if (korokCard && Map::m_KorokDialog->HasImage())
+                add("A", Text::HintPhoto);
+            const bool found = korokCard ? Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Found
+                                         : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
+            if (CanMarkByHand() && !found)
+                add("Y", Text::HintMarkFound);
+            add("ZL ZR", Text::HintPreviousNext);
+            add("B", Text::HintBack);
+            add("X", Text::HintLegend);
+        }
+        else
+        {
+            // The object under the aim, which A opens
+            static std::vector<MapEntry> entries;
+            CollectObjects(entries);
+            const int hovered = ObjectAt(entries, Map::m_CameraPosition);
+            if (hovered >= 0)
+            {
+                const MapEntry& entry = entries[hovered];
+                context = !entry.name->empty() ? *entry.name
+                        : entry.type == Data::ObjectType::Korok ? Localization::Get(Text::KorokSeed)
+                                                                : Localization::GetObjectTypeName(entry.type);
+                add("A", Text::HintOpen);
+            }
+            add("ZL ZR", Text::HintNearest);
+            add("R", Text::HintAtAim);
+            if (HasPlayerPosition())
+                add("L", Text::HintLink);
+            if (SavefileIO::MasterModeFileExists)
+                add("Y", Map::m_LoadMasterMode ? Text::HintNormalMode : Text::HintMasterMode);
+            add("X", Text::HintLegend);
+        }
+        if (SavefileIO::GameIsRunning)
+            add("-", Text::HintSync);
+        add("+", Text::HintExit);
+    }
+
+    // Chips at the top, the toast and the bar at the bottom. Text goes to the font batch.
+    void DrawHud()
+    {
+        if (SavefileIO::LoadedSavefile && !Map::m_ImageViewer->IsOpen())
+        {
+            glm::vec3 dotColor;
+            bool hasDot = false;
+            const std::string source = Map::SourceText(dotColor, hasDot);
+            Ui::Chip(source, Map::m_ScreenRight - 16.0f, Map::m_ScreenTop - 16.0f, true, hasDot ? &dotColor : nullptr);
+            if (!LeftPanelOpen())
+                Ui::Chip(Localization::Get(Localization::Text::MapCompletion) + " " +
+                         MapCompletion::Format(MapCompletion::Hundredths(MapEntriesFound()), '.'),
+                         Map::m_ScreenLeft + 16.0f, Map::m_ScreenTop - 16.0f, false);
+        }
+
+        Ui::DrawToast();
+
+        std::vector<Ui::Hint> hints;
+        std::string context;
+        BuildHints(hints, context);
+        Ui::Footer(hints, context);
     }
 }
 
@@ -200,6 +378,7 @@ bool Map::Init()
     m_Font.m_ViewMatrix = &m_ViewMatrix;
 
     m_LineRenderer = new LineRenderer();
+    Ui::Init();
 
     m_KorokDialog = new KorokDialog();
     m_ObjectInfo = new ObjectInfo();
@@ -211,8 +390,9 @@ bool Map::Init()
     m_GameRunningDialog = new Dialog(glm::vec2(0.0f, 0.0f), 700.0f, 400.0f, Dialog::GameIsRunning);
     m_MasterModeDialog = new Dialog(glm::vec2(0.0f, 0.0f), 700.0f, 400.0f, Dialog::MasterModeChoose);
 
+    // Below the chip that tells where the progress comes from
     m_MasterModeIcon.Create("romfs:/mastermodeicon.png");
-    m_MasterModeIcon.m_Position = glm::vec2(m_ScreenLeft + 45.0f, m_ScreenBottom + 40.0f);
+    m_MasterModeIcon.m_Position = glm::vec2(m_ScreenRight - 44.0f, m_ScreenTop - 88.0f);
     m_MasterModeIcon.m_Scale = 0.1f;
     m_MasterModeIcon.m_ProjectionMatrix = &m_ProjectionMatrix;
     m_MasterModeIcon.m_ViewMatrix = nullptr;
@@ -221,6 +401,11 @@ bool Map::Init()
     s_PlayerMarker.m_Scale = 0.5f;
     s_PlayerMarker.m_ProjectionMatrix = &m_ProjectionMatrix;
     s_PlayerMarker.m_ViewMatrix = nullptr;
+
+    s_Crosshair.Create("romfs:/crosshair.png");
+    s_Crosshair.m_Scale = 0.5f;
+    s_Crosshair.m_ProjectionMatrix = &m_ProjectionMatrix;
+    s_Crosshair.m_ViewMatrix = nullptr;
 
     // Create koroks
     m_Koroks = new MapObject<Data::Korok>[Data::KoroksCount];
@@ -252,7 +437,7 @@ bool Map::Init()
     return true;
 }
 
-void Map::UpdateMapObjects()
+void Map::UpdateMapObjects(bool recenter)
 {
     if (!SavefileIO::LoadedSavefile)
         return;
@@ -353,9 +538,9 @@ void Map::UpdateMapObjects()
     if (manualProgressChanged)
         ManualProgress::Flush();
 
-    // Start where the last save was made.
+    // Start where Link is (the last save, or right now when read from the running game).
     s_NextMissingActive = false;
-    if (HasPlayerPosition())
+    if (recenter && HasPlayerPosition())
     {
         m_CameraPosition = PlayerMapPosition();
         m_CursorPosition = m_CameraPosition;
@@ -369,12 +554,14 @@ void Map::Update()
 {
     if (m_Pad == nullptr) return;
 
+    Ui::Tick();
+
     u64 buttonsPressed = padGetButtonsDown(m_Pad);
 
     const bool imageViewerWasOpen = m_ImageViewer != nullptr && m_ImageViewer->IsOpen();
     if (imageViewerWasOpen)
     {
-        if (buttonsPressed & (HidNpadButton_B | HidNpadButton_X))
+        if (buttonsPressed & HidNpadButton_B) // zayr7: B goes back everywhere
             m_ImageViewer->Close();
         buttonsPressed = 0;
     }
@@ -382,7 +569,6 @@ void Map::Update()
     float zoomAmount = 0.015f;
     float dragAmont = 0.85f;
     float analogStickMovementSpeed = 10.0f;
-    float minZoom = 0.1f;
 
     // Handle zooming like BotW
     HidAnalogStickState analog_stick_r = padGetStickPos(m_Pad, 1);
@@ -410,28 +596,35 @@ void Map::Update()
         m_CursorFollowsTarget = true;
     }
 
-    if (m_Zoom < minZoom) m_Zoom = minZoom;
+    const bool modalDialogOpen = ModalDialogOpen();
 
-    // Toggle legend
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_X))
+    // zayr7: X only opens and closes the legend; an open card or Korok hint gives way to it
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_X) && !m_NoSavefileDialog->m_IsOpen)
     {
-        // Close the korok dialog first, then if it's not open close the legend
-        if (m_KorokDialog->m_IsOpen)
+        if (m_Legend->m_IsOpen)
+            m_Legend->m_IsOpen = false;
+        else
+        {
             CloseInfoPanels();
-        else if (m_ObjectInfo->m_IsOpen)
-            CloseInfoPanels();
-        else if (!m_NoSavefileDialog->m_IsOpen)
-            m_Legend->m_IsOpen = !m_Legend->m_IsOpen;
+            m_Legend->m_IsOpen = true;
+        }
     }
 
-    // Toggle showing everything
-    // if (buttonsDown & HidNpadButton_B)
-    //     m_ShowAllObjects = true;
-    // if (buttonsUp & HidNpadButton_B)
-    //     m_ShowAllObjects = false;
-
-    // Toggle master mode
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && !m_ObjectInfo->m_IsOpen)
+    // zayr7: Y marks the open Korok hint or card as found; with neither open it toggles master mode
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_KorokDialog->m_IsOpen)
+    {
+        if (CanMarkByHand() && m_KorokDialog->m_KorokIndex >= 0 && !m_Koroks[m_KorokDialog->m_KorokIndex].m_Found)
+        {
+            m_Koroks[m_KorokDialog->m_KorokIndex].m_Found = true;
+            if (ManualProgress::MarkFound(CurrentProgressContext(), Data::ObjectType::Korok,
+                                          m_Koroks[m_KorokDialog->m_KorokIndex].m_ObjectData->hash))
+                ManualProgress::Flush();
+            Ui::Toast(Localization::Get(Localization::Text::ToastMarked));
+        }
+    }
+    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_ObjectInfo->m_IsOpen)
+        MarkSelectedObjectFound();
+    else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_Y))
     {
         if (SavefileIO::MostRecentMasterModeFile != -1)
         {
@@ -444,23 +637,24 @@ void Map::Update()
         }
     }
 
+    // "-" reads the progress again (the running game's, when the app was opened from the Album)
+    if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_Minus))
+        Sync();
+
+    // zayr7: B closes the panel on top (the image viewer is handled above)
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_B))
     {
         if (m_KorokDialog->m_IsOpen)
-        {
-            if (SavefileIO::GameIsRunning && ManualProgress::CanPersist() && m_KorokDialog->m_KorokIndex >= 0 &&
-                !m_Koroks[m_KorokDialog->m_KorokIndex].m_Found)
-            {
-                m_Koroks[m_KorokDialog->m_KorokIndex].m_Found = true;
-                if (ManualProgress::MarkFound(CurrentProgressContext(), Data::ObjectType::Korok,
-                                              m_Koroks[m_KorokDialog->m_KorokIndex].m_ObjectData->hash))
-                    ManualProgress::Flush();
-            }
             m_KorokDialog->SetOpen(false);
-        }
-        else
-            MarkSelectedObjectFound();
+        else if (m_ObjectInfo->m_IsOpen)
+            m_ObjectInfo->SetOpen(false);
+        else if (m_Legend->m_IsOpen)
+            m_Legend->m_IsOpen = false;
     }
+
+    // A on a Korok card shows its photo full screen
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_A) && m_KorokDialog->m_IsOpen && m_KorokDialog->HasImage())
+        m_ImageViewer->Open(m_KorokDialog->m_Image);
 
     // Analog stick camera movement
     // Read the sticks' position
@@ -477,16 +671,31 @@ void Map::Update()
         m_CursorFollowsTarget = false;
     }
 
-    const bool modalDialogOpen = m_NoSavefileDialog->m_IsOpen || m_GameRunningDialog->m_IsOpen || m_MasterModeDialog->m_IsOpen;
     if (!imageViewerWasOpen && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen && !modalDialogOpen)
     {
-        const float cursorStep = 12.0f / m_Zoom;
-        if (buttonsPressed & HidNpadButton_Left) m_CursorPosition.x -= cursorStep;
-        if (buttonsPressed & HidNpadButton_Right) m_CursorPosition.x += cursorStep;
-        if (buttonsPressed & HidNpadButton_Up) m_CursorPosition.y += cursorStep;
-        if (buttonsPressed & HidNpadButton_Down) m_CursorPosition.y -= cursorStep;
-        if (buttonsPressed & HidNpadButton_A) OpenNearestObject(m_CursorPosition);
+        // zayr7: the cursor is the crosshair at the screen center; the D-Pad moves the map under it:
+        // a step for each press, then it keeps going while held.
+        const u64 dpad = HidNpadButton_Left | HidNpadButton_Right | HidNpadButton_Up | HidNpadButton_Down;
+        const u64 held = padGetButtons(m_Pad);
+        s_DpadHeldFrames = (held & dpad) ? s_DpadHeldFrames + 1 : 0;
+        const u64 moving = (buttonsPressed & dpad) ? (buttonsPressed & dpad) : (s_DpadHeldFrames > 18 ? (held & dpad) : 0);
+        const float cursorStep = ((buttonsPressed & dpad) ? 12.0f : 5.0f) / m_Zoom;
+        glm::vec2 step(0.0f, 0.0f);
+        if (moving & HidNpadButton_Left) step.x -= cursorStep;
+        if (moving & HidNpadButton_Right) step.x += cursorStep;
+        if (moving & HidNpadButton_Up) step.y += cursorStep;
+        if (moving & HidNpadButton_Down) step.y -= cursorStep;
+        if (step.x != 0.0f || step.y != 0.0f)
+        {
+            m_CameraPosition += step;
+            m_HasTargetCameraPosition = false;
+            m_CursorFollowsTarget = false;
+        }
+        if ((buttonsPressed & HidNpadButton_A) && SavefileIO::LoadedSavefile && !OpenNearestObject(m_CameraPosition))
+            Ui::Toast(Localization::Get(Localization::Text::ToastNothingHere), true);
     }
+    else
+        s_DpadHeldFrames = 0;
     // ZR/ZL/R open the card of the object they pick, so they also work with a card or the legend open.
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZR))
         FocusMissing(1);
@@ -511,11 +720,17 @@ void Map::Update()
         else
             m_CameraPosition += delta * 0.12f;
     }
+    ClampCamera();
     ClampCursorToViewport();
 
-    m_ViewMatrix = glm::mat4(1.0f); // Reset (important)
-    m_ViewMatrix = glm::scale(m_ViewMatrix, glm::vec3(m_Zoom, m_Zoom, 0.0f));
-    m_ViewMatrix = glm::translate(m_ViewMatrix, glm::vec3(-m_CameraPosition, 1.0));
+    // With the legend or a card open the map slides to the right, so that what is under the aim
+    // stays in the middle of the part of the screen that is free.
+    const float shiftTarget = LeftPanelOpen() && !ModalDialogOpen() ? Ui::PanelWidth * 0.5f : 0.0f;
+    m_ViewShift += (shiftTarget - m_ViewShift) * 0.25f;
+    if (std::fabs(shiftTarget - m_ViewShift) < 0.5f)
+        m_ViewShift = shiftTarget;
+
+    UpdateViewMatrix();
 
     // Touch routing keeps card controls local while allowing selection and dragging on the free map area.
     HidTouchScreenState state={0};
@@ -546,8 +761,9 @@ void Map::Update()
                     (m_MasterModeDialog->m_IsOpen && m_MasterModeDialog->IsPositionOn(touchPosition));
                 const bool onKorokCard = m_KorokDialog->m_IsOpen && m_KorokDialog->IsPositionOn(touchPosition);
                 const bool onObjectCard = m_ObjectInfo->m_IsOpen && m_ObjectInfo->IsPositionOn(touchPosition);
+                const bool onFooter = touchPosition.y < m_ScreenBottom + Ui::FooterHeight;
 
-                if (state.count == 1 && !onDialog)
+                if (state.count == 1 && !onDialog && !onFooter)
                 {
                     m_HasTargetCameraPosition = false;
                     m_CursorFollowsTarget = false;
@@ -559,7 +775,7 @@ void Map::Update()
                     }
                     else
                     {
-                        const bool selected = OpenNearestObject(touchPosition / m_Zoom + m_CameraPosition);
+                        const bool selected = SavefileIO::LoadedSavefile && OpenNearestObject(ScreenToMap(touchPosition));
                         m_IsDragging = !selected;
                         m_PrevTouchPosition = touchPosition;
                     }
@@ -577,9 +793,8 @@ void Map::Update()
         }
     }
 
-    m_ViewMatrix = glm::mat4(1.0f); // Reset (important)
-    m_ViewMatrix = glm::scale(m_ViewMatrix, glm::vec3(m_Zoom, m_Zoom, 0.0f));
-    m_ViewMatrix = glm::translate(m_ViewMatrix, glm::vec3(-m_CameraPosition, 1.0));
+    ClampCamera();
+    UpdateViewMatrix();
 
     if (m_Legend->m_IsOpen)
         m_Legend->Update();
@@ -612,7 +827,9 @@ void Map::Update()
 
     }
 
-    MapHd::Update(m_CameraPosition, m_Zoom, m_CameraWidth / (2.0f * m_Zoom), m_CameraHeight / (2.0f * m_Zoom));
+    // The middle of what is on screen is to the left of the camera while the map is shifted.
+    MapHd::Update(m_CameraPosition - glm::vec2(m_ViewShift / m_Zoom, 0.0f), m_Zoom,
+                  m_CameraWidth / (2.0f * m_Zoom), m_CameraHeight / (2.0f * m_Zoom));
 
     m_PrevCameraPosition = m_CameraPosition;
     ClampCursorToViewport();
@@ -622,8 +839,6 @@ void Map::Render()
 {
     m_MapBackground.Render();
     MapHd::Render(&m_ProjectionMatrix, &m_ViewMatrix);
-
-    Map::m_Font.BeginBatch();
 
     if (SavefileIO::LoadedSavefile)
     {
@@ -676,31 +891,49 @@ void Map::Render()
            MapObject<Data::Molduga>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
         {
-            MapLocation::BeginLabelPass();
-            for (int i = 0; i < Data::LocationsCount; i++)
-                m_Locations[i].Render();
+            // Names of the locations, in map coordinates: the dark edge first, the text over it.
+            m_Font.m_ViewMatrix = &m_ViewMatrix;
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                m_Font.BeginBatch();
+                MapLocation::BeginLabelPass();
+                for (int i = 0; i < Data::LocationsCount; i++)
+                    m_Locations[i].Render(pass == 0);
+                m_Font.RenderBatch();
+            }
         }
         RenderSelectedObjectHighlight();
 
         if (HasPlayerPosition() && s_PlayerMarker.m_Texture)
         {
-            s_PlayerMarker.m_Position = (PlayerMapPosition() - m_CameraPosition) * m_Zoom;
+            s_PlayerMarker.m_Position = MapToScreen(PlayerMapPosition());
             s_PlayerMarker.Render();
         }
     }
 
-    if (SavefileIO::LoadedSavefile && !m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && !m_ObjectInfo->m_IsOpen)
-        m_Font.AddTextToBatch("+", m_CursorPosition, 0.7f / m_Zoom, glm::vec3(1.0f), ALIGN_CENTER);
+    // zayr7: crosshair fixed at the screen center; A and R pick from here
+    if (SavefileIO::LoadedSavefile && !LeftPanelOpen() && !ModalDialogOpen() && s_Crosshair.m_Texture)
+    {
+        s_Crosshair.m_Position = glm::vec2(m_ViewShift, 0.0f);
+        s_Crosshair.Render();
+    }
 
-    m_Font.RenderBatch();
+    // The interface, in screen coordinates. Shapes and images are drawn as they come; all the text at the end.
+    glm::mat4 emptyViewMatrix(1.0);
+    m_Font.m_ViewMatrix = &emptyViewMatrix;
+    m_Font.BeginBatch();
 
-    // Draw behind legend
     if (m_LoadMasterMode)
         m_MasterModeIcon.Render();
 
-    m_Font.BeginBatch();
     if (m_Legend->m_IsOpen)
         m_Legend->Render();
+    m_KorokDialog->Render();
+    m_ObjectInfo->Render();
+
+    DrawHud();
+    Ui::FlushShapes();
+    m_Font.RenderBatch();
 
     if (m_NoSavefileDialog->m_IsOpen)
         m_NoSavefileDialog->Render();
@@ -709,49 +942,16 @@ void Map::Render()
     if (m_MasterModeDialog->m_IsOpen)
         m_MasterModeDialog->Render();
 
-    if (!m_Legend->m_IsOpen && !m_KorokDialog->m_IsOpen && SavefileIO::LoadedSavefile)
-        m_Font.AddTextToBatch(Localization::Get(Localization::Text::OpenLegend),
-                              glm::vec2(m_ScreenLeft + 20, m_ScreenTop - 30), 0.42f);
-
-    if (SavefileIO::LoadedSavefile)
-    {
-        if (SavefileIO::GameIsRunning)
-        {
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::GameRunning), glm::vec2(m_ScreenRight - 20, m_ScreenTop - 30), 0.5f, glm::vec3(1.0f), ALIGN_RIGHT);
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadedOlderSave), glm::vec2(m_ScreenRight - 20, m_ScreenTop - 60), 0.5f, glm::vec3(1.0f), ALIGN_RIGHT);
-        }
-
-        float bottomTextX = m_ScreenRight - 30;
-
-        if (SavefileIO::MasterModeFileExists && !m_LoadMasterMode)
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadMasterMode), glm::vec2(bottomTextX, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
-        else if (m_LoadMasterMode)
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::LoadNormalMode), glm::vec2(bottomTextX, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
-
-        // While the card ZR opened is still the one shown.
-        glm::vec2 selected;
-        if (s_NextMissingActive && !m_Legend->m_IsOpen && SelectedObjectPosition(selected) && selected == s_NextMissingTarget)
-            m_Font.AddTextToBatch(Localization::Get(Localization::Text::NextMissing) + " " + std::to_string(s_NextMissingRank + 1) +
-                                  "/" + std::to_string(s_NextMissingList.size()) +
-                                  "  " + std::to_string(static_cast<int>(s_NextMissingMeters + 0.5f)) + " m",
-                                  glm::vec2(0.0f, m_ScreenBottom + 55), 0.42f, glm::vec3(1.0f), ALIGN_CENTER);
-
-        m_Font.AddTextToBatch(Localization::Get(Localization::Text::Controls),
-            glm::vec2(bottomTextX, m_ScreenBottom + 20), 0.42f, glm::vec3(1.0f), ALIGN_RIGHT);
-    }
-
-    m_KorokDialog->Render();
-    m_ObjectInfo->Render();
-
-    glm::mat4 emptyViewMatrix(1.0);
-    m_Font.m_ViewMatrix = &emptyViewMatrix; // Don't draw the text relative to the camera
-
-    m_Font.RenderBatch();
-
     if (m_ImageViewer->IsOpen())
     {
+        m_Font.m_ViewMatrix = &emptyViewMatrix;
         m_Font.BeginBatch();
         m_ImageViewer->Render(m_ProjectionMatrix);
+        std::vector<Ui::Hint> hints;
+        std::string context;
+        BuildHints(hints, context);
+        Ui::Footer(hints, context);
+        Ui::FlushShapes();
         m_Font.RenderBatch();
     }
 
@@ -760,9 +960,9 @@ void Map::Render()
 
 bool Map::IsInView(glm::vec2 position, float margin = 100.0f)
 {
-    // Calculate camera bounds
-    float viewLeft = m_CameraPosition.x - (m_CameraWidth / 2) / m_Zoom - margin;
-    float viewRight = m_CameraPosition.x + (m_CameraWidth / 2) / m_Zoom + margin;
+    // Calculate camera bounds (the map is drawn m_ViewShift pixels to the right)
+    float viewLeft = m_CameraPosition.x - (m_CameraWidth / 2 + m_ViewShift) / m_Zoom - margin;
+    float viewRight = m_CameraPosition.x + (m_CameraWidth / 2 - m_ViewShift) / m_Zoom + margin;
     float viewBottom = m_CameraPosition.y - (m_CameraHeight / 2) / m_Zoom - margin;
     float viewTop = m_CameraPosition.y + (m_CameraHeight / 2) / m_Zoom + margin;
 
@@ -775,6 +975,16 @@ bool Map::IsInView(glm::vec2 position, float margin = 100.0f)
         return false;
 
     return true;
+}
+
+glm::vec2 Map::MapToScreen(const glm::vec2& mapPosition)
+{
+    return (mapPosition - m_CameraPosition) * m_Zoom + glm::vec2(m_ViewShift, 0.0f);
+}
+
+glm::vec2 Map::ScreenToMap(const glm::vec2& screenPosition)
+{
+    return (screenPosition - glm::vec2(m_ViewShift, 0.0f)) / m_Zoom + m_CameraPosition;
 }
 
 void Map::Destroy()
@@ -810,12 +1020,14 @@ void Map::Destroy()
     m_ImageViewer = nullptr;
     delete m_LineRenderer;
     m_LineRenderer = nullptr;
+    Ui::Destroy();
 
     m_Font.Destroy();
     MapHd::Destroy(); // before the background, whose Destroy also deletes the shared textured-quad shader
     m_MapBackground.Destroy();
     m_MasterModeIcon.Destroy();
     s_PlayerMarker.Destroy();
+    s_Crosshair.Destroy();
 }
 
 static void FocusObject(const MapEntry& target)
@@ -831,22 +1043,7 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
 {
     std::vector<MapEntry> entries;
     CollectObjects(entries);
-    const float radius = 60.0f / m_Zoom;
-    const float maxDistanceSquared = radius * radius;
-    int best = -1;
-    float bestDistanceSquared = 0.0f;
-    for (int i = 0; i < static_cast<int>(entries.size()); ++i)
-    {
-        const MapEntry& entry = entries[i];
-        if (!entry.visible || !m_Legend->ShouldShow(*entry.found && !entry.pending))
-            continue;
-        const float distanceSquared = glm::dot(entry.position - mapPosition, entry.position - mapPosition);
-        if (distanceSquared <= maxDistanceSquared && (best < 0 || distanceSquared < bestDistanceSquared))
-        {
-            best = i;
-            bestDistanceSquared = distanceSquared;
-        }
-    }
+    const int best = ObjectAt(entries, mapPosition);
     if (best < 0)
         return false;
     OpenObject(entries[best]);
@@ -855,12 +1052,12 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
 
 void Map::MarkSelectedObjectFound()
 {
-    if (!m_ObjectInfo->m_IsOpen || m_ObjectInfo->m_Found == nullptr || *m_ObjectInfo->m_Found ||
-        !SavefileIO::GameIsRunning || !ManualProgress::CanPersist())
+    if (!m_ObjectInfo->m_IsOpen || m_ObjectInfo->m_Found == nullptr || *m_ObjectInfo->m_Found || !CanMarkByHand())
         return;
     *m_ObjectInfo->m_Found = true;
     if (ManualProgress::MarkFound(CurrentProgressContext(), m_ObjectInfo->m_Type, m_ObjectInfo->m_CompletionHash))
         ManualProgress::Flush();
+    Ui::Toast(Localization::Get(Localization::Text::ToastMarked));
 }
 
 void Map::FocusMissing(int step)
@@ -888,6 +1085,7 @@ void Map::FocusMissing(int step)
     if (nearest.empty())
     {
         s_NextMissingActive = false;
+        Ui::Toast(Localization::Get(Localization::Text::ToastNothingMissing), true);
         return;
     }
 
@@ -902,7 +1100,6 @@ void Map::FocusMissing(int step)
     s_NextMissingActive = true;
 
     const MapEntry& target = entries[nearest[s_NextMissingRank]];
-    s_NextMissingMeters = glm::distance(target.position, s_NextMissingOrigin) / MapScale;
     s_NextMissingTarget = target.position;
     FocusObject(target);
 }
@@ -922,7 +1119,10 @@ void Map::FocusNearestToCenter()
     const std::vector<int> nearest = Navigation::NearestByDistance(
         candidates, {m_CameraPosition.x, m_CameraPosition.y}, true, 1);
     if (nearest.empty())
+    {
+        Ui::Toast(Localization::Get(Localization::Text::ToastNothingMissing), true);
         return;
+    }
 
     s_NextMissingActive = false; // the next ZR starts again from the nearest to Link
     FocusObject(entries[nearest[0]]);
@@ -942,12 +1142,79 @@ void Map::CloseInfoPanels()
 
 void Map::ClampCursorToViewport()
 {
-    Navigation::Viewport viewport;
-    viewport.center = {m_CameraPosition.x, m_CameraPosition.y};
-    viewport.halfWidth = m_CameraWidth / (2.0f * m_Zoom);
-    viewport.halfHeight = m_CameraHeight / (2.0f * m_Zoom);
-    const Navigation::Point cursor = Navigation::ClampToViewport({m_CursorPosition.x, m_CursorPosition.y}, viewport);
-    m_CursorPosition = glm::vec2(cursor.x, cursor.y);
+    // zayr7: the cursor is always the screen center (the crosshair)
+    m_CursorPosition = m_CameraPosition;
+}
+
+void Map::Sync()
+{
+    // Nothing can change while this app is open unless a game runs behind it.
+    if (!SavefileIO::LoadedSavefile || !SavefileIO::GameIsRunning)
+        return;
+
+    using Localization::Text;
+    const int before = CountFound();
+    if (!SavefileIO::LoadGamesave(m_LoadMasterMode, false, true))
+        return;
+    m_LoadMasterMode = SavefileIO::MasterModeFileLoaded;
+    UpdateMapObjects(false);
+
+    if (SavefileIO::GameIsRunning && !SavefileIO::LiveSynced)
+    {
+        Ui::Toast(Localization::Get(Text::ToastSyncFailed) + ": " + SavefileIO::CurrentState.liveMessage, true);
+        return;
+    }
+    const int added = CountFound() - before;
+    if (added > 0)
+        Ui::Toast(Localization::Get(Text::ToastSynced) + ": " + std::to_string(added) + " " + Localization::Get(Text::NewSince));
+    else
+        Ui::Toast(Localization::Get(Text::ToastNoChange));
+}
+
+std::string Map::SourceText(glm::vec3& dotColor, bool& hasDot)
+{
+    using Localization::Text;
+    hasDot = false;
+    if (!SavefileIO::LoadedSavefile)
+        return std::string();
+
+    if (SavefileIO::LiveSynced)
+    {
+        hasDot = true;
+        dotColor = Ui::Colors::Good;
+        return Localization::Get(Text::LiveFromGame);
+    }
+
+    std::string text = Localization::Get(SavefileIO::GameIsRunning ? Text::SaveBackup : Text::SaveLabel);
+    if (SavefileIO::GameIsRunning)
+    {
+        hasDot = true;
+        dotColor = Ui::Colors::Warn;
+    }
+    const time_t saveTime = static_cast<time_t>(SavefileIO::CurrentState.saveTime);
+    if (saveTime != 0)
+    {
+        char when[32] = "";
+        if (const struct tm* local = std::localtime(&saveTime))
+            std::strftime(when, sizeof(when), "%d %b %H:%M", local);
+        if (when[0] != '\0')
+            text += std::string(" - ") + when;
+    }
+    return text;
+}
+
+std::string Map::NearestRankText()
+{
+    glm::vec2 selected;
+    if (!s_NextMissingActive || !SelectedObjectPosition(selected) || selected != s_NextMissingTarget)
+        return std::string();
+    return Localization::Get(Localization::Text::NextMissing) + " " + std::to_string(s_NextMissingRank + 1) + " " +
+           Localization::Get(Localization::Text::Of) + " " + std::to_string(s_NextMissingList.size());
+}
+
+bool Map::IsManuallyMarked(Data::ObjectType type, uint32_t hash)
+{
+    return !ProgressIsCurrent() && ManualProgress::IsMarkedFound(CurrentProgressContext(), type, hash);
 }
 
 TexturedQuad Map::m_MapBackground;
@@ -956,6 +1223,7 @@ LineRenderer* Map::m_LineRenderer;
 TexturedQuad Map::m_MasterModeIcon;
 
 float Map::m_Zoom = Map::m_DefaultZoom;
+float Map::m_ViewShift = 0.0f;
 
 glm::mat4 Map::m_ProjectionMatrix = glm::mat4(1.0f);
 glm::mat4 Map::m_ViewMatrix = glm::mat4(1.0f);

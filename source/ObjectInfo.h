@@ -23,7 +23,6 @@ public:
     bool* m_Found = nullptr;
 
 private:
-    Quad m_Background;
     TexturedQuad* m_Icon = nullptr;
     glm::vec2 m_MapPosition = glm::vec2(0.0f);
     std::string m_Name;
