@@ -1,0 +1,21 @@
+wait 10
+shot 40-live-start-legend
+press B
+wait 14
+shot 41-live-map
+rstick 0 1 110
+wait 2
+press ZR
+wait 45
+shot 42-live-korok
+press ZR
+wait 45
+shot 43-live-next
+press B
+wait 14
+press MINUS
+wait 5
+shot 44-live-sync-toast
+press X
+wait 14
+shot 45-live-legend
