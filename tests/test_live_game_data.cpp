@@ -144,11 +144,23 @@ int main()
         assert(!report.ok && !report.error.empty() && collector.seen.empty());
     }
 
-    // Another layout (another game version): the getters would read another buffer.
+    // The two buffers the other way around: the flag objects are found all the same.
     {
         FakeGame game;
         game.Build(layout, flags);
-        game.memory.Put<uint64_t>(game.manager + layout.flagBufferRef, game.manager + layout.flagBufferOffset - 8);
+        game.memory.Put<uint64_t>(game.manager + layout.flagBufferOffset, game.proxyBuffer);
+        game.memory.Put<uint64_t>(game.manager + layout.flagBuffer1Offset, game.flagBuffer);
+        Collector collector;
+        LiveGameData::Report report;
+        assert(LiveGameData::Scan(game.memory, game.mainBase, layout, collector, report));
+        ExpectAllSeen(flags, collector);
+    }
+
+    // Another layout (another game version): the getters would read something that is neither buffer.
+    {
+        FakeGame game;
+        game.Build(layout, flags);
+        game.memory.Put<uint64_t>(game.manager + layout.flagBufferRef, game.manager + layout.flagBufferOffset - 0x20);
         Collector collector;
         LiveGameData::Report report;
         assert(!LiveGameData::Scan(game.memory, game.mainBase, layout, collector, report));
