@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "SaveLoadDecision.h"
@@ -15,8 +16,10 @@ namespace SavefileIO
     {
         bool hasDLC = false;
         bool hasPlayerPosition = false;
-        float playerX = 0.0f; // game coordinates of the last save
+        float playerX = 0.0f; // game coordinates of the last save, or of Link right now (see below)
         float playerZ = 0.0f;
+        bool playerPositionIsLive = false; // read from the running game instead of the last save
+        bool playerInsideShrine = false;   // the position is the entrance of the shrine Link is in
         std::vector<uint32_t> clearedShrines;   // by discovery hash (Location_DungeonNNN)
         std::vector<uint32_t> allChestsShrines; // by discovery hash (Location_DungeonNNN)
         std::vector<Data::Korok*> foundKoroks;
@@ -47,6 +50,10 @@ namespace SavefileIO
         bool noSavefileForUser = false;
         bool masterModeFileExists = false;
         bool masterModeFileLoaded = false;
+        bool liveSynced = false;   // the progress shown was read from the running game, not from a save backup
+        std::string liveMessage;    // with the game running: why its memory could not be read
+        int loadedSlot = -1;        // save slot shown (-1 when read from the running game without a backup)
+        uint32_t saveTime = 0;      // when that save was made (its backup, when the save has no date); 0 = unknown
     };
 
     extern SaveState CurrentState;
@@ -66,7 +73,8 @@ namespace SavefileIO
     extern std::vector<Data::Molduga*>& defeatedMoldugas;
     extern std::vector<Data::Molduga*>& undefeatedMoldugas;
 
-    bool LoadGamesave(bool loadMasterMode = false, bool chooseProfile = false);
+    // followGameMode: with the game running, show the mode (normal or master) it is being played in.
+    bool LoadGamesave(bool loadMasterMode = false, bool chooseProfile = false, bool followGameMode = false);
 
     SaveLoadDecision::MountStatus MountSavefile(bool openProfilePicker, SaveState& candidate);
     bool UnmountSavefile();
@@ -95,6 +103,7 @@ namespace SavefileIO
 
     extern bool& LoadedSavefile;
     extern bool& GameIsRunning;
+    extern bool& LiveSynced;
     extern bool& NoSavefileForUser;
     extern bool& MasterModeFileExists;
     extern bool& MasterModeFileLoaded;

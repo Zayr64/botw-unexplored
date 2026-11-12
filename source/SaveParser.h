@@ -31,4 +31,7 @@ namespace SaveParser
     };
 
     bool ParseSaveBuffer(const uint8_t* data, size_t size, ParsedSaveState& result);
+
+    // Whether x, height and z can be a place on the world map (not zeros, not far outside of it).
+    bool IsPlausiblePosition(const float position[3]);
 }

@@ -20,15 +20,16 @@ namespace
         return value;
     }
 
-    bool IsPlausiblePosition(const float position[3])
-    {
-        for (int i = 0; i < 3; ++i)
-            if (!std::isfinite(position[i]))
-                return false;
-        // The map spans about -5000..5000 (x) and -4000..4000 (z).
-        return std::fabs(position[0]) <= 6000.0f && std::fabs(position[2]) <= 5000.0f &&
-               std::fabs(position[1]) <= 3000.0f && (position[0] != 0.0f || position[2] != 0.0f);
-    }
+}
+
+bool SaveParser::IsPlausiblePosition(const float position[3])
+{
+    for (int i = 0; i < 3; ++i)
+        if (!std::isfinite(position[i]))
+            return false;
+    // The map spans about -5000..5000 (x) and -4000..4000 (z).
+    return std::fabs(position[0]) <= 6000.0f && std::fabs(position[2]) <= 5000.0f &&
+           std::fabs(position[1]) <= 3000.0f && (position[0] != 0.0f || position[2] != 0.0f);
 }
 
 bool SaveParser::ParseSaveBuffer(const uint8_t* data, size_t size, ParsedSaveState& result)

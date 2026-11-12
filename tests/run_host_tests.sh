@@ -33,4 +33,6 @@ fi
 /tmp/test_image_override
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_flags.cpp source/ShrineFlags.cpp -o /tmp/test_shrine_flags
 /tmp/test_shrine_flags
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource -Itests tests/test_live_game_data.cpp source/LiveGameData.cpp -o /tmp/test_live_game_data
+/tmp/test_live_game_data
 python3 tests/test_data_mapping.py
