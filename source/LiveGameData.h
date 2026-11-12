@@ -6,10 +6,12 @@
 
 // Progress flags of a running BotW, read straight from the game's memory. Nothing is ever written.
 //
-// The game keeps every flag (the same ones game_data.sav stores) in ksys::gdt::Manager. Its flag buffer
+// The game keeps every flag (the same ones game_data.sav stores) in ksys::gdt::Manager. A flag buffer
 // (a TriggerParam) has one pointer table per flag type; each entry points at a Flag<T> object that starts
-// with the vtable of its type and holds the name hash and the current value. The tables are only used to
-// find which 64 KB pages hold flag objects; the objects themselves are recognised by their vtable, so the
+// with the vtable of its type and holds the name hash and the current value. The Manager has two buffers,
+// kept in step every frame: one with the Flag<T> objects and one with small proxies that point at them
+// (decomp: Manager::allocParam1). The one whose tables point at Flag<T> objects is used. The tables only
+// tell which 64 KB pages hold flag objects; the objects themselves are recognised by their vtable, so the
 // result does not depend on the order of the tables. Addresses and offsets are those of BotW 1.6.0
 // (build id 8E9978D50BDD20B4), checked in the game's code; struct layouts from the zeldaret/botw decomp.
 namespace LiveGameData
@@ -42,8 +44,9 @@ namespace LiveGameData
     struct Layout
     {
         uint64_t managerPointer;   // main + this: ksys::gdt::Manager::sInstance
-        uint64_t flagBufferOffset; // Manager + this: mFlagBuffer (TriggerParam*), the buffer the getters read
-        uint64_t flagBufferRef;    // Manager + this: mParam.mParam, which must point at mFlagBuffer
+        uint64_t flagBufferOffset;  // Manager + this: mFlagBuffer (TriggerParam*), read by the game's getters
+        uint64_t flagBuffer1Offset; // Manager + this: mFlagBuffer1 (TriggerParam*), written by its setters
+        uint64_t flagBufferRef;     // Manager + this: mParam.mParam, which must point at one of the two
         uint64_t tablesOffset;     // TriggerParam + this: first sead::PtrArray {s32 size, s32 capacity, T** data}
         uint64_t playerPointer;    // main + this: pointer chain to Link's actor
         uint64_t playerActorOffset;

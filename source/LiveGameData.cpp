@@ -93,6 +93,33 @@ namespace
     }
 }
 
+namespace
+{
+    // Whether the first entries of the bool and s32 tables point at objects with the vtable of Flag<T>.
+    bool HoldsFlagObjects(LiveGameData::Memory& memory, const PtrArray tables[9], const uint64_t vtables[KindCount],
+                          const LiveGameData::Layout& layout)
+    {
+        constexpr int Probes = 8;
+        for (int kind = 0; kind < 2; ++kind)
+        {
+            const PtrArray& table = tables[layout.kinds[kind].table];
+            if (table.size <= 0 || table.data == 0)
+                return false;
+            uint64_t pointers[Probes];
+            const int count = table.size < Probes ? table.size : Probes;
+            if (!memory.Read(table.data, pointers, static_cast<size_t>(count) * 8))
+                return false;
+            for (int i = 0; i < count; ++i)
+            {
+                uint64_t first = 0;
+                if (pointers[i] == 0 || !memory.Read(pointers[i], &first, sizeof(first)) || first != vtables[kind])
+                    return false;
+            }
+        }
+        return true;
+    }
+}
+
 const uint8_t LiveGameData::BotwBuildId160[8] = {0x8E, 0x99, 0x78, 0xD5, 0x0B, 0xDD, 0x20, 0xB4};
 
 const LiveGameData::Layout& LiveGameData::Botw160()
@@ -100,6 +127,7 @@ const LiveGameData::Layout& LiveGameData::Botw160()
     static const Layout layout = {
         0x2CC5FE8, // ksys::gdt::Manager::sInstance
         0xC00,     // mFlagBuffer
+        0xBF8,     // mFlagBuffer1
         0xBE0,     // mParam.mParam
         0x08,      // mBoolFlags
         0x2CA1140, // Link: [[main+2CA1140]+60]+398
@@ -123,28 +151,59 @@ bool LiveGameData::Scan(Memory& memory, uint64_t mainBase, const Layout& layout,
     if (!memory.Read(mainBase + layout.managerPointer, &manager, sizeof(manager)) || manager == 0)
         return Fail(report, "the game data is not ready yet");
 
-    uint64_t buffer = 0, reference = 0, referenced = 0;
-    if (!memory.Read(manager + layout.flagBufferOffset, &buffer, sizeof(buffer)) || buffer == 0)
+    // The two flag buffers, and the one the game's getters go through (a pointer to one of the two fields).
+    uint64_t buffers[2] = {0, 0};
+    uint64_t reference = 0, referenced = 0;
+    if (!memory.Read(manager + layout.flagBufferOffset, &buffers[0], sizeof(buffers[0])) ||
+        !memory.Read(manager + layout.flagBuffer1Offset, &buffers[1], sizeof(buffers[1])) ||
+        !memory.Read(manager + layout.flagBufferRef, &reference, sizeof(reference)) || reference == 0 ||
+        !memory.Read(reference, &referenced, sizeof(referenced)) || referenced == 0)
         return Fail(report, "the game data is not ready yet");
-    if (!memory.Read(manager + layout.flagBufferRef, &reference, sizeof(reference)) || reference == 0 ||
-        !memory.Read(reference, &referenced, sizeof(referenced)))
-        return Fail(report, "the game data is not ready yet");
-    Append(report.details, "manager %llx, flag buffer %llx, getters read %llx\n", static_cast<unsigned long long>(manager),
-           static_cast<unsigned long long>(buffer), static_cast<unsigned long long>(referenced));
-    if (referenced != buffer)
-        return Fail(report, "the game's flag buffer is not where it should be");
-
-    PtrArray tables[9];
-    if (!memory.Read(buffer + layout.tablesOffset, tables, sizeof(tables)))
-        return Fail(report, "the flag tables could not be read");
+    Append(report.details, "manager %llx, flag buffers %llx and %llx, getters read %llx\n",
+           static_cast<unsigned long long>(manager), static_cast<unsigned long long>(buffers[0]),
+           static_cast<unsigned long long>(buffers[1]), static_cast<unsigned long long>(referenced));
+    if (referenced != buffers[0] && referenced != buffers[1])
+        return Fail(report, "the game's flag buffers are not where they should be");
 
     uint64_t vtables[KindCount];
+    for (int kind = 0; kind < KindCount; ++kind)
+        vtables[kind] = mainBase + layout.kinds[kind].vtable;
+
+    // The buffer whose tables point at Flag<T> objects (the other one holds proxies).
+    uint64_t buffer = 0;
+    PtrArray tables[9];
+    for (const uint64_t candidate : buffers)
+    {
+        if (candidate == 0 || !memory.Read(candidate + layout.tablesOffset, tables, sizeof(tables)))
+            continue;
+        if (HoldsFlagObjects(memory, tables, vtables, layout))
+        {
+            buffer = candidate;
+            break;
+        }
+    }
+    Append(report.details, "flag objects in buffer %llx\n", static_cast<unsigned long long>(buffer));
+    if (buffer == 0)
+    {
+        // What the first table of the first buffer points at, for the log.
+        uint8_t sample[0x18] = {};
+        uint64_t firstObject = 0;
+        if (buffers[0] != 0 && memory.Read(buffers[0] + layout.tablesOffset, tables, sizeof(tables)) && tables[0].data != 0 &&
+            memory.Read(tables[0].data, &firstObject, sizeof(firstObject)) && memory.Read(firstObject, sample, sizeof(sample)))
+        {
+            report.details += "first object of the first table:";
+            for (const uint8_t byte : sample)
+                Append(report.details, " %02x", byte);
+            Append(report.details, " (expected vtable %llx)\n", static_cast<unsigned long long>(vtables[0]));
+        }
+        return Fail(report, "the game's flags do not look as expected");
+    }
+
     std::vector<uint64_t> pages;
     for (int kind = 0; kind < KindCount; ++kind)
     {
         const Layout::Kind& info = layout.kinds[kind];
         const PtrArray& table = tables[info.table];
-        vtables[kind] = mainBase + info.vtable;
         Append(report.details, "table %d: %d of %d at %llx\n", info.table, table.size, table.capacity,
                static_cast<unsigned long long>(table.data));
         if (table.size <= 0 || table.size > table.capacity || table.capacity > MaxTableSize || table.data == 0)
@@ -201,19 +260,7 @@ bool LiveGameData::Scan(Memory& memory, uint64_t mainBase, const Layout& layout,
     // (or the tables do not hold what is expected); more is fine, array flags use the same objects.
     for (int kind = 0; kind < KindCount; ++kind)
         if (report.objects[kind] < report.tableSize[kind])
-        {
-            uint8_t sample[0x18] = {};
-            uint64_t firstObject = 0;
-            if (memory.Read(tables[layout.kinds[kind].table].data, &firstObject, sizeof(firstObject)) &&
-                memory.Read(firstObject, sample, sizeof(sample)))
-            {
-                report.details += "first object of the table:";
-                for (const uint8_t byte : sample)
-                    Append(report.details, " %02x", byte);
-                Append(report.details, " (expected vtable %llx)\n", static_cast<unsigned long long>(vtables[kind]));
-            }
-            return Fail(report, "the game's flags do not look as expected");
-        }
+            return Fail(report, "part of the game's flags could not be read");
 
     report.ok = true;
     return true;

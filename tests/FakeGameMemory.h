@@ -84,6 +84,7 @@ public:
     uint64_t mainBase = 0x7100004000ULL;
     uint64_t manager = 0x2100000000ULL;
     uint64_t flagBuffer = 0x2100100000ULL;
+    uint64_t proxyBuffer = 0x2100200000ULL; // tables that point at objects that are not Flag<T>
     std::pair<uint64_t, size_t> lastBuffer[4]; // per kind: where its last buffer of objects is
 
     // Flags are stored in the order given, in buffers of `perBuffer` objects with unmapped memory between
@@ -99,7 +100,26 @@ public:
         memory.Map(flagBuffer, 0x400);
         memory.Put<uint64_t>(mainBase + layout.managerPointer, manager);
         memory.Put<uint64_t>(manager + layout.flagBufferOffset, flagBuffer);
+        memory.Put<uint64_t>(manager + layout.flagBuffer1Offset, proxyBuffer);
         memory.Put<uint64_t>(manager + layout.flagBufferRef, manager + layout.flagBufferOffset);
+
+        // The second buffer: every table with a few "proxies" (another vtable, no hash of their own).
+        const uint64_t proxies = 0x2110000000ULL, proxyTable = 0x2120000000ULL;
+        memory.Map(proxyBuffer, 0x400);
+        memory.Map(proxies, 0x1000);
+        memory.Map(proxyTable, 0x100);
+        for (int i = 0; i < 16; ++i)
+        {
+            memory.Put<uint64_t>(proxies + i * 0x18, mainBase + 0x2BD0000);
+            memory.Put<uint64_t>(proxyTable + i * 8, proxies + i * 0x18);
+        }
+        for (int table = 0; table < 9; ++table)
+        {
+            const uint64_t header = proxyBuffer + layout.tablesOffset + static_cast<uint64_t>(table) * 16;
+            memory.Put<int32_t>(header, 16);
+            memory.Put<int32_t>(header + 4, 16);
+            memory.Put<uint64_t>(header + 8, proxyTable);
+        }
 
         for (int kind = 0; kind < kindCount; ++kind)
         {
