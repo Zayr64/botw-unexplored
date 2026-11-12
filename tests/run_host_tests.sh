@@ -35,4 +35,6 @@ fi
 /tmp/test_shrine_flags
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource -Itests tests/test_live_game_data.cpp source/LiveGameData.cpp -o /tmp/test_live_game_data
 /tmp/test_live_game_data
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_chests.cpp source/ChestData.cpp -o /tmp/test_chests
+/tmp/test_chests
 python3 tests/test_data_mapping.py
