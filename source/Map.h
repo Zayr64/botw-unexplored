@@ -9,6 +9,8 @@
 #include <glm/vec2.hpp>
 #include <glm/mat4x4.hpp>
 
+#include <string>
+
 #include <switch.h>
 
 #include "Data.h"
@@ -27,13 +29,27 @@ namespace Map
 {
     bool Init();
 
-    void UpdateMapObjects();
+    // recenter: move the map to where Link is (the first time a save is shown).
+    void UpdateMapObjects(bool recenter = true);
     bool OpenNearestObject(const glm::vec2& mapPosition);
     void CloseInfoPanels();
     void MarkSelectedObjectFound();
     void FocusMissing(int step); // +1: next of the nearest missing objects, -1: previous
     void FocusNearestToCenter(); // the missing object nearest to the screen center
     void ClampCursorToViewport();
+
+    // Reads the progress again: from the running game (opened from the Album) or from the save.
+    void Sync();
+    // Where the progress shown comes from ("Live from the game", "Save backup - 07 Nov 17:21"...).
+    std::string SourceText(glm::vec3& dotColor, bool& hasDot);
+    // "Nearest missing 2 of 5" while the open card is one of the nearest to Link (ZL/ZR); empty otherwise.
+    std::string NearestRankText();
+    // Found only because the user marked it (the save shown is an old backup).
+    bool IsManuallyMarked(Data::ObjectType type, uint32_t hash);
+
+    // The map is drawn shifted to the right while the legend or a card covers the left of the screen.
+    glm::vec2 MapToScreen(const glm::vec2& mapPosition);
+    glm::vec2 ScreenToMap(const glm::vec2& screenPosition);
 
     void Update();
     void Render();
@@ -61,6 +77,7 @@ namespace Map
     extern TexturedQuad m_MasterModeIcon; 
 
     extern float m_Zoom;
+    extern float m_ViewShift; // pixels
 
     extern glm::mat4 m_ProjectionMatrix;
     extern glm::mat4 m_ViewMatrix;

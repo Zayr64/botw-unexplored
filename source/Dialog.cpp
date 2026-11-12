@@ -86,6 +86,9 @@ void Dialog::UpdateTexts()
         m_Title = Localization::Get(Localization::Text::GameRunningTitle);
         m_Description = Localization::Get(Localization::Text::GameRunningDescription);
         m_Description2 = Localization::Get(Localization::Text::GameRunningDescription2);
+        // Why the game's memory could not be read instead
+        m_Note = SavefileIO::CurrentState.liveMessage.empty() ? std::string()
+               : "(" + SavefileIO::CurrentState.liveMessage + ")";
     }
     else if (m_Type == DialogType::MasterModeChoose)
     {
@@ -239,6 +242,8 @@ void Dialog::Render()
 
     Map::m_Font.RenderText(m_Description, glm::vec2(0.0f, descTop - 30.0f), 0.5f, glm::vec3(1.0f), ALIGN_CENTER);
     Map::m_Font.RenderText(m_Description2, glm::vec2(0.0f, descTop - 70.0f), 0.5f, glm::vec3(1.0f), ALIGN_CENTER);
+    if (!m_Note.empty())
+        Map::m_Font.RenderText(m_Note, glm::vec2(0.0f, descTop - 108.0f), 0.36f, glm::vec3(0.72f, 0.76f, 0.78f), ALIGN_CENTER);
 
     if (m_ExitButton) m_ExitButton->Render();
     if (m_ChooseProfileButton) m_ChooseProfileButton->Render();

@@ -166,10 +166,11 @@ void TexturedQuad::Create(const std::string& texturePath, glm::vec2 bottomLeft, 
             in vec2 passTextureCoord;
 
             uniform sampler2D tex;
+            uniform vec4 u_Tint = vec4(1.0);
 
             void main()
             {
-                color = texture(tex, passTextureCoord);
+                color = texture(tex, passTextureCoord) * u_Tint;
 
                 if (color.a == 0.0)
                     discard;
@@ -219,6 +220,7 @@ void TexturedQuad::Render()
 
     m_Shader.SetUniform("u_ModelMatrix", modelMatrix);
     m_Shader.SetUniform("u_Scale", m_Scale);
+    m_Shader.SetUniform("u_Tint", m_Tint);
 
     m_Mesh.Render();
 

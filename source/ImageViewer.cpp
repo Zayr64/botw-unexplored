@@ -47,7 +47,7 @@ void ImageViewer::Render(glm::mat4& projection)
         static_cast<float>(m_Image->m_Texture->m_Width),
         static_cast<float>(m_Image->m_Texture->m_Height),
         Map::m_CameraWidth - 80.0f,
-        Map::m_CameraHeight - 80.0f);
+        Map::m_CameraHeight - 120.0f); // room for the bar at the bottom
     if (fit.scale <= 0.0f)
         return;
 
@@ -66,8 +66,4 @@ void ImageViewer::Render(glm::mat4& projection)
     m_Image->m_ViewMatrix = previousView;
     m_Image->m_Position = previousPosition;
     m_Image->m_Scale = previousScale;
-
-    Map::m_Font.AddTextToBatch(Localization::Get(Localization::Text::ImageViewerBack),
-                               glm::vec2(Map::m_ScreenRight - 24.0f, Map::m_ScreenTop - 26.0f),
-                               0.32f, glm::vec3(1.0f), ALIGN_RIGHT);
 }
