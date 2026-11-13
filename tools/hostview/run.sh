@@ -9,6 +9,8 @@
 #        nosave            the profile has no BotW save
 # HOSTVIEW_SAVE_DIR: a BotW save folder (with 0/game_data.sav ...), needed by every mode except nosave.
 # HOSTVIEW_SD_DIR:   optional folder copied into sdmc:/switch/botw-unexplored (icons/, map-hd/, settings.txt...).
+# HOSTVIEW_FREE_MB:  the free memory the app is told it has, for the high-resolution map from the Album
+#                    (the running modes); without it the memory is "unknown" and every chunk is loaded.
 # Extra NAME=value arguments go to the app, e.g. HOSTVIEW_LIVE_SAVE=<game_data.sav> to give the running
 # game a memory to read (see extra/HostCheatService.cpp for the others).
 set -euo pipefail

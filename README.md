@@ -7,6 +7,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 ## Features
 
 - Koroks, shrines, DLC shrines, locations, Hinoxes, Taluses, and Moldugas.
+- **Breakable walls**: the 140 walls of the world map that a bomb opens, as one more category that starts switched off. The card only says whether the wall was broken.
 - **Treasure chests** of the world map that are still closed, in two categories that start switched off: `Chests` and `Special chests` (armor, key items and horse gear, plus weapons, bows, shields and materials found in at most two chests of the whole map). A chest card says only that the chest is not opened and how far it is; `A` tells the kind of thing inside, and `A` again the item itself. Chests of the Expansion Pass show once the save has a sign of it (one of them opened, the Champions' Ballad or a Master Mode save); chests that only exist in Master Mode show only there. Chests inside shrines and Divine Beasts are not on the map (a shrine card tells when one is left).
 - **Live progress while playing**: with BotW 1.6.0 running behind the app (opened from the Album), the game's own flags are read from its memory every time the app opens, and again with `-`. Nothing is written to the game. The chip at the top right tells where the progress comes from: `Live from the game`, `Save backup` (the memory could not be read; the reason shows for a few seconds and goes to `log.txt`) or `Save`.
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
@@ -63,8 +64,10 @@ loading them in the background as the map moves. The chunks are not distributed 
 
 - Files: `map-hd.txt` with the lines `BOTW_UNEXPLORED_MAP_HD`, `1` and `12000 10000 1024`, plus one
   `<column>_<row>.jpg` per chunk (`00_00.jpg` at the top left to `11_09.jpg`, edge chunks smaller), RGB.
-- Only used when the app runs as an application (title override or forwarder). From the Album, which has
-  less memory, the app keeps the built-in map. Up to 40 chunks stay in memory (about 4 MB each).
+- As an application (title override or forwarder) up to 40 chunks stay in memory (about 4 MB each). From the
+  Album, where the app has a fraction of the memory, it keeps up to 24 and loads one only while 64 MB stay
+  free after it; where they do not, that part of the map stays as the built-in one. `log.txt` tells what it
+  found (the `MEMORY:` and `MAP HD:` lines).
 
 ## Sharper icons (optional)
 
@@ -77,8 +80,8 @@ stay clean when drawn smaller than their size.
 
 The app stores its own files under `sdmc:/switch/botw-unexplored/`:
 
-- `settings.txt` is a versioned settings file. Older settings files are accepted and rewritten in the current format. The chest categories are kept at the end of the file, where a release without them does not look: it still reads the file.
-- `manual_progress.dat` is a versioned manual-progress file. Entries are keyed by Switch profile, Normal/Master Mode, object type, and completion hash. A completion later confirmed by a readable game save removes the corresponding override. While it holds a mark on a chest the file is version 2, which a release without chests leaves untouched (and without manual progress) instead of discarding.
+- `settings.txt` is a versioned settings file. Older settings files are accepted and rewritten in the current format. The categories added later (chests, walls) are kept at the end of the file, where a release without them does not look: it still reads the file.
+- `manual_progress.dat` is a versioned manual-progress file. Entries are keyed by Switch profile, Normal/Master Mode, object type, and completion hash. A completion later confirmed by a readable game save removes the corresponding override. While it holds a mark on a chest the file is version 2, and with one on a wall version 3: a release that does not know those objects leaves such a file untouched (and shows no manual progress) instead of discarding it.
 
 No file in this directory changes the actual BotW save.
 
@@ -108,13 +111,13 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), and the tower and fountain flags. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, and the memory rule of the high-resolution map. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 
 - [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored) — original application and codebase.
 - [marcrobledo/savegame-editors](https://github.com/marcrobledo/savegame-editors), [MrCheeze/botw-waypoint-map](https://github.com/MrCheeze/botw-waypoint-map), [Zelda Dungeon](https://www.zeldadungeon.net/), and [d4mation/botw-unexplored-viewer](https://github.com/d4mation/botw-unexplored-viewer) — original data, research, and guide references.
-- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, and `tools/gen_shrine_chests.py` does the same for the chests inside the shrines).
+- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, `tools/gen_shrine_chests.py` does the same for the chests inside the shrines, and `tools/gen_walls.py` for the breakable walls).
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.

@@ -16,14 +16,15 @@
 #include "Graphics/Quad.h"
 #include "Graphics/Texture2D.h"
 #include "Graphics/Vertex.h"
+#include "FreeMemory.h"
 #include "Log.h"
 #include "MapHdGrid.h"
 
 namespace
 {
     const char* Directory = "sdmc:/switch/botw-unexplored/map-hd/";
-    // Each chunk takes up to 1024 x 1024 x 3 bytes plus a third for the mipmaps (about 4 MB).
-    constexpr int MaxLoadedChunks = 40;
+    // After finding no memory for a chunk, how many frames to wait before looking again.
+    constexpr unsigned int MemoryCheckInterval = 120;
 
     enum class ChunkState
     {
@@ -51,6 +52,10 @@ namespace
 
     bool s_Enabled = false;
     bool s_Active = false;
+    bool s_Application = true;  // false when opened from the Album, with little memory
+    int s_MaxLoaded = MapHdGrid::MaxLoadedApplication;
+    unsigned int s_NextMemoryCheck = 0;
+    bool s_MemoryLogged = false;
     unsigned int s_Frame = 0;
     int s_LoadedCount = 0;
     Chunk s_Chunks[MapHdGrid::ChunkCount];
@@ -149,16 +154,57 @@ namespace
             --s_LoadedCount;
         chunk.state = ChunkState::Empty;
     }
+
+    // The loaded chunk used least recently and not in this frame, or -1.
+    int EvictionCandidate()
+    {
+        std::vector<std::pair<int, unsigned int>> loaded;
+        for (int index = 0; index < MapHdGrid::ChunkCount; ++index)
+            if (s_Chunks[index].state == ChunkState::Loaded)
+                loaded.push_back({index, s_Chunks[index].lastUsed});
+        return MapHdGrid::PickEviction(loaded, s_Frame);
+    }
+
+    std::string MegabytesText(uint64_t bytes)
+    {
+        return bytes == FreeMemory::Unknown ? std::string("unknown") : std::to_string(bytes >> 20) + " MB";
+    }
+
+    // Whether one more chunk may be loaded now. From the Album that depends on the memory left: when it is
+    // short a chunk that is off screen goes first, and the answer is no until a later frame.
+    bool HasRoomForChunk()
+    {
+        if (s_Application)
+            return true;
+        if (s_Frame < s_NextMemoryCheck)
+            return false;
+        const uint64_t freeBytes = FreeMemory::Bytes();
+        if (MapHdGrid::HasMemoryForChunk(freeBytes))
+            return true;
+
+        const int victim = EvictionCandidate();
+        if (victim >= 0)
+        {
+            Unload(victim);
+            return false; // looked at again in the next frame, with that memory back
+        }
+        if (!s_MemoryLogged)
+        {
+            Log("MAP HD: no memory for more chunks, free: " + MegabytesText(freeBytes) + ", loaded: " +
+                std::to_string(s_LoadedCount));
+            s_MemoryLogged = true;
+        }
+        s_NextMemoryCheck = s_Frame + MemoryCheckInterval;
+        return false;
+    }
 }
 
 void MapHd::Init()
 {
     const AppletType appletType = appletGetAppletType();
-    if (appletType != AppletType_Application && appletType != AppletType_SystemApplication)
-    {
-        Log("MAP HD: off (not running as an application)");
-        return;
-    }
+    s_Application = appletType == AppletType_Application || appletType == AppletType_SystemApplication;
+    const uint64_t freeBytes = FreeMemory::Bytes();
+    Log(std::string("MEMORY: ") + (s_Application ? "application" : "applet (Album)") + ", free: " + MegabytesText(freeBytes));
     std::ifstream info(std::string(Directory) + "map-hd.txt");
     if (!info.is_open() || !MapHdGrid::IsValidInfo(info))
     {
@@ -170,7 +216,11 @@ void MapHd::Init()
     s_Stop = false;
     s_Worker = std::thread(Worker);
     s_Enabled = true;
-    Log("MAP HD: on");
+    s_MaxLoaded = MapHdGrid::MaxLoadedChunks(s_Application);
+    s_NextMemoryCheck = 0;
+    s_MemoryLogged = false;
+    Log("MAP HD: on, up to " + std::to_string(s_MaxLoaded) + " chunks" +
+        (s_Application ? "" : ", each loaded only while memory allows"));
 }
 
 void MapHd::Update(const glm::vec2& cameraPosition, float zoom, float halfWidth, float halfHeight)
@@ -205,30 +255,32 @@ void MapHd::Update(const glm::vec2& cameraPosition, float zoom, float halfWidth,
         if (s_Chunks[index].state == ChunkState::Loaded)
             s_Chunks[index].lastUsed = s_Frame;
 
+    // The nearest chunk on screen that is still missing, if the decoder is idle and there is room for it
+    int wanted = -1;
+    for (int index : s_Visible)
     {
-        std::lock_guard<std::mutex> lock(s_Mutex);
-        if (s_Request < 0 && !s_HasDecoded)
+        if (s_Chunks[index].state == ChunkState::Empty)
         {
-            for (int index : s_Visible)
-            {
-                if (s_Chunks[index].state == ChunkState::Empty)
-                {
-                    s_Chunks[index].state = ChunkState::Loading;
-                    s_Request = index;
-                    s_Wake.notify_one();
-                    break;
-                }
-            }
+            wanted = index;
+            break;
         }
     }
-
-    while (s_LoadedCount > MaxLoadedChunks)
+    bool idle = false;
     {
-        std::vector<std::pair<int, unsigned int>> loaded;
-        for (int index = 0; index < MapHdGrid::ChunkCount; ++index)
-            if (s_Chunks[index].state == ChunkState::Loaded)
-                loaded.push_back({index, s_Chunks[index].lastUsed});
-        const int victim = MapHdGrid::PickEviction(loaded, s_Frame);
+        std::lock_guard<std::mutex> lock(s_Mutex);
+        idle = s_Request < 0 && !s_HasDecoded;
+    }
+    if (wanted >= 0 && idle && HasRoomForChunk())
+    {
+        std::lock_guard<std::mutex> lock(s_Mutex);
+        s_Chunks[wanted].state = ChunkState::Loading;
+        s_Request = wanted;
+        s_Wake.notify_one();
+    }
+
+    while (s_LoadedCount > s_MaxLoaded)
+    {
+        const int victim = EvictionCandidate();
         if (victim < 0)
             break;
         Unload(victim);

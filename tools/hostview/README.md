@@ -45,8 +45,12 @@ touch 900 300 2    a finger at pixel 900,300 for two frames
 shot 06-korok      save <output folder>/06-korok.png
 ```
 
-`scripts/tour.txt` walks through the main screens and `scripts/tour-chests.txt` through the chests (legend,
-map, card and what `A` reveals).
+`scripts/tour.txt` walks through the main screens, `scripts/tour-chests.txt` through the chests (legend, map,
+card and what `A` reveals) and `scripts/tour-walls.txt` through the breakable walls.
+
+The high-resolution map needs `HOSTVIEW_SD_DIR` with a `map-hd/` folder. In the running modes the app behaves
+as opened from the Album, where it loads a chunk only while memory allows: `HOSTVIEW_FREE_MB=400` lets it,
+`HOSTVIEW_FREE_MB=50` shows the fallback to the built-in map.
 
 The game running behind the app, with its memory read:
 

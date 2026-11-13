@@ -10,6 +10,8 @@
 //   shot NAME              one settle frame, saved as <HOSTVIEW_OUT>/NAME.png
 #include <switch.h>
 
+#include "FreeMemory.h"
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <glad/glad.h>
@@ -244,6 +246,15 @@ bool appletMainLoop(void)
 Result appletLockExit(void) { return 0; }
 Result appletUnlockExit(void) { return 0; }
 AppletType appletGetAppletType(void) { return EnvOn("HOSTVIEW_APPLET") ? AppletType_LibraryApplet : AppletType_Application; }
+
+// The memory the app believes it has left: HOSTVIEW_FREE_MB megabytes, or unknown without the variable.
+uint64_t FreeMemory::Bytes()
+{
+    const char* megabytes = getenv("HOSTVIEW_FREE_MB");
+    if (!megabytes)
+        return FreeMemory::Unknown;
+    return static_cast<uint64_t>(atoll(megabytes)) * 1024 * 1024;
+}
 
 Result accountInitialize(AccountServiceType) { return 0; }
 void accountExit(void) {}

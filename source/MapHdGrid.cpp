@@ -76,6 +76,16 @@ bool MapHdGrid::IsUsableZoom(float zoom)
     return std::isfinite(zoom) && zoom >= MinZoom;
 }
 
+int MapHdGrid::MaxLoadedChunks(bool application)
+{
+    return application ? MaxLoadedApplication : MaxLoadedApplet;
+}
+
+bool MapHdGrid::HasMemoryForChunk(uint64_t freeBytes)
+{
+    return freeBytes >= AppletReserveBytes + ChunkPeakBytes;
+}
+
 bool MapHdGrid::IsValidInfo(std::istream& input)
 {
     std::string header, version, size;

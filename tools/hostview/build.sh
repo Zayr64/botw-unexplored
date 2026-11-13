@@ -28,6 +28,7 @@ if ! cmp -s "$OUT/Main_host.cpp.new" "$OUT/Main_host.cpp" 2>/dev/null; then mv "
 SRCS=("$OUT/Main_host.cpp" "$HERE/host.cpp")
 for f in "$REPO"/source/*.cpp "$REPO"/source/Graphics/*.cpp "$HERE"/extra/*.cpp; do
     [[ "$(basename "$f")" == "Main.cpp" ]] && continue
+    [[ "$(basename "$f")" == "FreeMemory.cpp" ]] && continue # host.cpp has its own
     SRCS+=("$f")
 done
 

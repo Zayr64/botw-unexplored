@@ -55,6 +55,13 @@ int main()
     std::istringstream empty("");
     assert(!IsValidInfo(empty));
 
+    // From the Album fewer chunks stay loaded, but more than a screen needs at the lowest zoom they show at
+    assert(MaxLoadedChunks(true) == 40 && MaxLoadedChunks(false) == 24);
+    assert(static_cast<int>(wide.size()) < MaxLoadedChunks(false));
+    // ...and one more is loaded only while 64 MB stay free after its 8 MB
+    assert(!HasMemoryForChunk(0) && !HasMemoryForChunk(71ull * 1024 * 1024));
+    assert(HasMemoryForChunk(72ull * 1024 * 1024) && HasMemoryForChunk(UINT64_MAX));
+
     // Eviction: the least recently used chunk, never one used in the current frame
     assert(PickEviction({{3, 10}, {7, 4}, {9, 8}}, 12) == 7);
     assert(PickEviction({{3, 12}, {7, 12}}, 12) == -1);
