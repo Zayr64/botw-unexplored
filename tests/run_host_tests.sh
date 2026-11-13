@@ -41,4 +41,6 @@ fi
 /tmp/test_shrine_chests
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_location_state.cpp source/LocationState.cpp source/ShrineFlags.cpp -o /tmp/test_location_state
 /tmp/test_location_state
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_walls.cpp source/WallData.cpp -o /tmp/test_walls
+/tmp/test_walls
 python3 tests/test_data_mapping.py

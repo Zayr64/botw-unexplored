@@ -12,7 +12,8 @@ namespace
         {"romfs:/talus.png", false, static_cast<int>(LegendCategories::ButtonTypes::Taluses)},
         {"romfs:/molduga.png", false, static_cast<int>(LegendCategories::ButtonTypes::Moldugas)},
         {"romfs:/chest.png", false, static_cast<int>(LegendCategories::ButtonTypes::Chests)},
-        {"romfs:/chestspecial.png", false, static_cast<int>(LegendCategories::ButtonTypes::SpecialChests)}
+        {"romfs:/chestspecial.png", false, static_cast<int>(LegendCategories::ButtonTypes::SpecialChests)},
+        {"romfs:/wall.png", false, static_cast<int>(LegendCategories::ButtonTypes::Walls)}
     }};
     static_assert(metadata.size() == static_cast<size_t>(Data::ObjectType::Count), "Object metadata must cover every type");
 }

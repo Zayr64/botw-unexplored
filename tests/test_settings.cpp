@@ -30,6 +30,7 @@ int main()
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Locations) == 5, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Chests) == 7, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::SpecialChests) == 8, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Walls) == 9, "");
 
     // A release from before the chests reads header, version, 4 values, 7 entries, showMode and language, and
     // stops: the file starts with exactly those lines, and the chests come after them.
@@ -41,10 +42,16 @@ int main()
         while (std::getline(written, line))
             lines.push_back(line);
     }
-    assert(lines.size() == 17);
+    assert(lines.size() == 18);
     assert(lines[0] == "BOTW_UNEXPLORED_SETTINGS" && lines[1] == "2" && lines[5] == "0");
     assert(lines[6 + 3] == "1" && lines[13] == "2" && lines[14] == "1");
-    assert(lines[15] == "0" && lines[16] == "1");
+    assert(lines[15] == "0" && lines[16] == "1" && lines[17] == "0");
+
+    // The file of the release with chests and no walls ends one line earlier: the walls stay off.
+    std::stringstream beforeWalls("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n1\n1\n");
+    SettingsIO::Settings fromBeforeWalls;
+    assert(SettingsIO::Load(beforeWalls, fromBeforeWalls) == SettingsIO::LoadResult::Current);
+    assert(fromBeforeWalls.visible[7] && fromBeforeWalls.visible[8] && !fromBeforeWalls.visible[9]);
 
     // ...and its file, which ends before the chests, is read with them switched off.
     std::stringstream older("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n");

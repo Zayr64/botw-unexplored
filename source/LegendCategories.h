@@ -14,6 +14,7 @@ namespace LegendCategories
         Locations,
         Chests,
         SpecialChests,
+        Walls,
         Count
     };
 

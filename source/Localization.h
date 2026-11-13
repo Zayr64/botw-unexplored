@@ -122,6 +122,10 @@ namespace Localization
         NotActivated,
         Awakened,
         NotAwakened,
+        Walls,
+        BreakableWall,
+        Broken,
+        NotBroken,
         Count
     };
 

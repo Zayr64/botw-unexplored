@@ -15,6 +15,7 @@
 
 #include "Chests.h"
 #include "Data.h"
+#include "Walls.h"
 
 template <typename T> class MapObject;
 
@@ -107,6 +108,7 @@ namespace Map
     extern MapObject<Data::Molduga>* m_Moldugas;
     extern MapObject<Data::ChestIcon>* m_Chests;               // one per entry of Data::Chests
     extern MapObject<Data::SpecialChestIcon>* m_SpecialChests; // one per entry of Data::SpecialChests
+    extern MapObject<Data::WallIcon>* m_Walls;                 // one per entry of Data::Walls
 
     extern MapLocation* m_Locations;
 

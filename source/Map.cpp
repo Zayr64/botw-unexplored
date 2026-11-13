@@ -163,7 +163,7 @@ namespace
         entries.clear();
         entries.reserve(Data::KoroksCount + Data::ShrineCount + Data::DLCShrineCount + Data::HinoxesCount +
                         Data::TalusesCount + Data::MoldugasCount + Data::LocationsCount + Data::ChestsCount +
-                        Data::SpecialChestsCount);
+                        Data::SpecialChestsCount + Data::WallsCount);
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
                              bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr)
         {
@@ -199,6 +199,8 @@ namespace
             if (!Map::m_SpecialChests[i].m_Excluded)
                 add(Data::ObjectType::SpecialChest, Data::SpecialChests[i].hash, Map::m_SpecialChests[i].m_Position, noName,
                     &Map::m_SpecialChests[i].m_Found, false, -1, &Data::SpecialChests[i]);
+        for (int i = 0; i < Data::WallsCount; ++i)
+            add(Data::ObjectType::BreakableWall, Data::Walls[i].hash, Map::m_Walls[i].m_Position, noName, &Map::m_Walls[i].m_Found);
     }
 
     // The object A would open at this map position: the nearest one shown, within 60 pixels. -1 for none.
@@ -264,6 +266,7 @@ namespace
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
         for (int i = 0; i < Data::ChestsCount; ++i) found += Map::m_Chests[i].m_Found;
         for (int i = 0; i < Data::SpecialChestsCount; ++i) found += Map::m_SpecialChests[i].m_Found;
+        for (int i = 0; i < Data::WallsCount; ++i) found += Map::m_Walls[i].m_Found;
         return found;
     }
 
@@ -453,6 +456,11 @@ bool Map::Init()
     MapObject<Data::SpecialChestIcon>::Init("romfs:/chestspecial.png", Data::SpecialChestsCount);
     MapObject<Data::SpecialChestIcon>::m_SizeFactor = 0.25f;
 
+    // Create breakable walls
+    m_Walls = new MapObject<Data::WallIcon>[Data::WallsCount];
+    MapObject<Data::WallIcon>::Init("romfs:/wall.png", Data::WallsCount);
+    MapObject<Data::WallIcon>::m_SizeFactor = 0.25f;
+
     // Create locations
     m_Locations = new MapLocation[Data::LocationsCount];
 
@@ -577,6 +585,13 @@ void Map::UpdateMapObjects(bool recenter)
         placeChest(m_Chests[i], Data::Chests[i], Data::ObjectType::Chest);
     for (int i = 0; i < Data::SpecialChestsCount; i++)
         placeChest(m_SpecialChests[i], Data::SpecialChests[i], Data::ObjectType::SpecialChest);
+
+    for (int i = 0; i < Data::WallsCount; i++) // Breakable walls
+    {
+        m_Walls[i].m_Position = glm::vec2(Data::Walls[i].x, -Data::Walls[i].y) * MapScale;
+        m_Walls[i].m_Found = ResolveFound(Data::ObjectType::BreakableWall, Data::Walls[i].hash,
+                                          SavefileIO::IsWallBroken(Data::Walls[i].hash), manualProgressChanged);
+    }
 
     if (manualProgressChanged)
         ManualProgress::Flush();
@@ -874,6 +889,9 @@ void Map::Update()
         if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
             for (int i = 0; i < Data::SpecialChestsCount; i++)
                 m_SpecialChests[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
+            for (int i = 0; i < Data::WallsCount; i++)
+                m_Walls[i].Update(i == 0);
         for (int i = 0; i < Data::LocationsCount; i++)
             m_Locations[i].Update();
 
@@ -945,6 +963,8 @@ void Map::Render()
             MapObject<Data::Talus>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Moldugas])
            MapObject<Data::Molduga>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
+            MapObject<Data::WallIcon>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
             MapObject<Data::SpecialChestIcon>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
@@ -1063,6 +1083,8 @@ void Map::Destroy()
     m_Chests = nullptr;
     delete[] m_SpecialChests;
     m_SpecialChests = nullptr;
+    delete[] m_Walls;
+    m_Walls = nullptr;
     delete[] m_Locations;
     m_Locations = nullptr;
 
@@ -1313,6 +1335,7 @@ MapObject<Data::Talus>* Map::m_Taluses;
 MapObject<Data::Molduga>* Map::m_Moldugas;
 MapObject<Data::ChestIcon>* Map::m_Chests;
 MapObject<Data::SpecialChestIcon>* Map::m_SpecialChests;
+MapObject<Data::WallIcon>* Map::m_Walls;
 MapLocation* Map::m_Locations;
 
 Legend* Map::m_Legend;

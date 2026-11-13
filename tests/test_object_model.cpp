@@ -8,9 +8,9 @@ int main()
     const char* expectedIcons[] = {
         "romfs:/korokseed.png", "romfs:/shrine.png", "romfs:/dlcshrine.png", "romfs:/village.png",
         "romfs:/hinox.png", "romfs:/talus.png", "romfs:/molduga.png",
-        "romfs:/chest.png", "romfs:/chestspecial.png"
+        "romfs:/chest.png", "romfs:/chestspecial.png", "romfs:/wall.png"
     };
-    const int expectedLegendButtons[] = {0, 1, 1, 5, 2, 3, 4, 6, 7};
+    const int expectedLegendButtons[] = {0, 1, 1, 5, 2, 3, 4, 6, 7, 8};
     static_assert(sizeof(expectedIcons) / sizeof(expectedIcons[0]) == static_cast<size_t>(Data::ObjectType::Count), "");
 
     for (int value = 0; value < static_cast<int>(Data::ObjectType::Count); ++value)

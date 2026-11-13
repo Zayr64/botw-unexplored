@@ -13,6 +13,7 @@ namespace Data
         Molduga,
         Chest,        // a treasure chest of the world map
         SpecialChest, // one with armor, a key item, or a weapon or material found in very few chests
+        BreakableWall, // a wall of the world map that a bomb breaks open
         Count
     };
 }

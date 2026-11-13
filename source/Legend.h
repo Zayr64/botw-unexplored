@@ -21,6 +21,7 @@ public:
     static constexpr ButtonTypes Locations = ButtonTypes::Locations;
     static constexpr ButtonTypes Chests = ButtonTypes::Chests;
     static constexpr ButtonTypes SpecialChests = ButtonTypes::SpecialChests;
+    static constexpr ButtonTypes Walls = ButtonTypes::Walls;
 
 public:
     // Position is the top-left corner

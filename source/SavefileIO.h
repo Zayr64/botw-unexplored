@@ -10,6 +10,7 @@
 
 #include "Chests.h"
 #include "Data.h"
+#include "Walls.h"
 
 namespace SavefileIO
 {
@@ -25,6 +26,7 @@ namespace SavefileIO
         std::vector<uint32_t> allChestsShrines; // by discovery hash (Location_DungeonNNN)
         std::vector<uint32_t> openedChests;     // flag hashes of the opened chests of the world map, sorted
         bool hasDlcChests = false;              // the chests of the Expansion Pass exist in this game
+        std::vector<uint32_t> brokenWalls;        // flag hashes of the walls already broken open, sorted
         std::vector<uint32_t> openedShrineChests; // flag hashes of the opened chests inside the shrines, sorted
         std::vector<uint32_t> doneLocationStates; // locations with the tower activated or the fairy awakened, sorted
         bool balladStarted = false;               // the Champions' Ballad has begun: its shrines can exist
@@ -92,6 +94,7 @@ namespace SavefileIO
     bool IsShrineCleared(uint32_t locationHash);
     bool HasAllShrineChests(uint32_t locationHash);
     bool IsChestOpened(uint32_t flagHash);
+    bool IsWallBroken(uint32_t flagHash);
     // The chests inside a shrine: how many there are and how many are opened. False for a shrine not in the table.
     bool GetShrineChests(uint32_t locationHash, int& opened, int& total);
     // Whether the tower of this location is activated, or its great fairy awakened (see LocationState.h).

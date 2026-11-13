@@ -64,6 +64,18 @@ int main()
     std::stringstream again;
     assert(ManualProgress::Save(again));
     assert(again.str() == base.str());
+    // A mark on a wall makes it version 3, which the releases from before the walls leave alone.
+    assert(ManualProgress::MarkFound(normal, Data::ObjectType::BreakableWall, 700));
+    std::stringstream withWall;
+    assert(ManualProgress::Save(withWall));
+    assert(withWall.str() == "BOTW_UNEXPLORED_MANUAL_PROGRESS\n3\n1 2 0 6 100\n1 2 0 9 700\n");
+    ManualProgress::Clear();
+    assert(ManualProgress::Load(withWall) == ManualProgress::LoadResult::Current);
+    assert(ManualProgress::IsMarkedFound(normal, Data::ObjectType::BreakableWall, 700));
+    std::stringstream four("BOTW_UNEXPLORED_MANUAL_PROGRESS\n4\n");
+    assert(ManualProgress::Load(four) == ManualProgress::LoadResult::FutureVersion);
+    std::stringstream reload(base.str());
+    assert(ManualProgress::Load(reload) == ManualProgress::LoadResult::Current && ManualProgress::CanPersist());
     std::stringstream zero("BOTW_UNEXPLORED_MANUAL_PROGRESS\n0\n");
     assert(ManualProgress::Load(zero) == ManualProgress::LoadResult::Invalid);
 }

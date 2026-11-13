@@ -699,6 +699,8 @@ const std::unordered_multimap<uint32_t, TrackedFlag>& GetTrackedFlags()
         for (int i = 0; i < Data::SpecialChestsCount; ++i)
             result.insert({Data::SpecialChests[i].hash,
                            {Data::ObjectType::SpecialChest, const_cast<Data::Chest*>(&Data::SpecialChests[i])}});
+        for (int i = 0; i < Data::WallsCount; ++i)
+            result.insert({Data::Walls[i].hash, {Data::ObjectType::BreakableWall, const_cast<Data::Wall*>(&Data::Walls[i])}});
         return result;
     }();
     return table;
@@ -769,6 +771,10 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
                         parsedState.hasDlcChests = true;
                 }
                 break;
+            case Data::ObjectType::BreakableWall:
+                if (set)
+                    parsedState.brokenWalls.push_back(hashValue);
+                break;
             default:
                 break;
             }
@@ -776,6 +782,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     }
 
     std::sort(parsedState.openedChests.begin(), parsedState.openedChests.end());
+    std::sort(parsedState.brokenWalls.begin(), parsedState.brokenWalls.end());
     std::sort(parsedState.openedShrineChests.begin(), parsedState.openedShrineChests.end());
     std::sort(parsedState.doneLocationStates.begin(), parsedState.doneLocationStates.end());
     parsedState.hasDLC = bufferState.hasDLC;
@@ -1022,6 +1029,11 @@ bool SavefileIO::IsShrineCleared(uint32_t locationHash)
 bool SavefileIO::IsChestOpened(uint32_t flagHash)
 {
     return std::binary_search(CurrentState.openedChests.begin(), CurrentState.openedChests.end(), flagHash);
+}
+
+bool SavefileIO::IsWallBroken(uint32_t flagHash)
+{
+    return std::binary_search(CurrentState.brokenWalls.begin(), CurrentState.brokenWalls.end(), flagHash);
 }
 
 bool SavefileIO::GetShrineChests(uint32_t locationHash, int& opened, int& total)
