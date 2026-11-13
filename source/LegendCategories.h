@@ -11,7 +11,6 @@ namespace LegendCategories
         Hinoxes,
         Taluses,
         Moldugas,
-        Locations,
         Chests,
         SpecialChests,
         Walls,

@@ -24,7 +24,6 @@
 #include "Regions.h"
 #include "RegionsPanel.h"
 #include "Localization.h"
-#include "LocationState.h"
 #include "ManualProgress.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
@@ -164,7 +163,7 @@ namespace
         static const std::string noName;
         entries.clear();
         entries.reserve(Data::KoroksCount + Data::ShrineCount + Data::DLCShrineCount + Data::HinoxesCount +
-                        Data::TalusesCount + Data::MoldugasCount + Data::LocationsCount + Data::ChestsCount +
+                        Data::TalusesCount + Data::MoldugasCount + Data::ChestsCount +
                         Data::SpecialChestsCount + Data::WallsCount);
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
                              bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr)
@@ -191,9 +190,6 @@ namespace
             add(Data::ObjectType::Talus, Data::Taluses[i].hash, Map::m_Taluses[i].m_Position, noName, &Map::m_Taluses[i].m_Found);
         for (int i = 0; i < Data::MoldugasCount; ++i)
             add(Data::ObjectType::Molduga, Data::Moldugas[i].hash, Map::m_Moldugas[i].m_Position, noName, &Map::m_Moldugas[i].m_Found);
-        for (int i = 0; i < Data::LocationsCount; ++i)
-            add(Data::ObjectType::Location, Data::Locations[i].hash, Map::m_Locations[i].m_Position, Data::Locations[i].displayName,
-                &Map::m_Locations[i].m_Found, Map::m_Locations[i].m_Pending);
         // Only the chests that exist in this game (mode and DLC)
         for (int i = 0; i < Data::ChestsCount; ++i)
             if (!Map::m_Chests[i].m_Excluded)
@@ -572,20 +568,13 @@ void Map::UpdateMapObjects(bool recenter)
         m_Moldugas[i].m_Found = ResolveFound(Data::ObjectType::Molduga, Data::Moldugas[i].hash, foundInSave, manualProgressChanged);
     }
 
-    for (int i = 0; i < Data::LocationsCount; i++) // Locations
+    for (int i = 0; i < Data::LocationsCount; i++) // Locations: not drawn, but part of the map completion
     {
-        m_Locations[i].m_Position = glm::vec2(Data::Locations[i].x, -Data::Locations[i].y) * MapScale;
-        m_Locations[i].m_LocationData = &Data::Locations[i];
-
-        // Check if the korok has been found (if the found vector contains it)
         const bool foundInSave = std::find(
             SavefileIO::visitedLocations.begin(),
             SavefileIO::visitedLocations.end(),
             &Data::Locations[i]) != SavefileIO::visitedLocations.end();
         m_Locations[i].m_Found = ResolveFound(Data::ObjectType::Location, Data::Locations[i].hash, foundInSave, manualProgressChanged);
-        // A visited tower still to be activated, or a fountain whose fairy still sleeps, stays on the map.
-        m_Locations[i].m_Pending = foundInSave && LocationState::ForLocation(Data::Locations[i].hash) != nullptr &&
-                                   !SavefileIO::IsLocationStateDone(Data::Locations[i].hash);
     }
 
     // Chests: those of Master Mode only exist there; those of the Expansion Pass need it (an opened one,
@@ -618,7 +607,6 @@ void Map::UpdateMapObjects(bool recenter)
     for (int i = 0; i < Data::HinoxesCount; i++) m_Hinoxes[i].m_Region = Regions::Of(Data::Hinoxes[i].hash);
     for (int i = 0; i < Data::TalusesCount; i++) m_Taluses[i].m_Region = Regions::Of(Data::Taluses[i].hash);
     for (int i = 0; i < Data::MoldugasCount; i++) m_Moldugas[i].m_Region = Regions::Of(Data::Moldugas[i].hash);
-    for (int i = 0; i < Data::LocationsCount; i++) m_Locations[i].m_Region = Regions::Of(Data::Locations[i].hash);
     for (int i = 0; i < Data::ChestsCount; i++) m_Chests[i].m_Region = Regions::Of(Data::Chests[i].hash);
     for (int i = 0; i < Data::SpecialChestsCount; i++) m_SpecialChests[i].m_Region = Regions::Of(Data::SpecialChests[i].hash);
     for (int i = 0; i < Data::WallsCount; i++) m_Walls[i].m_Region = Regions::Of(Data::Walls[i].hash);
@@ -922,9 +910,6 @@ void Map::Update()
         if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
             for (int i = 0; i < Data::WallsCount; i++)
                 m_Walls[i].Update(i == 0);
-        for (int i = 0; i < Data::LocationsCount; i++)
-            m_Locations[i].Update();
-
     }
 
     // The middle of what is on screen is to the left of the camera while the map is shifted.
@@ -997,19 +982,6 @@ void Map::Render()
             MapObject<Data::WallIcon>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
             MapObject<Data::SpecialChestIcon>::Render();
-        if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
-        {
-            // Names of the locations, in map coordinates: the dark edge first, the text over it.
-            m_Font.m_ViewMatrix = &m_ViewMatrix;
-            for (int pass = 0; pass < 2; ++pass)
-            {
-                m_Font.BeginBatch();
-                MapLocation::BeginLabelPass();
-                for (int i = 0; i < Data::LocationsCount; i++)
-                    m_Locations[i].Render(pass == 0);
-                m_Font.RenderBatch();
-            }
-        }
         RenderSelectedObjectHighlight();
 
         if (HasPlayerPosition() && s_PlayerMarker.m_Texture)

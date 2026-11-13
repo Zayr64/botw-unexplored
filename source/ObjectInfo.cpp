@@ -2,7 +2,6 @@
 
 #include "Graphics/ShapeBatch.h"
 #include "Localization.h"
-#include "LocationState.h"
 #include "Legend.h"
 #include "Map.h"
 #include "ObjectModel.h"
@@ -53,8 +52,7 @@ void ObjectInfo::Render()
     const bool isShrine = m_Type == Data::ObjectType::Shrine || m_Type == Data::ObjectType::DLCShrine;
 
     Ui::PanelBackground();
-    float top = Ui::CardHeader(m_Icon, m_Type == Data::ObjectType::Location ? 34.0f : 40.0f,
-                               Localization::GetObjectTypeName(m_Type), Map::NearestRankText());
+    float top = Ui::CardHeader(m_Icon, 40.0f, Localization::GetObjectTypeName(m_Type), Map::NearestRankText());
 
     if (!m_Name.empty())
         top = Ui::Paragraph(top, m_Name, 0.50f, Ui::Colors::Gold) - 6.0f;
@@ -82,20 +80,6 @@ void ObjectInfo::Render()
             else
                 top = noneLeft ? Ui::StatusRow(top, Localization::Get(Text::AllChestsOpened), Ui::Colors::Good)
                                : Ui::StatusRow(top, Localization::Get(Text::ChestsLeft), Ui::Colors::Warn, false);
-        }
-    }
-    else if (m_Type == Data::ObjectType::Location)
-    {
-        top = found ? Ui::StatusRow(top, Localization::Get(Text::Visited), Ui::Colors::Good)
-                    : Ui::StatusRow(top, Localization::Get(Text::NotVisited), Ui::Colors::Warn, false);
-        // A tower is also activated and a great fairy awakened; told only once the place is known.
-        const LocationState::Entry* state = LocationState::ForLocation(m_CompletionHash);
-        if (found && state != nullptr)
-        {
-            const bool tower = state->kind == LocationState::Kind::Tower;
-            top = SavefileIO::IsLocationStateDone(m_CompletionHash)
-                ? Ui::StatusRow(top, Localization::Get(tower ? Text::Activated : Text::Awakened), Ui::Colors::Good)
-                : Ui::StatusRow(top, Localization::Get(tower ? Text::NotActivated : Text::NotAwakened), Ui::Colors::Warn, false);
         }
     }
     else if (m_Chest != nullptr)

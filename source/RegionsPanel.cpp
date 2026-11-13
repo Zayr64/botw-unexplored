@@ -10,8 +10,8 @@
 #include "Legend.h"
 #include "Localization.h"
 #include "Map.h"
-#include "MapLocation.h"
 #include "MapObject.hpp"
+#include "Progress.h"
 #include "Regions.h"
 #include "SavefileIO.h"
 #include "Ui.h"
@@ -22,6 +22,7 @@ namespace
     constexpr float RowGap = 3.0f;
     constexpr float RowRadius = 6.0f;
     constexpr float LabelScale = 0.36f;
+    constexpr float NoteScale = 0.30f;
     constexpr float CapHeight = 34.4f * LabelScale; // height of a capital letter at that scale
 
     int s_Highlighted = 0;  // index into Rows()
@@ -70,7 +71,7 @@ void RegionsPanel::Count(int region, int& found, int& total)
 {
     found = 0;
     total = 0;
-    if (Map::m_Koroks == nullptr || Map::m_Shrines == nullptr || Map::m_Locations == nullptr)
+    if (Map::m_Koroks == nullptr || Map::m_Shrines == nullptr)
         return;
     const auto add = [&](int objectRegion, bool objectFound)
     {
@@ -83,8 +84,6 @@ void RegionsPanel::Count(int region, int& found, int& total)
         add(Map::m_Koroks[i].m_Region, Map::m_Koroks[i].m_Found);
     for (int i = 0; i < Data::ShrineCount; ++i)
         add(Map::m_Shrines[i].m_Region, Map::m_Shrines[i].m_Found);
-    for (int i = 0; i < Data::LocationsCount; ++i)
-        add(Map::m_Locations[i].m_Region, Map::m_Locations[i].m_Found);
 }
 
 void RegionsPanel::Update(u64 buttonsPressed)
@@ -149,10 +148,26 @@ void RegionsPanel::Render(float top)
         Count(region, found, total);
         const bool known = region == Regions::None || IsKnown(region);
         const float baseline = rowTop - (RowHeight + CapHeight) * 0.5f;
-        Ui::Text(Label(region), glm::vec2(left + 12.0f, baseline), LabelScale,
-                 known ? Ui::Colors::Text : Ui::Colors::TextDim);
-        Ui::Text(std::to_string(found) + "/" + std::to_string(total), glm::vec2(right - 12.0f, baseline), LabelScale,
+        const std::string label = Label(region);
+        const std::string count = std::to_string(found) + "/" + std::to_string(total);
+        Ui::Text(label, glm::vec2(left + 12.0f, baseline), LabelScale, known ? Ui::Colors::Text : Ui::Colors::TextDim);
+        Ui::Text(count, glm::vec2(right - 12.0f, baseline), LabelScale,
                  total > 0 && found >= total ? Ui::Colors::Good : (known ? Ui::Colors::Text : Ui::Colors::TextDim), ALIGN_RIGHT);
+
+        // Between the two: the shrine and side quests taken in this region that are not in the log yet. Those
+        // that can be taken now; with none, those that wait for something else to happen first.
+        const Progress::QuestsLeft quests = Progress::QuestsToTake(region, &SavefileIO::IsProgressFlagSet);
+        if (quests.now > 0 || quests.later > 0)
+        {
+            using Localization::Text;
+            const std::string note = quests.now > 0
+                ? std::to_string(quests.now) + " " + Localization::Get(quests.now == 1 ? Text::QuestToTake : Text::QuestsToTake)
+                : std::to_string(quests.later) + " " + Localization::Get(Text::QuestsLater);
+            const float noteLeft = left + 12.0f + Ui::TextWidth(label, LabelScale) + 10.0f;
+            const float noteRight = right - 12.0f - Ui::TextWidth(count, LabelScale) - 10.0f;
+            if (noteLeft + Ui::TextWidth(note, NoteScale) <= noteRight)
+                Ui::Text(note, glm::vec2(noteLeft, baseline), NoteScale, quests.now > 0 ? Ui::Colors::Gold : Ui::Colors::TextDim);
+        }
     }
     Ui::FlushShapes();
 }

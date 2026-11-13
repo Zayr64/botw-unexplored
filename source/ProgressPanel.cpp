@@ -7,6 +7,8 @@
 #include "Graphics/ShapeBatch.h"
 #include "Localization.h"
 #include "LocationState.h"
+#include "Map.h"
+#include "MapLocation.h"
 #include "Progress.h"
 #include "SavefileIO.h"
 #include "ShrineFlags.h"
@@ -46,6 +48,15 @@ namespace
         Ui::Text(std::to_string(counter.done) + "/" + std::to_string(counter.total), glm::vec2(right, baseline),
                  LabelScale, complete ? Ui::Colors::Good : Ui::Colors::Text, ALIGN_RIGHT);
         return top - RowStep;
+    }
+
+    // What this game has: the Expansion Pass and Master Mode add entries and pieces.
+    Progress::Game Game()
+    {
+        Progress::Game game;
+        game.expansionPass = SavefileIO::HasExpansionPass();
+        game.masterMode = SavefileIO::MasterModeFileLoaded;
+        return game;
     }
 
     Counter Towers()
@@ -101,6 +112,17 @@ namespace
         }
         return counter;
     }
+
+    // The named places of the map: the third part of the map completion, with the Koroks and the shrines.
+    Counter Locations()
+    {
+        Counter counter;
+        counter.total = Data::LocationsCount;
+        if (Map::m_Locations != nullptr)
+            for (int i = 0; i < Data::LocationsCount; ++i)
+                counter.done += Map::m_Locations[i].m_Found ? 1 : 0;
+        return counter;
+    }
 }
 
 void ProgressPanel::Render(float top)
@@ -124,9 +146,29 @@ void ProgressPanel::Render(float top)
     top = Row(top, Localization::Text::GreatFairies, GreatFairies());
     top = Row(top, Localization::Text::DivineBeasts, Progress::DivineBeasts(isSet));
     top = Row(top, Localization::Text::DivineBeastChests, Progress::DivineBeastChests(isSet));
+    // Nothing is said of the memories before the album has the pictures that lead to them.
+    const Counter memories = Progress::Memories(isSet);
+    if (memories.total > 0)
+        top = Row(top, Localization::Text::Memories, memories);
+    top = Row(top, Localization::Text::Locations, Locations());
 
-    top = Header(top - SectionGap, Localization::Text::SectionCollection);
-    top = Row(top, Localization::Text::Compendium, Progress::Compendium(isSet));
+    Ui::FlushShapes();
+}
+
+void ProgressPanel::RenderCollection(float top)
+{
+    const Progress::IsSet isSet = &SavefileIO::IsProgressFlagSet;
+    const Progress::Game game = Game();
+
+    top = Header(top, Localization::Text::Compendium);
+    top = Row(top, Localization::Text::CompendiumAll, Progress::Compendium(isSet, game));
+    for (int category = 0; category < static_cast<int>(Data::CompendiumCategory::Count); ++category)
+        top = Row(top, static_cast<TextId>(static_cast<int>(Localization::Text::Creatures) + category),
+                  Progress::Compendium(static_cast<Data::CompendiumCategory>(category), isSet, game));
+
+    top = Header(top - SectionGap, Localization::Text::SectionArmor);
+    top = Row(top, Localization::Text::ArmorPieces, Progress::Armor(isSet, game));
+    Ui::Paragraph(top - 4.0f, Localization::Get(Localization::Text::ArmorNote), 0.28f, Ui::Colors::TextDim);
 
     Ui::FlushShapes();
 }

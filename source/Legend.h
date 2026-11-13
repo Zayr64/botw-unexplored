@@ -18,7 +18,6 @@ public:
     static constexpr ButtonTypes Hinoxes = ButtonTypes::Hinoxes;
     static constexpr ButtonTypes Taluses = ButtonTypes::Taluses;
     static constexpr ButtonTypes Moldugas = ButtonTypes::Moldugas;
-    static constexpr ButtonTypes Locations = ButtonTypes::Locations;
     static constexpr ButtonTypes Chests = ButtonTypes::Chests;
     static constexpr ButtonTypes SpecialChests = ButtonTypes::SpecialChests;
     static constexpr ButtonTypes Walls = ButtonTypes::Walls;
@@ -53,12 +52,13 @@ public:
 class Legend
 {
 public:
-    // The left panel has three tabs; the legend itself is the first.
+    // The left panel has four tabs; the legend itself is the first.
     enum Tab
     {
         TabLegend,
         TabProgress,
         TabRegions,
+        TabCollection,
         TabCount
     };
 

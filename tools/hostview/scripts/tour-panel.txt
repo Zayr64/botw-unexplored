@@ -6,6 +6,11 @@ shot 301-tab-progress
 press RIGHT
 wait 2
 shot 302-tab-regions
+press RIGHT
+wait 2
+shot 307-tab-collection
+press LEFT
+wait 2
 press DOWN
 press A
 wait 40

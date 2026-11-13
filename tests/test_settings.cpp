@@ -26,8 +26,9 @@ int main()
     assert(!actual.legendOpen && actual.visible[3] && actual.showMode == 2 && actual.language == 1);
     assert(!actual.visible[7] && actual.visible[8]);
 
-    // The legend categories keep their places in the file; the entry of the old display-mode button is skipped.
-    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Locations) == 5, "");
+    // The legend categories keep their places in the file; the entries of the names of the locations (5) and
+    // of the old display-mode button (6) are skipped.
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Moldugas) == 4, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Chests) == 7, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::SpecialChests) == 8, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Walls) == 9, "");

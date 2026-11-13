@@ -7,7 +7,7 @@ namespace
         {"romfs:/korokseed.png", false, static_cast<int>(LegendCategories::ButtonTypes::Koroks)},
         {"romfs:/shrine.png", true, static_cast<int>(LegendCategories::ButtonTypes::Shrines)},
         {"romfs:/dlcshrine.png", false, static_cast<int>(LegendCategories::ButtonTypes::Shrines)},
-        {"romfs:/village.png", true, static_cast<int>(LegendCategories::ButtonTypes::Locations)},
+        {"romfs:/village.png", true, ObjectModel::NoLegendButton},
         {"romfs:/hinox.png", false, static_cast<int>(LegendCategories::ButtonTypes::Hinoxes)},
         {"romfs:/talus.png", false, static_cast<int>(LegendCategories::ButtonTypes::Taluses)},
         {"romfs:/molduga.png", false, static_cast<int>(LegendCategories::ButtonTypes::Moldugas)},

@@ -16,10 +16,11 @@
 namespace
 {
     constexpr float TabsBaseline = 52.0f; // below the top of the screen
-    constexpr float TabScale = 0.46f;
-    constexpr float TabGap = 22.0f;
+    constexpr float TabScale = 0.38f; // the four titles fit the width of the panel
+    constexpr float TabGap = 14.0f;
     const Localization::Text tabTitles[Legend::TabCount] = {
-        Localization::Text::Legend, Localization::Text::TabProgress, Localization::Text::TabRegions
+        Localization::Text::Legend, Localization::Text::TabProgress, Localization::Text::TabRegions,
+        Localization::Text::TabCollection
     };
 
     // Left and right edge of the title of each tab.
@@ -50,8 +51,8 @@ namespace
     }
 
     constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
-    constexpr float RowHeight = 50.0f; // nine rows end just above the bottom bar
-    constexpr float RowGap = 6.0f;
+    constexpr float RowHeight = 56.0f; // eight rows end just above the bottom bar
+    constexpr float RowGap = 8.0f;
     constexpr float RowRadius = 8.0f;
 
     Localization::Text LabelOf(IconButton::ButtonTypes type)
@@ -62,7 +63,7 @@ namespace
         case IconButton::SpecialChests: return Localization::Text::SpecialChests;
         case IconButton::Walls: return Localization::Text::Walls;
         default:
-            // Koroks to Locations, in the order of the categories
+            // Koroks to Moldugas, in the order of the categories
             return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
         }
     }
@@ -82,6 +83,7 @@ namespace
 
     int MapEntriesFound()
     {
+        // The locations count although the app does not draw them: the number is the game's.
         static_assert(Data::KoroksCount + Data::ShrineCount + Data::LocationsCount == MapCompletion::TotalEntries,
                       "Map completion total must match the tracked data");
 
@@ -248,6 +250,11 @@ void Legend::Render()
         RegionsPanel::Render(top - RowsTop);
         return;
     }
+    if (m_Tab == TabCollection)
+    {
+        ProgressPanel::RenderCollection(top - RowsTop);
+        return;
+    }
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->DrawShapes();
@@ -299,7 +306,6 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case Hinoxes: iconPath = "romfs:/hinox.png"; break;
     case Taluses: iconPath = "romfs:/talus.png"; break;
     case Moldugas: iconPath = "romfs:/molduga.png"; break;
-    case Locations: iconPath = "romfs:/village.png"; break;
     case Chests: iconPath = "romfs:/chest.png"; break;
     case SpecialChests: iconPath = "romfs:/chestspecial.png"; break;
     case Walls: iconPath = "romfs:/wall.png"; break;
@@ -309,7 +315,7 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     m_Icon.Create(iconPath);
     // Every icon about 28 pixels tall, whatever the size of its image.
     if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
-        m_Icon.m_Scale = (type == Locations ? 23.0f : 28.0f) / static_cast<float>(m_Icon.m_Texture->m_Height);
+        m_Icon.m_Scale = 28.0f / static_cast<float>(m_Icon.m_Texture->m_Height);
     m_Icon.m_Position = glm::vec2(position.x + 34.0f, position.y - height / 2.0f);
     m_Icon.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
 }
@@ -344,9 +350,6 @@ void IconButton::Count(int& found, int& total) const
         break;
     case Moldugas:
         for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Region, Map::m_Moldugas[i].m_Found);
-        break;
-    case Locations:
-        for (int i = 0; i < Data::LocationsCount; ++i) add(Map::m_Locations[i].m_Region, Map::m_Locations[i].m_Found);
         break;
     case Chests:
         CountChests(Map::m_Chests, Data::ChestsCount, found, total);

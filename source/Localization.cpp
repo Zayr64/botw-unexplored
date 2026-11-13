@@ -17,20 +17,22 @@ namespace
         "Previous / next", "Show / hide", "Close", "Select", "Master mode", "Normal mode",
         "Zoom", "Map completion", "Live from the game", "Save backup", "Save", "slot",
         "Discovered", "Not discovered", "Not completed", "All chests opened", "Chests left", "Marked as found by you",
-        "Visited", "Not visited", "Defeated", "Not defeated", "Korok seed", "Link is inside",
+        "Defeated", "Not defeated", "Korok seed", "Link is inside",
         "Marked as found", "Synced with the game", "Synced with the game: nothing new", "Could not read the game", "Nothing under the aim", "Nothing missing in the categories shown",
         "new", "of",
         "Chests", "Special chests", "Treasure chest", "Special chest", "Not opened", "Opened",
         "Hidden", "Contents", "A weapon", "A bow", "A shield", "Armor",
         "Arrows", "A gem or ore", "Rupees", "A material", "Horse gear", "A key item",
         "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest",
-        "Activated", "Not activated", "Awakened", "Not awakened",
         "Breakable walls", "Breakable wall", "Broken", "Not broken",
         "Progress", "Regions", "Tab", "Show region", "Whole map", "Unknown region",
         "Quests", "World", "Collection",
         "Main quests", "Shrine quests", "Side quests", "Main quests (DLC)", "Side quests (DLC)", "open",
         "Towers", "Shrines completed", "Chests in shrines", "Great Fairies",
-        "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium"
+        "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium",
+        "All entries", "Creatures", "Monsters", "Materials", "Equipment", "Treasure",
+        "Armor", "Pieces", "The pieces that only amiibo give are not counted.",
+        "Memories", "quest", "quests", "later"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

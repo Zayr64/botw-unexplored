@@ -9,7 +9,6 @@ press DOWN
 press DOWN
 press DOWN
 press DOWN
-press DOWN
 press A
 wait 2
 shot 71-legend-walls-only
