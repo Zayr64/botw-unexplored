@@ -43,4 +43,8 @@ fi
 /tmp/test_location_state
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_walls.cpp source/WallData.cpp -o /tmp/test_walls
 /tmp/test_walls
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_progress.cpp source/Progress.cpp source/ProgressData.cpp source/ShrineFlags.cpp -o /tmp/test_progress
+/tmp/test_progress
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_regions.cpp source/Regions.cpp source/RegionData.cpp source/ShrineFlags.cpp -o /tmp/test_regions
+/tmp/test_regions
 python3 tests/test_data_mapping.py
