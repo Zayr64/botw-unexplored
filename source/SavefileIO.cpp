@@ -16,6 +16,7 @@
 #include "LiveGameData.h"
 #include "LocationState.h"
 #include "Log.h"
+#include "Progress.h"
 #include "SaveLoadDecision.h"
 #include "SaveParser.h"
 #include "ShrineChests.h"
@@ -713,6 +714,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     const std::unordered_multimap<uint32_t, TrackedFlag>& tracked = GetTrackedFlags();
     const std::vector<uint32_t>& shrineChestFlags = GetShrineChestFlags();
     const std::array<uint32_t, 3>& balladFlags = GetBalladStartedFlags();
+    const std::vector<uint32_t>& progressFlags = Progress::TrackedFlags();
     for (const SaveParser::Record& record : bufferState.records)
     {
         const uint32_t hashValue = record.hash;
@@ -732,6 +734,8 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
                 parsedState.doneLocationStates.push_back(state->locationHash);
             if (std::find(balladFlags.begin(), balladFlags.end(), hashValue) != balladFlags.end())
                 parsedState.balladStarted = true;
+            if (std::binary_search(progressFlags.begin(), progressFlags.end(), hashValue))
+                parsedState.progressFlags.push_back(hashValue);
         }
 
         const auto range = tracked.equal_range(hashValue);
@@ -783,6 +787,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
 
     std::sort(parsedState.openedChests.begin(), parsedState.openedChests.end());
     std::sort(parsedState.brokenWalls.begin(), parsedState.brokenWalls.end());
+    std::sort(parsedState.progressFlags.begin(), parsedState.progressFlags.end());
     std::sort(parsedState.openedShrineChests.begin(), parsedState.openedShrineChests.end());
     std::sort(parsedState.doneLocationStates.begin(), parsedState.doneLocationStates.end());
     parsedState.hasDLC = bufferState.hasDLC;
@@ -1056,6 +1061,16 @@ bool SavefileIO::DlcShrinesAppear()
 {
     // One of them already found also tells that the quest has begun.
     return CurrentState.balladStarted || !CurrentState.foundDLCShrines.empty();
+}
+
+bool SavefileIO::IsProgressFlagSet(uint32_t flagHash)
+{
+    return std::binary_search(CurrentState.progressFlags.begin(), CurrentState.progressFlags.end(), flagHash);
+}
+
+bool SavefileIO::HasExpansionPass()
+{
+    return CurrentState.hasDlcChests || CurrentState.masterModeFileExists;
 }
 
 bool SavefileIO::HasAllShrineChests(uint32_t locationHash)

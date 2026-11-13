@@ -8,10 +8,47 @@
 #include "MapLocation.h"
 #include "SavefileIO.h"
 #include "Localization.h"
+#include "ProgressPanel.h"
+#include "Regions.h"
+#include "RegionsPanel.h"
 #include "Ui.h"
 
 namespace
 {
+    constexpr float TabsBaseline = 52.0f; // below the top of the screen
+    constexpr float TabScale = 0.46f;
+    constexpr float TabGap = 22.0f;
+    const Localization::Text tabTitles[Legend::TabCount] = {
+        Localization::Text::Legend, Localization::Text::TabProgress, Localization::Text::TabRegions
+    };
+
+    // Left and right edge of the title of each tab.
+    void TabEdges(float edges[Legend::TabCount][2])
+    {
+        float x = Ui::PanelLeft();
+        for (int tab = 0; tab < Legend::TabCount; ++tab)
+        {
+            edges[tab][0] = x;
+            x += Ui::TextWidth(Localization::Get(tabTitles[tab]), TabScale);
+            edges[tab][1] = x;
+            x += TabGap;
+        }
+    }
+
+    // The tab whose title is under this point of the screen, or -1.
+    int TabAt(const glm::vec2& position)
+    {
+        const float baseline = Map::m_ScreenTop - TabsBaseline;
+        if (position.y < baseline - 14.0f || position.y > baseline + 30.0f)
+            return -1;
+        float edges[Legend::TabCount][2];
+        TabEdges(edges);
+        for (int tab = 0; tab < Legend::TabCount; ++tab)
+            if (position.x >= edges[tab][0] - TabGap * 0.5f && position.x <= edges[tab][1] + TabGap * 0.5f)
+                return tab;
+        return -1;
+    }
+
     constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
     constexpr float RowHeight = 50.0f; // nine rows end just above the bottom bar
     constexpr float RowGap = 6.0f;
@@ -36,7 +73,7 @@ namespace
     {
         for (int i = 0; i < count; ++i)
         {
-            if (chests[i].m_Excluded)
+            if (chests[i].m_Excluded || !Map::InRegionFilter(chests[i].m_Region))
                 continue;
             ++total;
             found += chests[i].m_Found;
@@ -79,6 +116,14 @@ Legend::Legend()
 
 void Legend::Update()
 {
+    const u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
+
+    // Left and right change the tab
+    if (buttonsPressed & HidNpadButton_Right)
+        m_Tab = (m_Tab + 1) % TabCount;
+    if (buttonsPressed & HidNpadButton_Left)
+        m_Tab = (m_Tab + TabCount - 1) % TabCount;
+
     HidTouchScreenState state={0};
     if (hidGetTouchScreenStates(&state, 1))
     {
@@ -92,18 +137,24 @@ void Legend::Update()
                 // Convert to more suitable coords
                 glm::vec2 touchPosition = glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2, -(state.touches[0].y - Map::m_CameraHeight / 2));
 
-                for (unsigned int i = 0; i < m_Buttons.size(); i++)
+                const int tab = TabAt(touchPosition);
+                if (tab >= 0)
+                    m_Tab = tab;
+                else if (m_Tab == TabRegions)
+                    RegionsPanel::Touch(touchPosition);
+                else if (m_Tab == TabLegend)
                 {
-                    IconButton* button = m_Buttons[i];
-
-                    float left = button->m_Position.x;
-                    float right = button->m_Position.x + button->m_Width;
-                    float top = button->m_Position.y;
-                    float bottom = button->m_Position.y - button->m_Height;
-
-                    if (touchPosition.x > left && touchPosition.x < right)
+                    for (unsigned int i = 0; i < m_Buttons.size(); i++)
                     {
-                        if (touchPosition.y > bottom && touchPosition.y < top)
+                        IconButton* button = m_Buttons[i];
+
+                        float left = button->m_Position.x;
+                        float right = button->m_Position.x + button->m_Width;
+                        float top = button->m_Position.y;
+                        float bottom = button->m_Position.y - button->m_Height;
+
+                        if (touchPosition.x > left && touchPosition.x < right &&
+                            touchPosition.y > bottom && touchPosition.y < top)
                         {
                             button->Click(this);
 
@@ -118,9 +169,13 @@ void Legend::Update()
         }
     }
 
+    if (m_Tab == TabRegions)
+        RegionsPanel::Update(buttonsPressed);
+    if (m_Tab != TabLegend)
+        return;
+
     // Up and down go around
     const int count = static_cast<int>(m_Buttons.size());
-    u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
     if (buttonsPressed & HidNpadButton_Down)
     {
         m_HighlightedButton = (m_HighlightedButton + 1) % count;
@@ -155,7 +210,18 @@ void Legend::Render()
 
     Ui::PanelBackground();
 
-    Ui::Text(Localization::Get(Localization::Text::Legend), glm::vec2(left, top - 52.0f), 0.60f, Ui::Colors::Gold);
+    // The tabs: the one in use in gold, with a line under it
+    float edges[TabCount][2];
+    TabEdges(edges);
+    for (int tab = 0; tab < TabCount; ++tab)
+    {
+        const bool active = tab == m_Tab;
+        Ui::Text(Localization::Get(tabTitles[tab]), glm::vec2(edges[tab][0], top - TabsBaseline), TabScale,
+                 active ? Ui::Colors::Gold : Ui::Colors::TextDim);
+        if (active)
+            Ui::Shapes().AddRect(edges[tab][0], top - TabsBaseline - 10.0f, edges[tab][1], top - TabsBaseline - 8.0f,
+                                 glm::vec4(Ui::Colors::Gold, 1.0f));
+    }
 
     // What the game calls map completion: Koroks, shrines and locations.
     const int found = MapEntriesFound();
@@ -165,9 +231,23 @@ void Legend::Render()
     Ui::ProgressBar(left, top - 106.0f, Ui::PanelInner(), 6.0f,
                     static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
 
+    // Where the progress comes from and, on the right, the region the map is showing alone
     glm::vec3 dotColor;
     bool hasDot = false;
     Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - 132.0f), 0.32f, Ui::Colors::TextDim);
+    if (Map::m_RegionFilter >= 0)
+        Ui::Text(RegionsPanel::Label(Map::m_RegionFilter), glm::vec2(right, top - 132.0f), 0.32f, Ui::Colors::Accent, ALIGN_RIGHT);
+
+    if (m_Tab == TabProgress)
+    {
+        ProgressPanel::Render(top - RowsTop);
+        return;
+    }
+    if (m_Tab == TabRegions)
+    {
+        RegionsPanel::Render(top - RowsTop);
+        return;
+    }
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->DrawShapes();
@@ -238,36 +318,35 @@ void IconButton::Count(int& found, int& total) const
 {
     found = 0;
     total = 0;
+    // Only what is in the region the map is showing, when it shows one alone
+    const auto add = [&](int region, bool objectFound)
+    {
+        if (!Map::InRegionFilter(region))
+            return;
+        ++total;
+        found += objectFound ? 1 : 0;
+    };
     switch (m_Type)
     {
     case Koroks:
-        total = Data::KoroksCount;
-        for (int i = 0; i < Data::KoroksCount; ++i) found += Map::m_Koroks[i].m_Found;
+        for (int i = 0; i < Data::KoroksCount; ++i) add(Map::m_Koroks[i].m_Region, Map::m_Koroks[i].m_Found);
         break;
     case Shrines:
-        total = Data::ShrineCount;
-        for (int i = 0; i < Data::ShrineCount; ++i) found += Map::m_Shrines[i].m_Found;
+        for (int i = 0; i < Data::ShrineCount; ++i) add(Map::m_Shrines[i].m_Region, Map::m_Shrines[i].m_Found);
         if (SavefileIO::DlcShrinesAppear())
-        {
-            total += Data::DLCShrineCount;
-            for (int i = 0; i < Data::DLCShrineCount; ++i) found += Map::m_DLCShrines[i].m_Found;
-        }
+            for (int i = 0; i < Data::DLCShrineCount; ++i) add(Map::m_DLCShrines[i].m_Region, Map::m_DLCShrines[i].m_Found);
         break;
     case Hinoxes:
-        total = Data::HinoxesCount;
-        for (int i = 0; i < Data::HinoxesCount; ++i) found += Map::m_Hinoxes[i].m_Found;
+        for (int i = 0; i < Data::HinoxesCount; ++i) add(Map::m_Hinoxes[i].m_Region, Map::m_Hinoxes[i].m_Found);
         break;
     case Taluses:
-        total = Data::TalusesCount;
-        for (int i = 0; i < Data::TalusesCount; ++i) found += Map::m_Taluses[i].m_Found;
+        for (int i = 0; i < Data::TalusesCount; ++i) add(Map::m_Taluses[i].m_Region, Map::m_Taluses[i].m_Found);
         break;
     case Moldugas:
-        total = Data::MoldugasCount;
-        for (int i = 0; i < Data::MoldugasCount; ++i) found += Map::m_Moldugas[i].m_Found;
+        for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Region, Map::m_Moldugas[i].m_Found);
         break;
     case Locations:
-        total = Data::LocationsCount;
-        for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
+        for (int i = 0; i < Data::LocationsCount; ++i) add(Map::m_Locations[i].m_Region, Map::m_Locations[i].m_Found);
         break;
     case Chests:
         CountChests(Map::m_Chests, Data::ChestsCount, found, total);
@@ -276,8 +355,7 @@ void IconButton::Count(int& found, int& total) const
         CountChests(Map::m_SpecialChests, Data::SpecialChestsCount, found, total);
         break;
     case Walls:
-        total = Data::WallsCount;
-        for (int i = 0; i < Data::WallsCount; ++i) found += Map::m_Walls[i].m_Found;
+        for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Region, Map::m_Walls[i].m_Found);
         break;
     default:
         break;

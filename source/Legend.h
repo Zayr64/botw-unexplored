@@ -53,6 +53,15 @@ public:
 class Legend
 {
 public:
+    // The left panel has three tabs; the legend itself is the first.
+    enum Tab
+    {
+        TabLegend,
+        TabProgress,
+        TabRegions,
+        TabCount
+    };
+
     Legend();
 
     void Update();
@@ -72,6 +81,7 @@ public:
     int m_PrevTouchCount = 0;
 
     int m_HighlightedButton = 0;
+    int m_Tab = TabLegend;
 
     bool m_IsOpen = true;
 

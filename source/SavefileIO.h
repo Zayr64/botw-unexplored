@@ -30,6 +30,7 @@ namespace SavefileIO
         std::vector<uint32_t> openedShrineChests; // flag hashes of the opened chests inside the shrines, sorted
         std::vector<uint32_t> doneLocationStates; // locations with the tower activated or the fairy awakened, sorted
         bool balladStarted = false;               // the Champions' Ballad has begun: its shrines can exist
+        std::vector<uint32_t> progressFlags;      // the set flags among those the progress panel counts, sorted
         std::vector<Data::Korok*> foundKoroks;
         std::vector<Data::Korok*> missingKoroks;
         std::vector<Data::Shrine*> foundShrines;
@@ -101,6 +102,10 @@ namespace SavefileIO
     bool IsLocationStateDone(uint32_t locationHash);
     // The shrines of the Champions' Ballad are not in the world before it begins.
     bool DlcShrinesAppear();
+    // Whether a flag the progress panel counts (quests, Divine Beasts, compendium; see Progress.h) is set.
+    bool IsProgressFlagSet(uint32_t flagHash);
+    // The game has the Expansion Pass: a chest of it opened, its main quest ready or a save in Master Mode.
+    bool HasExpansionPass();
     int GetMostRecentSavefile(const std::string& dir, bool masterMode = false); // Needs slash at end of dir
 
     void CopySavefiles();

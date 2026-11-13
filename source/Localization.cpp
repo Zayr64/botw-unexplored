@@ -25,7 +25,12 @@ namespace
         "Arrows", "A gem or ore", "Rupees", "A material", "Horse gear", "A key item",
         "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest",
         "Activated", "Not activated", "Awakened", "Not awakened",
-        "Breakable walls", "Breakable wall", "Broken", "Not broken"
+        "Breakable walls", "Breakable wall", "Broken", "Not broken",
+        "Progress", "Regions", "Tab", "Show region", "Whole map", "Unknown region",
+        "Quests", "World", "Collection",
+        "Main quests", "Shrine quests", "Side quests", "Main quests (DLC)", "Side quests (DLC)", "open",
+        "Towers", "Shrines completed", "Chests in shrines", "Great Fairies",
+        "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

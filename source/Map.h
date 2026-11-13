@@ -49,6 +49,12 @@ namespace Map
     // Found only because the user marked it (the save shown is an old backup).
     bool IsManuallyMarked(Data::ObjectType type, uint32_t hash);
 
+    // The map can show one region alone (Regions.h): only its objects are drawn, counted and picked.
+    extern int m_RegionFilter; // -1 for the whole map
+    bool InRegionFilter(int region);
+    // Chooses the region shown and brings it into view; Regions::None for the whole map.
+    void SetRegionFilter(int region);
+
     // The map is drawn shifted to the right while the legend or a card covers the left of the screen.
     glm::vec2 MapToScreen(const glm::vec2& mapPosition);
     glm::vec2 ScreenToMap(const glm::vec2& screenPosition);

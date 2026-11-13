@@ -29,6 +29,8 @@ public:
     bool m_Pending = false;
     // Not part of this game: never drawn, counted or picked (a chest of the other mode or of the DLC).
     bool m_Excluded = false;
+    // The region of the map it is in (Regions.h), or -1.
+    int m_Region = -1;
 
     static bool m_ShowAnyway;
 
@@ -150,7 +152,7 @@ void MapObject<T>::Update(bool clear)
 
     if (clear) m_Mesh.Clear();
 
-    if (m_Excluded || !Map::m_Legend->ShouldShow(m_Found && !m_Pending))
+    if (m_Excluded || !Map::InRegionFilter(m_Region) || !Map::m_Legend->ShouldShow(m_Found && !m_Pending))
         return;
     
     // Culling 

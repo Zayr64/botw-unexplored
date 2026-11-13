@@ -14,6 +14,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
 - Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
 - The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category.
+- The left panel has three tabs. **Progress** counts what the map does not show, in numbers only: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the compendium. **Regions** lists the fifteen regions of the map with what is found of each (Korok seeds, shrines and locations) and shows one alone on the map: only its objects are drawn, counted in the legend and picked by `ZL`/`ZR`/`R`. A region is named once its tower is activated; until then it is an "Unknown region".
 - The map shows only what is still missing. Icons shrink on the overview, where they pile up; location names have a dark edge.
 - While the legend or a card is open the map slides to the right, so that the selected object stays in view, inside a ring.
 - Per-profile and per-mode manual progress (`Y`) for every supported object type, only while a save backup is shown. It never modifies the BotW save.
@@ -54,7 +55,9 @@ The bar at the bottom of the screen always shows the buttons that do something.
 | Card | `B` | Back |
 | Card | `A` | Korok: the guide's photo full screen. Chest: the kind of content, then the item |
 | Card | `Y` | Mark as found, while a save backup is shown |
-| Legend | D-Pad, `A`, or touch | Select/toggle a category |
+| Panel | D-Pad left/right, or touch a title | Switch between the tabs Legend, Progress and Regions |
+| Legend | D-Pad up/down, `A`, or touch | Select/toggle a category |
+| Regions | D-Pad up/down, `A`, or touch | Show one region alone on the map, or the whole map again |
 
 ## High-resolution map (optional)
 
@@ -111,13 +114,14 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, and the memory rule of the high-resolution map. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the quest and compendium counters, and the table of regions. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 
 - [lud99/botw-unexplored](https://github.com/lud99/botw-unexplored) — original application and codebase.
 - [marcrobledo/savegame-editors](https://github.com/marcrobledo/savegame-editors), [MrCheeze/botw-waypoint-map](https://github.com/MrCheeze/botw-waypoint-map), [Zelda Dungeon](https://www.zeldadungeon.net/), and [d4mation/botw-unexplored-viewer](https://github.com/d4mation/botw-unexplored-viewer) — original data, research, and guide references.
-- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, `tools/gen_shrine_chests.py` does the same for the chests inside the shrines, and `tools/gen_walls.py` for the breakable walls).
+- [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, `tools/gen_shrine_chests.py` does the same for the chests inside the shrines, and `tools/gen_walls.py` for the breakable walls), and the outline of the fifteen regions (`tools/gen_regions.py`).
+- [leoetlino/botw](https://github.com/leoetlino/botw) — the quests of the game in readable form, from which `tools/gen_progress.py` takes the kind of each quest and the flags of its first and last step.
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.

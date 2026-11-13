@@ -29,6 +29,8 @@ public:
     bool m_Found = false;
     // Visited, but something is still left to do there (a tower not activated, a fairy not awakened).
     bool m_Pending = false;
+    // The region of the map it is in (Regions.h), or -1.
+    int m_Region = -1;
     float m_Scale = 1.0f;
 
 public:

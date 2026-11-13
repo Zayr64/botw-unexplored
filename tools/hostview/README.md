@@ -46,7 +46,8 @@ shot 06-korok      save <output folder>/06-korok.png
 ```
 
 `scripts/tour.txt` walks through the main screens, `scripts/tour-chests.txt` through the chests (legend, map,
-card and what `A` reveals) and `scripts/tour-walls.txt` through the breakable walls.
+card and what `A` reveals), `scripts/tour-walls.txt` through the breakable walls and `scripts/tour-panel.txt`
+through the tabs of the left panel and the map of one region.
 
 The high-resolution map needs `HOSTVIEW_SD_DIR` with a `map-hd/` folder. In the running modes the app behaves
 as opened from the Album, where it loads a chunk only while memory allows: `HOSTVIEW_FREE_MB=400` lets it,
