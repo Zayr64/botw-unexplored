@@ -40,15 +40,44 @@ namespace Data
         uint16_t item; // index into ChestItemNames
     };
 
-    // Chests with armor, a key item, horse gear or a weapon found in at most two chests are "special".
+    // The chests with something rare are "special": the map shows them, in three groups by what the content
+    // is worth.
+    enum class ChestGroup : uint8_t
+    {
+        Armor,    // armor, key items and horse gear: kept for good
+        Weapon,   // weapons, bows and shields found in at most two chests of the whole map
+        Material, // materials found in at most two chests
+        Count
+    };
+
+    // The ordinary chests (arrows, gems, rupees and gear found in many chests) are only counted.
     extern const Chest Chests[];
     extern const int ChestsCount;
-    extern const Chest SpecialChests[];
-    extern const int SpecialChestsCount;
+    extern const Chest ArmorChests[];
+    extern const int ArmorChestsCount;
+    extern const Chest WeaponChests[];
+    extern const int WeaponChestsCount;
+    extern const Chest MaterialChests[];
+    extern const int MaterialChestsCount;
     extern const char* const ChestItemNames[];
     extern const int ChestItemNamesCount;
 
-    // Each kind draws with its own icon.
-    struct ChestIcon {};
-    struct SpecialChestIcon {};
+    // The group of a special chest, from the kind of thing it holds.
+    constexpr ChestGroup GroupOf(uint8_t contents)
+    {
+        return contents == static_cast<uint8_t>(ChestContents::Material) ? ChestGroup::Material
+             : (contents <= static_cast<uint8_t>(ChestContents::Shield) ? ChestGroup::Weapon : ChestGroup::Armor);
+    }
+
+    // The image of each group.
+    constexpr const char* IconOf(ChestGroup group)
+    {
+        return group == ChestGroup::Armor ? "romfs:/chestarmor.png"
+             : (group == ChestGroup::Weapon ? "romfs:/chestweapon.png" : "romfs:/chestmaterial.png");
+    }
+
+    // Each group draws with its own icon.
+    struct ArmorChestIcon {};
+    struct WeaponChestIcon {};
+    struct MaterialChestIcon {};
 }

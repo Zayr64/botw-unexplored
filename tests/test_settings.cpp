@@ -14,7 +14,7 @@ int main()
     expected.zoom = 1.5f;
     expected.legendOpen = false;
     expected.visible[3] = true;
-    expected.visible[SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::SpecialChests)] = true;
+    expected.visible[SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::ArmorChests)] = true;
     expected.showMode = 2;
     expected.language = 1;
 
@@ -25,13 +25,16 @@ int main()
     assert(actual.cameraX == expected.cameraX && actual.cameraY == expected.cameraY && actual.zoom == expected.zoom);
     assert(!actual.legendOpen && actual.visible[3] && actual.showMode == 2 && actual.language == 1);
     assert(!actual.visible[7] && actual.visible[8]);
+    // The file has the two groups split from the special chests: they are as written, not copied from entry 8.
+    assert(!actual.visible[10] && !actual.visible[11]);
 
-    // The legend categories keep their places in the file; the entries of the names of the locations (5) and
-    // of the old display-mode button (6) are skipped.
+    // The legend categories keep their places in the file; the entries of the names of the locations (5), of
+    // the old display-mode button (6) and of the ordinary chests (7) are skipped.
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Moldugas) == 4, "");
-    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Chests) == 7, "");
-    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::SpecialChests) == 8, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::ArmorChests) == 8, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Walls) == 9, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::WeaponChests) == 10, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::MaterialChests) == 11, "");
 
     // A release from before the chests reads header, version, 4 values, 7 entries, showMode and language, and
     // stops: the file starts with exactly those lines, and the chests come after them.
@@ -43,23 +46,32 @@ int main()
         while (std::getline(written, line))
             lines.push_back(line);
     }
-    assert(lines.size() == 18);
+    assert(lines.size() == 20);
     assert(lines[0] == "BOTW_UNEXPLORED_SETTINGS" && lines[1] == "2" && lines[5] == "0");
     assert(lines[6 + 3] == "1" && lines[13] == "2" && lines[14] == "1");
-    assert(lines[15] == "0" && lines[16] == "1" && lines[17] == "0");
+    assert(lines[15] == "0" && lines[16] == "1" && lines[17] == "0" && lines[18] == "0" && lines[19] == "0");
 
     // The file of the release with chests and no walls ends one line earlier: the walls stay off.
     std::stringstream beforeWalls("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n1\n1\n");
     SettingsIO::Settings fromBeforeWalls;
     assert(SettingsIO::Load(beforeWalls, fromBeforeWalls) == SettingsIO::LoadResult::Current);
     assert(fromBeforeWalls.visible[7] && fromBeforeWalls.visible[8] && !fromBeforeWalls.visible[9]);
+    // It had the special chests switched on: so are the two groups split from them later.
+    assert(fromBeforeWalls.visible[10] && fromBeforeWalls.visible[11]);
+    // The same from the file of a release with the walls, here with the special chests off.
+    std::stringstream beforeGroups("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n1\n0\n1\n");
+    SettingsIO::Settings fromBeforeGroups;
+    fromBeforeGroups.visible[10] = true;
+    assert(SettingsIO::Load(beforeGroups, fromBeforeGroups) == SettingsIO::LoadResult::Current);
+    assert(!fromBeforeGroups.visible[8] && fromBeforeGroups.visible[9]);
+    assert(!fromBeforeGroups.visible[10] && !fromBeforeGroups.visible[11]);
 
     // ...and its file, which ends before the chests, is read with them switched off.
     std::stringstream older("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n");
     SettingsIO::Settings fromOlder;
     assert(SettingsIO::Load(older, fromOlder) == SettingsIO::LoadResult::Current);
     assert(fromOlder.cameraX == 4.0f && fromOlder.visible[1] && fromOlder.visible[5]);
-    assert(!fromOlder.visible[7] && !fromOlder.visible[8]);
+    assert(!fromOlder.visible[7] && !fromOlder.visible[8] && !fromOlder.visible[10] && !fromOlder.visible[11]);
     std::stringstream badChest("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\nyes\n");
     assert(SettingsIO::Load(badChest, fromOlder) == SettingsIO::LoadResult::Invalid);
 

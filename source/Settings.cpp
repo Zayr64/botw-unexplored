@@ -63,8 +63,13 @@ namespace
         if (!ReadLine(input, value) || !ParseInt(value, settings.showMode) || settings.showMode < 0 || settings.showMode > 2) return false;
         if (!ReadLine(input, value) || !ParseInt(value, settings.language) || settings.language < -1 || settings.language > 2) return false;
         // The categories added later: the file of a release without them ends here, and they stay as they are.
-        for (size_t i = SettingsIO::BaseCategoryCount; i < SettingsIO::CategoryCount && ReadLine(input, value); ++i)
-            if (!ParseBool(value, settings.visible[i])) return false;
+        size_t read = SettingsIO::BaseCategoryCount;
+        for (; read < SettingsIO::CategoryCount && ReadLine(input, value); ++read)
+            if (!ParseBool(value, settings.visible[read])) return false;
+        // The file of a release with a single category of special chests: the two groups split from it show if it did.
+        if (read > SettingsIO::SpecialChestsEntry && read <= SettingsIO::FirstSplitEntry)
+            for (size_t entry = SettingsIO::FirstSplitEntry; entry < SettingsIO::CategoryCount; ++entry)
+                settings.visible[entry] = settings.visible[SettingsIO::SpecialChestsEntry];
         return true;
     }
 

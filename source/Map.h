@@ -112,8 +112,9 @@ namespace Map
     extern MapObject<Data::Hinox>* m_Hinoxes;
     extern MapObject<Data::Talus>* m_Taluses;
     extern MapObject<Data::Molduga>* m_Moldugas;
-    extern MapObject<Data::ChestIcon>* m_Chests;               // one per entry of Data::Chests
-    extern MapObject<Data::SpecialChestIcon>* m_SpecialChests; // one per entry of Data::SpecialChests
+    extern MapObject<Data::ArmorChestIcon>* m_ArmorChests;       // one per entry of Data::ArmorChests
+    extern MapObject<Data::WeaponChestIcon>* m_WeaponChests;     // one per entry of Data::WeaponChests
+    extern MapObject<Data::MaterialChestIcon>* m_MaterialChests; // one per entry of Data::MaterialChests
     extern MapObject<Data::WallIcon>* m_Walls;                 // one per entry of Data::Walls
 
     extern MapLocation* m_Locations;

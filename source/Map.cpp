@@ -155,7 +155,7 @@ namespace
         bool pending; // a discovered shrine with something left still counts as missing
         bool visible; // its category is on in the legend
         int korokIndex;
-        const Data::Chest* chest; // for the two chest types
+        const Data::Chest* chest; // for a chest
     };
 
     void CollectObjects(std::vector<MapEntry>& entries)
@@ -163,12 +163,16 @@ namespace
         static const std::string noName;
         entries.clear();
         entries.reserve(Data::KoroksCount + Data::ShrineCount + Data::DLCShrineCount + Data::HinoxesCount +
-                        Data::TalusesCount + Data::MoldugasCount + Data::ChestsCount +
-                        Data::SpecialChestsCount + Data::WallsCount);
+                        Data::TalusesCount + Data::MoldugasCount + Data::ArmorChestsCount +
+                        Data::WeaponChestsCount + Data::MaterialChestsCount + Data::WallsCount);
+        // legendButton: the legend category, for a type that is not always in the same one (the special chests)
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
-                             bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr)
+                             bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr,
+                             int legendButton = ObjectModel::NoLegendButton)
         {
-            bool visible = Map::m_Legend->m_Show[ObjectModel::GetMetadata(type).legendButtonIndex];
+            if (legendButton == ObjectModel::NoLegendButton)
+                legendButton = ObjectModel::GetMetadata(type).legendButtonIndex;
+            bool visible = Map::m_Legend->m_Show[legendButton];
             if (type == Data::ObjectType::DLCShrine)
                 visible = visible && SavefileIO::DlcShrinesAppear();
             if (visible && Map::m_RegionFilter >= 0)
@@ -190,15 +194,17 @@ namespace
             add(Data::ObjectType::Talus, Data::Taluses[i].hash, Map::m_Taluses[i].m_Position, noName, &Map::m_Taluses[i].m_Found);
         for (int i = 0; i < Data::MoldugasCount; ++i)
             add(Data::ObjectType::Molduga, Data::Moldugas[i].hash, Map::m_Moldugas[i].m_Position, noName, &Map::m_Moldugas[i].m_Found);
-        // Only the chests that exist in this game (mode and DLC)
-        for (int i = 0; i < Data::ChestsCount; ++i)
-            if (!Map::m_Chests[i].m_Excluded)
-                add(Data::ObjectType::Chest, Data::Chests[i].hash, Map::m_Chests[i].m_Position, noName,
-                    &Map::m_Chests[i].m_Found, false, -1, &Data::Chests[i]);
-        for (int i = 0; i < Data::SpecialChestsCount; ++i)
-            if (!Map::m_SpecialChests[i].m_Excluded)
-                add(Data::ObjectType::SpecialChest, Data::SpecialChests[i].hash, Map::m_SpecialChests[i].m_Position, noName,
-                    &Map::m_SpecialChests[i].m_Found, false, -1, &Data::SpecialChests[i]);
+        // The special chests, each group in its legend category; only those that exist in this game (mode and DLC)
+        const auto addChests = [&](auto* objects, const Data::Chest* chests, int count, IconButton::ButtonTypes category)
+        {
+            for (int i = 0; i < count; ++i)
+                if (!objects[i].m_Excluded)
+                    add(Data::ObjectType::SpecialChest, chests[i].hash, objects[i].m_Position, noName, &objects[i].m_Found,
+                        false, -1, &chests[i], static_cast<int>(category));
+        };
+        addChests(Map::m_ArmorChests, Data::ArmorChests, Data::ArmorChestsCount, IconButton::ArmorChests);
+        addChests(Map::m_WeaponChests, Data::WeaponChests, Data::WeaponChestsCount, IconButton::WeaponChests);
+        addChests(Map::m_MaterialChests, Data::MaterialChests, Data::MaterialChestsCount, IconButton::MaterialChests);
         for (int i = 0; i < Data::WallsCount; ++i)
             add(Data::ObjectType::BreakableWall, Data::Walls[i].hash, Map::m_Walls[i].m_Position, noName, &Map::m_Walls[i].m_Found);
     }
@@ -264,8 +270,9 @@ namespace
         for (int i = 0; i < Data::TalusesCount; ++i) found += Map::m_Taluses[i].m_Found;
         for (int i = 0; i < Data::MoldugasCount; ++i) found += Map::m_Moldugas[i].m_Found;
         for (int i = 0; i < Data::LocationsCount; ++i) found += Map::m_Locations[i].m_Found;
-        for (int i = 0; i < Data::ChestsCount; ++i) found += Map::m_Chests[i].m_Found;
-        for (int i = 0; i < Data::SpecialChestsCount; ++i) found += Map::m_SpecialChests[i].m_Found;
+        for (int i = 0; i < Data::ArmorChestsCount; ++i) found += Map::m_ArmorChests[i].m_Found;
+        for (int i = 0; i < Data::WeaponChestsCount; ++i) found += Map::m_WeaponChests[i].m_Found;
+        for (int i = 0; i < Data::MaterialChestsCount; ++i) found += Map::m_MaterialChests[i].m_Found;
         for (int i = 0; i < Data::WallsCount; ++i) found += Map::m_Walls[i].m_Found;
         return found;
     }
@@ -320,7 +327,7 @@ namespace
             const bool found = korokCard ? Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Found
                                          : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
             if (objectCard && Map::m_ObjectInfo->CanReveal())
-                add("A", Map::m_ObjectInfo->RevealLevel() == 0 ? Text::HintReveal : Text::HintShowItem);
+                add("A", Map::m_ObjectInfo->NextRevealIsItem() ? Text::HintShowItem : Text::HintReveal);
             if (CanMarkByHand() && !found)
                 add("Y", Text::HintMarkFound);
             add("ZL ZR", Text::HintPreviousNext);
@@ -462,13 +469,16 @@ bool Map::Init()
     m_Moldugas = new MapObject<Data::Molduga>[Data::MoldugasCount];
     MapObject<Data::Molduga>::Init("romfs:/molduga.png", Data::MoldugasCount);
 
-    // Create chests. Their images are four times the size they are drawn at.
-    m_Chests = new MapObject<Data::ChestIcon>[Data::ChestsCount];
-    MapObject<Data::ChestIcon>::Init("romfs:/chest.png", Data::ChestsCount);
-    MapObject<Data::ChestIcon>::m_SizeFactor = 0.25f;
-    m_SpecialChests = new MapObject<Data::SpecialChestIcon>[Data::SpecialChestsCount];
-    MapObject<Data::SpecialChestIcon>::Init("romfs:/chestspecial.png", Data::SpecialChestsCount);
-    MapObject<Data::SpecialChestIcon>::m_SizeFactor = 0.25f;
+    // Create the special chests, one icon per group. Their images are four times the size they are drawn at.
+    m_ArmorChests = new MapObject<Data::ArmorChestIcon>[Data::ArmorChestsCount];
+    MapObject<Data::ArmorChestIcon>::Init(Data::IconOf(Data::ChestGroup::Armor), Data::ArmorChestsCount);
+    MapObject<Data::ArmorChestIcon>::m_SizeFactor = 0.25f;
+    m_WeaponChests = new MapObject<Data::WeaponChestIcon>[Data::WeaponChestsCount];
+    MapObject<Data::WeaponChestIcon>::Init(Data::IconOf(Data::ChestGroup::Weapon), Data::WeaponChestsCount);
+    MapObject<Data::WeaponChestIcon>::m_SizeFactor = 0.25f;
+    m_MaterialChests = new MapObject<Data::MaterialChestIcon>[Data::MaterialChestsCount];
+    MapObject<Data::MaterialChestIcon>::Init(Data::IconOf(Data::ChestGroup::Material), Data::MaterialChestsCount);
+    MapObject<Data::MaterialChestIcon>::m_SizeFactor = 0.25f;
 
     // Create breakable walls
     m_Walls = new MapObject<Data::WallIcon>[Data::WallsCount];
@@ -580,18 +590,21 @@ void Map::UpdateMapObjects(bool recenter)
     // Chests: those of Master Mode only exist there; those of the Expansion Pass need it (an opened one,
     // the Champions' Ballad or a Master Mode save show that the game has it).
     const bool dlcChests = SavefileIO::HasExpansionPass();
-    const auto placeChest = [&](auto& object, const Data::Chest& chest, Data::ObjectType type)
+    const auto placeChest = [&](auto& object, const Data::Chest& chest)
     {
+        const Data::ObjectType type = Data::ObjectType::SpecialChest;
         object.m_Position = glm::vec2(chest.x, -chest.y) * MapScale;
         object.m_Excluded = ((chest.flags & Data::ChestMasterModeOnly) && !m_LoadMasterMode) ||
                             ((chest.flags & Data::ChestDlc) && !dlcChests);
         object.m_Found = !object.m_Excluded &&
                          ResolveFound(type, chest.hash, SavefileIO::IsChestOpened(chest.hash), manualProgressChanged);
     };
-    for (int i = 0; i < Data::ChestsCount; i++)
-        placeChest(m_Chests[i], Data::Chests[i], Data::ObjectType::Chest);
-    for (int i = 0; i < Data::SpecialChestsCount; i++)
-        placeChest(m_SpecialChests[i], Data::SpecialChests[i], Data::ObjectType::SpecialChest);
+    for (int i = 0; i < Data::ArmorChestsCount; i++)
+        placeChest(m_ArmorChests[i], Data::ArmorChests[i]);
+    for (int i = 0; i < Data::WeaponChestsCount; i++)
+        placeChest(m_WeaponChests[i], Data::WeaponChests[i]);
+    for (int i = 0; i < Data::MaterialChestsCount; i++)
+        placeChest(m_MaterialChests[i], Data::MaterialChests[i]);
 
     for (int i = 0; i < Data::WallsCount; i++) // Breakable walls
     {
@@ -607,8 +620,9 @@ void Map::UpdateMapObjects(bool recenter)
     for (int i = 0; i < Data::HinoxesCount; i++) m_Hinoxes[i].m_Region = Regions::Of(Data::Hinoxes[i].hash);
     for (int i = 0; i < Data::TalusesCount; i++) m_Taluses[i].m_Region = Regions::Of(Data::Taluses[i].hash);
     for (int i = 0; i < Data::MoldugasCount; i++) m_Moldugas[i].m_Region = Regions::Of(Data::Moldugas[i].hash);
-    for (int i = 0; i < Data::ChestsCount; i++) m_Chests[i].m_Region = Regions::Of(Data::Chests[i].hash);
-    for (int i = 0; i < Data::SpecialChestsCount; i++) m_SpecialChests[i].m_Region = Regions::Of(Data::SpecialChests[i].hash);
+    for (int i = 0; i < Data::ArmorChestsCount; i++) m_ArmorChests[i].m_Region = Regions::Of(Data::ArmorChests[i].hash);
+    for (int i = 0; i < Data::WeaponChestsCount; i++) m_WeaponChests[i].m_Region = Regions::Of(Data::WeaponChests[i].hash);
+    for (int i = 0; i < Data::MaterialChestsCount; i++) m_MaterialChests[i].m_Region = Regions::Of(Data::MaterialChests[i].hash);
     for (int i = 0; i < Data::WallsCount; i++) m_Walls[i].m_Region = Regions::Of(Data::Walls[i].hash);
 
     if (manualProgressChanged)
@@ -900,13 +914,16 @@ void Map::Update()
             m_Taluses[i].Update(i == 0);
         for (int i = 0; i < Data::MoldugasCount; i++)
             m_Moldugas[i].Update(i == 0);
-        // The chests are many and start switched off: their meshes are only built while they show.
-        if (m_Legend->m_Show[IconButton::ButtonTypes::Chests])
-            for (int i = 0; i < Data::ChestsCount; i++)
-                m_Chests[i].Update(i == 0);
-        if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
-            for (int i = 0; i < Data::SpecialChestsCount; i++)
-                m_SpecialChests[i].Update(i == 0);
+        // The chests start switched off: their meshes are only built while they show.
+        if (m_Legend->m_Show[IconButton::ButtonTypes::ArmorChests])
+            for (int i = 0; i < Data::ArmorChestsCount; i++)
+                m_ArmorChests[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::WeaponChests])
+            for (int i = 0; i < Data::WeaponChestsCount; i++)
+                m_WeaponChests[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::MaterialChests])
+            for (int i = 0; i < Data::MaterialChestsCount; i++)
+                m_MaterialChests[i].Update(i == 0);
         if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
             for (int i = 0; i < Data::WallsCount; i++)
                 m_Walls[i].Update(i == 0);
@@ -927,10 +944,6 @@ void Map::Render()
 
     if (SavefileIO::LoadedSavefile)
     {
-        // The many ordinary chests go under everything else
-        if (m_Legend->m_Show[IconButton::ButtonTypes::Chests])
-            MapObject<Data::ChestIcon>::Render();
-
         if (m_Legend->m_Show[IconButton::ButtonTypes::Koroks])
         {
             // Render korok paths
@@ -980,8 +993,13 @@ void Map::Render()
            MapObject<Data::Molduga>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
             MapObject<Data::WallIcon>::Render();
-        if (m_Legend->m_Show[IconButton::ButtonTypes::SpecialChests])
-            MapObject<Data::SpecialChestIcon>::Render();
+        // The chests one keeps go over the others
+        if (m_Legend->m_Show[IconButton::ButtonTypes::MaterialChests])
+            MapObject<Data::MaterialChestIcon>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::WeaponChests])
+            MapObject<Data::WeaponChestIcon>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::ArmorChests])
+            MapObject<Data::ArmorChestIcon>::Render();
         RenderSelectedObjectHighlight();
 
         if (HasPlayerPosition() && s_PlayerMarker.m_Texture)
@@ -1081,10 +1099,12 @@ void Map::Destroy()
     m_Taluses = nullptr;
     delete[] m_Moldugas;
     m_Moldugas = nullptr;
-    delete[] m_Chests;
-    m_Chests = nullptr;
-    delete[] m_SpecialChests;
-    m_SpecialChests = nullptr;
+    delete[] m_ArmorChests;
+    m_ArmorChests = nullptr;
+    delete[] m_WeaponChests;
+    m_WeaponChests = nullptr;
+    delete[] m_MaterialChests;
+    m_MaterialChests = nullptr;
     delete[] m_Walls;
     m_Walls = nullptr;
     delete[] m_Locations;
@@ -1360,8 +1380,9 @@ MapObject<Data::DLCShrine>* Map::m_DLCShrines;
 MapObject<Data::Hinox>* Map::m_Hinoxes;
 MapObject<Data::Talus>* Map::m_Taluses;
 MapObject<Data::Molduga>* Map::m_Moldugas;
-MapObject<Data::ChestIcon>* Map::m_Chests;
-MapObject<Data::SpecialChestIcon>* Map::m_SpecialChests;
+MapObject<Data::ArmorChestIcon>* Map::m_ArmorChests;
+MapObject<Data::WeaponChestIcon>* Map::m_WeaponChests;
+MapObject<Data::MaterialChestIcon>* Map::m_MaterialChests;
 MapObject<Data::WallIcon>* Map::m_Walls;
 MapLocation* Map::m_Locations;
 

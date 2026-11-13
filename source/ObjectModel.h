@@ -11,7 +11,8 @@ namespace ObjectModel
 {
     constexpr size_t ObjectTypeCount = static_cast<size_t>(Data::ObjectType::Count);
 
-    // For a type the map does not show (the locations, which only count for the map completion).
+    // For a type with no legend category of its own: the locations and the ordinary chests, which the map does
+    // not show, and the special chests, whose category is that of their group.
     constexpr int NoLegendButton = -1;
 
     struct TypeMetadata

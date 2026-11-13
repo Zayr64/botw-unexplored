@@ -95,7 +95,9 @@ namespace Localization
         NewSince,
         Of,
         Chests,
-        SpecialChests,
+        ArmorChests, // the three groups of special chests, in the order of Data::ChestGroup
+        WeaponChests,
+        MaterialChests,
         TreasureChest,
         SpecialChest,
         NotOpened,
@@ -155,6 +157,7 @@ namespace Localization
         QuestToTake,
         QuestsToTake,
         QuestsLater,
+        CommonChests,
         Count
     };
 

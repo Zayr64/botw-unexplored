@@ -25,12 +25,25 @@ void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const
 
     delete m_Icon;
     m_Icon = nullptr;
-    const ObjectModel::TypeMetadata& metadata = ObjectModel::GetMetadata(type);
-    if (metadata.iconPath[0] != '\0')
+    // A chest shows the icon of its group
+    const char* iconPath = chest != nullptr ? Data::IconOf(Data::GroupOf(chest->contents))
+                                            : ObjectModel::GetMetadata(type).iconPath;
+    if (iconPath[0] != '\0')
     {
         m_Icon = new TexturedQuad();
-        m_Icon->Create(metadata.iconPath);
+        m_Icon->Create(iconPath);
     }
+}
+
+bool ObjectInfo::NextRevealIsItem() const
+{
+    return m_Chest != nullptr && (m_Reveal >= 1 || Data::GroupOf(m_Chest->contents) == Data::ChestGroup::Material);
+}
+
+void ObjectInfo::RevealMore()
+{
+    if (CanReveal())
+        m_Reveal = NextRevealIsItem() ? 2 : m_Reveal + 1;
 }
 
 void ObjectInfo::SetOpen(bool open)
@@ -52,7 +65,12 @@ void ObjectInfo::Render()
     const bool isShrine = m_Type == Data::ObjectType::Shrine || m_Type == Data::ObjectType::DLCShrine;
 
     Ui::PanelBackground();
-    float top = Ui::CardHeader(m_Icon, 40.0f, Localization::GetObjectTypeName(m_Type), Map::NearestRankText());
+    // The title of a chest is its group, as in the legend
+    const std::string& title = m_Chest != nullptr
+        ? Localization::Get(static_cast<Text>(static_cast<int>(Text::ArmorChests) +
+                                              static_cast<int>(Data::GroupOf(m_Chest->contents))))
+        : Localization::GetObjectTypeName(m_Type);
+    float top = Ui::CardHeader(m_Icon, 40.0f, title, Map::NearestRankText());
 
     if (!m_Name.empty())
         top = Ui::Paragraph(top, m_Name, 0.50f, Ui::Colors::Gold) - 6.0f;

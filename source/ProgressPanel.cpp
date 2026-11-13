@@ -113,6 +113,24 @@ namespace
         return counter;
     }
 
+    // The chests of the world map with nothing rare inside, which the map does not show; those of this game
+    // (mode and Expansion Pass).
+    Counter CommonChests()
+    {
+        Counter counter;
+        const bool expansionPass = SavefileIO::HasExpansionPass();
+        for (int i = 0; i < Data::ChestsCount; ++i)
+        {
+            const Data::Chest& chest = Data::Chests[i];
+            if (((chest.flags & Data::ChestMasterModeOnly) && !Map::m_LoadMasterMode) ||
+                ((chest.flags & Data::ChestDlc) && !expansionPass))
+                continue;
+            ++counter.total;
+            counter.done += SavefileIO::IsChestOpened(chest.hash) ? 1 : 0;
+        }
+        return counter;
+    }
+
     // The named places of the map: the third part of the map completion, with the Koroks and the shrines.
     Counter Locations()
     {
@@ -146,6 +164,7 @@ void ProgressPanel::Render(float top)
     top = Row(top, Localization::Text::GreatFairies, GreatFairies());
     top = Row(top, Localization::Text::DivineBeasts, Progress::DivineBeasts(isSet));
     top = Row(top, Localization::Text::DivineBeastChests, Progress::DivineBeastChests(isSet));
+    top = Row(top, Localization::Text::CommonChests, CommonChests());
     // Nothing is said of the memories before the album has the pictures that lead to them.
     const Counter memories = Progress::Memories(isSet);
     if (memories.total > 0)

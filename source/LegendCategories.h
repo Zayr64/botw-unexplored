@@ -11,8 +11,9 @@ namespace LegendCategories
         Hinoxes,
         Taluses,
         Moldugas,
-        Chests,
-        SpecialChests,
+        ArmorChests,    // the special chests, in three groups (Chests.h)
+        WeaponChests,
+        MaterialChests,
         Walls,
         Count
     };

@@ -697,9 +697,14 @@ const std::unordered_multimap<uint32_t, TrackedFlag>& GetTrackedFlags()
             result.insert({Data::Moldugas[i].hash, {Data::ObjectType::Molduga, &Data::Moldugas[i]}});
         for (int i = 0; i < Data::ChestsCount; ++i)
             result.insert({Data::Chests[i].hash, {Data::ObjectType::Chest, const_cast<Data::Chest*>(&Data::Chests[i])}});
-        for (int i = 0; i < Data::SpecialChestsCount; ++i)
-            result.insert({Data::SpecialChests[i].hash,
-                           {Data::ObjectType::SpecialChest, const_cast<Data::Chest*>(&Data::SpecialChests[i])}});
+        const auto addSpecial = [&](const Data::Chest* chests, int count)
+        {
+            for (int i = 0; i < count; ++i)
+                result.insert({chests[i].hash, {Data::ObjectType::SpecialChest, const_cast<Data::Chest*>(&chests[i])}});
+        };
+        addSpecial(Data::ArmorChests, Data::ArmorChestsCount);
+        addSpecial(Data::WeaponChests, Data::WeaponChestsCount);
+        addSpecial(Data::MaterialChests, Data::MaterialChestsCount);
         for (int i = 0; i < Data::WallsCount; ++i)
             result.insert({Data::Walls[i].hash, {Data::ObjectType::BreakableWall, const_cast<Data::Wall*>(&Data::Walls[i])}});
         return result;

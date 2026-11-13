@@ -20,7 +20,8 @@ namespace
         "Defeated", "Not defeated", "Korok seed", "Link is inside",
         "Marked as found", "Synced with the game", "Synced with the game: nothing new", "Could not read the game", "Nothing under the aim", "Nothing missing in the categories shown",
         "new", "of",
-        "Chests", "Special chests", "Treasure chest", "Special chest", "Not opened", "Opened",
+        "Chests", "Armor & key items", "Rare weapons", "Rare materials",
+        "Treasure chest", "Special chest", "Not opened", "Opened",
         "Hidden", "Contents", "A weapon", "A bow", "A shield", "Armor",
         "Arrows", "A gem or ore", "Rupees", "A material", "Horse gear", "A key item",
         "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest",
@@ -32,7 +33,7 @@ namespace
         "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium",
         "All entries", "Creatures", "Monsters", "Materials", "Equipment", "Treasure",
         "Armor", "Pieces", "The pieces that only amiibo give are not counted.",
-        "Memories", "quest", "quests", "later"
+        "Memories", "quest", "quests", "later", "Common chests"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

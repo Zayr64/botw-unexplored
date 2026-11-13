@@ -51,16 +51,17 @@ namespace
     }
 
     constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
-    constexpr float RowHeight = 56.0f; // eight rows end just above the bottom bar
-    constexpr float RowGap = 8.0f;
+    constexpr float RowHeight = 50.0f; // nine rows end just above the bottom bar
+    constexpr float RowGap = 6.0f;
     constexpr float RowRadius = 8.0f;
 
     Localization::Text LabelOf(IconButton::ButtonTypes type)
     {
         switch (type)
         {
-        case IconButton::Chests: return Localization::Text::Chests;
-        case IconButton::SpecialChests: return Localization::Text::SpecialChests;
+        case IconButton::ArmorChests: return Localization::Text::ArmorChests;
+        case IconButton::WeaponChests: return Localization::Text::WeaponChests;
+        case IconButton::MaterialChests: return Localization::Text::MaterialChests;
         case IconButton::Walls: return Localization::Text::Walls;
         default:
             // Koroks to Moldugas, in the order of the categories
@@ -68,7 +69,7 @@ namespace
         }
     }
 
-    // Opened and existing chests of one of the two kinds (those of the other mode or of the DLC do not count).
+    // Opened and existing chests of one of the groups (those of the other mode or of the DLC do not count).
     template <typename T>
     void CountChests(const MapObject<T>* chests, int count, int& found, int& total)
     {
@@ -306,8 +307,9 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case Hinoxes: iconPath = "romfs:/hinox.png"; break;
     case Taluses: iconPath = "romfs:/talus.png"; break;
     case Moldugas: iconPath = "romfs:/molduga.png"; break;
-    case Chests: iconPath = "romfs:/chest.png"; break;
-    case SpecialChests: iconPath = "romfs:/chestspecial.png"; break;
+    case ArmorChests: iconPath = Data::IconOf(Data::ChestGroup::Armor); break;
+    case WeaponChests: iconPath = Data::IconOf(Data::ChestGroup::Weapon); break;
+    case MaterialChests: iconPath = Data::IconOf(Data::ChestGroup::Material); break;
     case Walls: iconPath = "romfs:/wall.png"; break;
     default: break;
     }
@@ -351,11 +353,14 @@ void IconButton::Count(int& found, int& total) const
     case Moldugas:
         for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Region, Map::m_Moldugas[i].m_Found);
         break;
-    case Chests:
-        CountChests(Map::m_Chests, Data::ChestsCount, found, total);
+    case ArmorChests:
+        CountChests(Map::m_ArmorChests, Data::ArmorChestsCount, found, total);
         break;
-    case SpecialChests:
-        CountChests(Map::m_SpecialChests, Data::SpecialChestsCount, found, total);
+    case WeaponChests:
+        CountChests(Map::m_WeaponChests, Data::WeaponChestsCount, found, total);
+        break;
+    case MaterialChests:
+        CountChests(Map::m_MaterialChests, Data::MaterialChestsCount, found, total);
         break;
     case Walls:
         for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Region, Map::m_Walls[i].m_Found);
