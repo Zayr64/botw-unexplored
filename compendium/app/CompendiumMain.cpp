@@ -52,11 +52,13 @@ namespace
     const glm::vec3 Gold(0.86f, 0.73f, 0.40f);
     const glm::vec3 Good(0.47f, 0.86f, 0.56f);
     const glm::vec3 Warn(0.99f, 0.76f, 0.33f);
-    // Tints of the game's white icons, as the game shows them.
-    const glm::vec4 White(1.0f, 1.0f, 1.0f, 1.0f);
+    // The effect icons come coloured from gen_icons.py (the colours of the game's icons below Link's hearts) and are
+    // drawn as they are. The heart is a grey shape tinted here: red, or the yellow of extra hearts (#F0E000). The
+    // clock and the time: the green of a dish's card in the pause menu (#21DA4F, Layout/Common.sblarc).
+    const glm::vec4 NoTint(1.0f, 1.0f, 1.0f, 1.0f);
     const glm::vec4 HeartRed(0.93f, 0.25f, 0.28f, 1.0f);
-    const glm::vec4 HeartYellow(0.98f, 0.82f, 0.30f, 1.0f);
-    const glm::vec4 StaminaGreen(0.45f, 0.85f, 0.40f, 1.0f);
+    const glm::vec4 HeartYellow(0.94f, 0.88f, 0.0f, 1.0f);
+    const glm::vec3 TimeGreen(0.129f, 0.855f, 0.31f);
 
     const char* DataPath = "sdmc:/switch/botw-compendium/cook-data.txt";
 
@@ -177,9 +179,7 @@ namespace
         {
         case LifeMaxUp: return HeartYellow;
         case EffectNone: return HeartRed;
-        case GutsRecover: return StaminaGreen;
-        case ExGutsMaxUp: return HeartYellow;
-        default: return White;
+        default: return NoTint;
         }
     }
 
@@ -490,12 +490,21 @@ namespace
     // The result of a dish on one line, with the game's icons: effect, hearts. Returns the x after it.
     float ResultLine(const CookResult& r, float x, float baseline, float scale)
     {
-        const float icon = 28;
-        const float top = baseline - 22;
+        const float icon = 34;
+        const float top = baseline - 25;
         if (r.effect != EffectNone)
         {
             Icons::Ui(r.effect == LifeMaxUp ? "heart" : EffectIcon(r.effect), x, top, icon, EffectTint(r.effect));
-            x = Text(Strength(r), x + icon + 6, baseline, scale, Gold) + 18;
+            const bool timed = r.effect != LifeMaxUp && r.effect != GutsRecover && r.effect != ExGutsMaxUp;
+            if (timed)
+            {
+                // The level, then the time in the game's green, with its clock.
+                x = Text("Lv " + std::to_string(r.vitality), x + icon + 6, baseline, scale, Gold) + 16;
+                Icons::Ui("clock", x, top + 2, icon - 4, glm::vec4(TimeGreen, 1.0f));
+                x = Text(Clock(r.time), x + icon, baseline, scale, TimeGreen) + 18;
+            }
+            else
+                x = Text(Strength(r), x + icon + 6, baseline, scale, Gold) + 18;
             if (r.effect == LifeMaxUp)
                 return Text("and every heart", x, baseline, scale * 0.9f, TextDim);
         }
@@ -571,9 +580,9 @@ namespace
             const float y = top + i * rowH;
             if (static_cast<int>(i) == app.cursor[0])
                 RoundRect(12, y, listW - 24, rowH - 4, 8, RowOn);
-            Icons::Ui(g.kind == GoalKind::Hearts ? "heart" : (g.effect == LifeMaxUp ? "heart" : EffectIcon(g.effect)), 22,
-                      y + 6, 30, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
-            Text(g.label, 62, y + 29, 0.44f, TextColor);
+            Icons::Ui(g.kind == GoalKind::Hearts ? "heart" : (g.effect == LifeMaxUp ? "heart" : EffectIcon(g.effect)), 18,
+                      y + 1, 40, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
+            Text(g.label, 64, y + 29, 0.44f, TextColor);
             bool found = false;
             const std::string summary = Summary(app, g, found);
             Text(summary, listW - 28, y + 29, 0.38f, found ? Gold : TextDim, ALIGN_RIGHT);

@@ -24,17 +24,50 @@ ITEM_SIZE = 72  # the app draws them at 26 to 30 pixels; the texture gets mipmap
 UI_ICONS = {
     "rupee": "Nt_RupeeIconNew_00",
     "heart": "Nt_HeartNew_00",
+    "clock": "Nt_ClockIcon_00",
     "AttackUp": "Nt_PauseIconAttackCook_00",
     "DefenseUp": "Nt_PauseIconShieldCook_00",
     "MovingSpeed": "Nt_PauseIconGoGo_00",
     "Quietness": "Nt_PauseIconNoise_00",
-    "ResistHot": "Nt_PauseIconCool_00",
-    "ResistCold": "Nt_PauseIconHot_00",
+    # Heat resistance (a Chilly dish) shows the sun, cold resistance (Spicy) the snowflake: the thing resisted.
+    "ResistHot": "Nt_PauseIconHot_00",
+    "ResistCold": "Nt_PauseIconCool_00",
     "ResistElectric": "Nt_PauseIconElect_00",
     "Fireproof": "Nt_PauseIconFire_00",
     "GutsRecover": "Nt_PauseIconGanbariRe_00",
-    "ExGutsMaxUp": "Nt_PauseIconGanbari_00",  # a wheel; the app tints it yellow like the extra wheels
+    "ExGutsMaxUp": "Nt_PauseIconGanbariRe_00",  # the same wheel, in the yellow of extra wheels
 }
+
+# The textures are grey shapes the game colours as it draws them. These are the colours of the effect icons below
+# Link's hearts in the game, measured on Zelda Wiki's images of them (zeldawiki.wiki/wiki/Added_Effect, 22/11/2026);
+# the small arrow of some icons is white, as in the game. Extra stamina has no image there: the stamina icon in the
+# yellow of extra hearts, which the game also uses for the extra wheels. Icons not listed stay grey (the app tints
+# them).
+EFFECT_COLORS = {
+    "AttackUp": (255, 255, 255),
+    "DefenseUp": (255, 255, 255),
+    "MovingSpeed": (10, 124, 252),
+    "Quietness": (180, 28, 200),
+    "ResistHot": (232, 132, 0),
+    "ResistCold": (132, 248, 252),
+    "ResistElectric": (236, 236, 0),
+    "Fireproof": (244, 52, 48),
+    "GutsRecover": (12, 252, 104),
+    "ExGutsMaxUp": (240, 224, 0),
+}
+
+
+def colorize(image, color):
+    """The game's grey masks: the shape is the first channel, the alpha the second. The game paints the full parts in
+    the effect's colour and the empty parts that are still opaque (the small arrow) in white; in between it blends."""
+    out = image.copy()
+    px = out.load()
+    w, h = out.size
+    for y in range(h):
+        for x in range(w):
+            r, _g, _b, a = px[x, y]
+            px[x, y] = tuple(255 + (c - 255) * r // 255 for c in color) + (a,)
+    return out
 
 
 def item_names(cook_data):
@@ -78,7 +111,10 @@ def main():
                 found[name.split("^")[0]] = Image.frombytes("RGBA", (w, h), rgba)
     for app_name, texture in UI_ICONS.items():
         if texture in found:
-            found[texture].save(out / "ui" / (app_name + ".png"), optimize=True)
+            image = found[texture]
+            if app_name in EFFECT_COLORS:
+                image = colorize(image, EFFECT_COLORS[app_name])
+            image.save(out / "ui" / (app_name + ".png"), optimize=True)
         else:
             print("not found:", texture)
     print(f"{out}: {made} item icons ({missing} items without one), {len(found)} interface icons")
