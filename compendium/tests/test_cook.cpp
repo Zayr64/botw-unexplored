@@ -209,6 +209,16 @@ namespace
         r = FindBestForEffect(data, stock, 2, Quietness);
         Check(!r.found, "no stealth dish from bananas and apples");
 
+        // Two hearts are enough: the cheapest dish reaching them, not the one with the most hearts.
+        const TargetResult t = FindCheapestReaching(data, stock, 2, EffectNone, 8);
+        const SearchResult most = FindMostHearts(data, stock, 2);
+        Check(t.reached && t.dish.result.life >= 8 && t.dish.cost <= most.best.cost &&
+                  t.dish.result.life < most.best.result.life,
+              "cheapest dish with at least 2 hearts: " + Describe(data, t.dish.result));
+        const TargetResult far = FindCheapestReaching(data, stock, 2, EffectNone, 400);
+        Check(far.found && !far.reached && far.dish.result.life == most.best.result.life,
+              "nothing reaches 100 hearts: the most hearts instead");
+
         const Actor* critter = data.FindActorByDisplayName("Summerwing Butterfly");
         const Actor* talon = data.FindActorByDisplayName("Lizalfos Talon");
         if (!critter || !talon)

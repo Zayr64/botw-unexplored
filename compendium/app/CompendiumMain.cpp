@@ -1,4 +1,5 @@
-// BotW Compendium: the best dishes from what is in the pouch, what to hold back for armor and quests, and what to sell.
+// BotW Compendium: the best dishes from what is in the pouch, what to hold back for armor and quests, and what to
+// sell.
 //
 // Three tabs (L/R): Dishes, Reserve, Sell. Everything is computed once from the save; X and Y change what counts as
 // free and compute again. Nothing is ever written to the game's save.
@@ -23,6 +24,7 @@
 
 #include "Cook.h"
 #include "CookData.h"
+#include "Icons.h"
 #include "Reserve.h"
 #include "Sale.h"
 #include "SaveFile.h"
@@ -50,6 +52,11 @@ namespace
     const glm::vec3 Gold(0.86f, 0.73f, 0.40f);
     const glm::vec3 Good(0.47f, 0.86f, 0.56f);
     const glm::vec3 Warn(0.99f, 0.76f, 0.33f);
+    // Tints of the game's white icons, as the game shows them.
+    const glm::vec4 White(1.0f, 1.0f, 1.0f, 1.0f);
+    const glm::vec4 HeartRed(0.93f, 0.25f, 0.28f, 1.0f);
+    const glm::vec4 HeartYellow(0.98f, 0.82f, 0.30f, 1.0f);
+    const glm::vec4 StaminaGreen(0.45f, 0.85f, 0.40f, 1.0f);
 
     const char* DataPath = "sdmc:/switch/botw-compendium/cook-data.txt";
 
@@ -69,11 +76,12 @@ namespace
         g_shapes->AddRoundedRect(x, ScreenH - top - h, x + w, ScreenH - top, r, color);
     }
 
-    // `baseline`: distance of the text's baseline from the top of the screen.
-    void Text(const std::string& s, float x, float baseline, float scale, const glm::vec3& color,
-              int align = ALIGN_LEFT, float maxWidth = -1.0f)
+    // `baseline`: distance of the text's baseline from the top of the screen. Returns the x after the text.
+    float Text(const std::string& s, float x, float baseline, float scale, const glm::vec3& color,
+               int align = ALIGN_LEFT, float maxWidth = -1.0f)
     {
         g_font->AddTextToBatch(s, glm::vec2(x, ScreenH - baseline), scale, color, align, maxWidth);
+        return x + (align == ALIGN_LEFT ? g_font->MeasureText(s, scale) : 0.0f);
     }
 
     float Width(const std::string& s, float scale)
@@ -124,6 +132,13 @@ namespace
         return buf;
     }
 
+    std::string Wheels(int32_t units, int perWheel)
+    {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(units) / perWheel);
+        return buf;
+    }
+
     std::string SaveDate(uint32_t t)
     {
         if (t == 0)
@@ -137,13 +152,53 @@ namespace
         return buf;
     }
 
+    // The icon of an effect, in ui/, and its tint.
+    const char* EffectIcon(Effect e)
+    {
+        switch (e)
+        {
+        case AttackUp: return "AttackUp";
+        case DefenseUp: return "DefenseUp";
+        case MovingSpeed: return "MovingSpeed";
+        case Quietness: return "Quietness";
+        case ResistHot: return "ResistHot";
+        case ResistCold: return "ResistCold";
+        case ResistElectric: return "ResistElectric";
+        case Fireproof: return "Fireproof";
+        case GutsRecover: return "GutsRecover";
+        case ExGutsMaxUp: return "ExGutsMaxUp";
+        default: return "heart";
+        }
+    }
+
+    glm::vec4 EffectTint(Effect e)
+    {
+        switch (e)
+        {
+        case LifeMaxUp: return HeartYellow;
+        case EffectNone: return HeartRed;
+        case GutsRecover: return StaminaGreen;
+        case ExGutsMaxUp: return HeartYellow;
+        default: return White;
+        }
+    }
+
+    enum class GoalKind
+    {
+        Effect,  // the strongest dish with the effect
+        Hearts,  // the cheapest that heals all but one heart, and the cheapest yellow-heart dish
+        Stamina, // the cheapest that refills every wheel
+    };
+
     struct Goal
     {
         const char* label;
         const char* detail;
         Effect effect;
-        bool hearts;
+        GoalKind kind;
         SearchResult result;
+        TargetResult target;
+        TargetResult hearty;
     };
 
     struct MaterialRow
@@ -162,6 +217,8 @@ namespace
         std::vector<PouchItem> pouch;
         int pouchCount = 0;
         int dishes = 0;
+        int32_t maxHearts = 0;  // quarters
+        int32_t maxStamina = 0; // 1000 = one wheel
         std::unique_ptr<ReservePlan> plan;
         std::unique_ptr<SalePlan> sale;
         std::vector<Goal> goals;
@@ -174,6 +231,17 @@ namespace
         std::string error;
         int evaluated = 0;
     };
+
+    int32_t HeartsTarget(const App& app)
+    {
+        // All hearts but one: the most a living Link can be missing, give or take a quarter.
+        return std::max<int32_t>(4, app.maxHearts - 4);
+    }
+
+    int32_t StaminaTarget(const App& app)
+    {
+        return app.maxStamina > 0 ? app.maxStamina : 1000;
+    }
 
     uint8_t TierMask(const App& app)
     {
@@ -194,22 +262,38 @@ namespace
         return a ? a->name : "?";
     }
 
-    // "2x Razorclaw Crab" lines for the ingredients of a dish, in pot order.
-    std::vector<std::string> IngredientLines(const App& app, const uint32_t* items, int count)
+    // The actor name, for the item's icon; "" when unknown.
+    std::string ActorName(const App& app, uint32_t hash)
     {
-        std::vector<std::string> lines;
-        std::vector<uint32_t> seen;
+        const Actor* a = app.cook->FindActor(hash);
+        return a ? a->name : "";
+    }
+
+    struct Part
+    {
+        uint32_t item;
+        int count;
+    };
+
+    // The ingredients of a pot, each once with its count, in pot order.
+    std::vector<Part> Parts(const uint32_t* items, int count)
+    {
+        std::vector<Part> parts;
         for (int i = 0; i < count; i++)
         {
-            if (std::find(seen.begin(), seen.end(), items[i]) != seen.end())
-                continue;
-            seen.push_back(items[i]);
-            int n = 0;
-            for (int k = 0; k < count; k++)
-                n += items[k] == items[i];
-            lines.push_back(std::to_string(n) + "x " + NameOf(app, items[i]));
+            bool seen = false;
+            for (Part& p : parts)
+            {
+                if (p.item == items[i])
+                {
+                    p.count++;
+                    seen = true;
+                }
+            }
+            if (!seen)
+                parts.push_back({items[i], 1});
         }
-        return lines;
+        return parts;
     }
 
     std::string Strength(const CookResult& r)
@@ -217,18 +301,8 @@ namespace
         switch (r.effect)
         {
         case LifeMaxUp: return "+" + std::to_string(r.vitality / 4) + " yellow hearts";
-        case GutsRecover:
-        {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "%.1f wheels", r.vitality / 1000.0);
-            return buf;
-        }
-        case ExGutsMaxUp:
-        {
-            char buf[32];
-            snprintf(buf, sizeof(buf), "+%.1f wheels", r.vitality / 5.0);
-            return buf;
-        }
+        case GutsRecover: return Wheels(r.vitality, 1000) + " wheels";
+        case ExGutsMaxUp: return "+" + Wheels(r.vitality, 5) + " wheels";
         case EffectNone: return Hearts(r.life) + " hearts";
         default: return "Lv " + std::to_string(r.vitality) + "  " + Clock(r.time);
         }
@@ -251,12 +325,29 @@ namespace
             if (s.count > 0)
                 stock.push_back(s);
         }
+        const int n = static_cast<int>(stock.size());
         app.evaluated = 0;
         for (Goal& g : app.goals)
         {
-            g.result = g.hearts ? FindMostHearts(*app.cook, stock.data(), static_cast<int>(stock.size()))
-                                : FindBestForEffect(*app.cook, stock.data(), static_cast<int>(stock.size()), g.effect);
-            app.evaluated += g.result.evaluated;
+            g.result = SearchResult();
+            g.target = TargetResult();
+            g.hearty = TargetResult();
+            switch (g.kind)
+            {
+            case GoalKind::Effect:
+                g.result = FindBestForEffect(*app.cook, stock.data(), n, g.effect);
+                app.evaluated += g.result.evaluated;
+                break;
+            case GoalKind::Hearts:
+                g.target = FindCheapestReaching(*app.cook, stock.data(), n, EffectNone, HeartsTarget(app));
+                g.hearty = FindCheapestReaching(*app.cook, stock.data(), n, LifeMaxUp, 4);
+                app.evaluated += g.target.evaluated + g.hearty.evaluated;
+                break;
+            case GoalKind::Stamina:
+                g.target = FindCheapestReaching(*app.cook, stock.data(), n, GutsRecover, StaminaTarget(app));
+                app.evaluated += g.target.evaluated;
+                break;
+            }
         }
         PlanSale(*app.cook, freeStock.data(), static_cast<int>(freeStock.size()), std::max(0, MaxSalePots - app.dishes),
                  *app.sale);
@@ -297,24 +388,30 @@ namespace
         app.pouchCount = app.save.ReadPouch(app.pouch.data(), PouchSize);
         for (int i = 0; i < app.pouchCount; i++)
             app.dishes += strncmp(app.pouch[i].name, "Item_Cook_", 10) == 0;
+        app.save.GetS32("MaxHartValue", app.maxHearts);
+        float stamina = 0.0f;
+        if (app.save.GetF32("StaminaMax", stamina))
+            app.maxStamina = static_cast<int32_t>(stamina);
+        Log("Max hearts (quarters):", app.maxHearts);
+        Log("Max stamina:", app.maxStamina);
 
         app.plan.reset(new ReservePlan());
         PlanReserve(*app.cook, *app.reserve, app.save, app.pouch.data(), app.pouchCount, *app.plan);
         app.sale.reset(new SalePlan());
 
         app.goals = {
-            {"Mighty", "attack up", AttackUp, false, SearchResult()},
-            {"Tough", "defense up", DefenseUp, false, SearchResult()},
-            {"Hasty", "speed up", MovingSpeed, false, SearchResult()},
-            {"Sneaky", "stealth up", Quietness, false, SearchResult()},
-            {"Chilly", "heat resistance", ResistHot, false, SearchResult()},
-            {"Spicy", "cold resistance", ResistCold, false, SearchResult()},
-            {"Electro", "shock resistance", ResistElectric, false, SearchResult()},
-            {"Fireproof", "flame guard", Fireproof, false, SearchResult()},
-            {"Hearty", "yellow hearts", LifeMaxUp, false, SearchResult()},
-            {"Energizing", "stamina", GutsRecover, false, SearchResult()},
-            {"Enduring", "extra stamina", ExGutsMaxUp, false, SearchResult()},
-            {"Hearts", "most hearts", EffectNone, true, SearchResult()},
+            {"Mighty", "attack up", AttackUp, GoalKind::Effect, {}, {}, {}},
+            {"Tough", "defense up", DefenseUp, GoalKind::Effect, {}, {}, {}},
+            {"Hasty", "speed up", MovingSpeed, GoalKind::Effect, {}, {}, {}},
+            {"Sneaky", "stealth up", Quietness, GoalKind::Effect, {}, {}, {}},
+            {"Chilly", "heat resistance", ResistHot, GoalKind::Effect, {}, {}, {}},
+            {"Spicy", "cold resistance", ResistCold, GoalKind::Effect, {}, {}, {}},
+            {"Electro", "shock resistance", ResistElectric, GoalKind::Effect, {}, {}, {}},
+            {"Fireproof", "flame guard", Fireproof, GoalKind::Effect, {}, {}, {}},
+            {"Hearty", "yellow hearts", LifeMaxUp, GoalKind::Effect, {}, {}, {}},
+            {"Enduring", "extra stamina", ExGutsMaxUp, GoalKind::Effect, {}, {}, {}},
+            {"Energizing", "refill your stamina", GutsRecover, GoalKind::Stamina, {}, {}, {}},
+            {"Full heal", "heal your hearts", EffectNone, GoalKind::Hearts, {}, {}, {}},
         };
 
         // Reserve rows: named materials alphabetically, then the ones not found yet.
@@ -359,7 +456,12 @@ namespace
             x += w + 8;
         }
         if (app.plan)
-            Text(Number(app.plan->rupees) + " rupees", ScreenW - 28, 40, 0.44f, TextColor, ALIGN_RIGHT);
+        {
+            const std::string rupees = Number(app.plan->rupees);
+            const float w = Width(rupees, 0.46f);
+            Text(rupees, ScreenW - 28, 41, 0.46f, TextColor, ALIGN_RIGHT);
+            Icons::Ui("rupee", ScreenW - 28 - w - 34, 16, 30);
+        }
     }
 
     void Footer(const App& app)
@@ -385,26 +487,42 @@ namespace
         Text(hints, ScreenW - 24, ScreenH - 16, 0.34f, TextDim, ALIGN_RIGHT);
     }
 
-    void DrawDish(const App& app, const FoundDish& d, float x, float top, float width, const char* title)
+    // The result of a dish on one line, with the game's icons: effect, hearts. Returns the x after it.
+    float ResultLine(const CookResult& r, float x, float baseline, float scale)
+    {
+        const float icon = 28;
+        const float top = baseline - 22;
+        if (r.effect != EffectNone)
+        {
+            Icons::Ui(r.effect == LifeMaxUp ? "heart" : EffectIcon(r.effect), x, top, icon, EffectTint(r.effect));
+            x = Text(Strength(r), x + icon + 6, baseline, scale, Gold) + 18;
+            if (r.effect == LifeMaxUp)
+                return Text("and every heart", x, baseline, scale * 0.9f, TextDim);
+        }
+        Icons::Ui("heart", x, top, icon, HeartRed);
+        return Text(Hearts(r.life), x + icon + 6, baseline, scale, Gold);
+    }
+
+    void DrawDish(const App& app, const FoundDish& d, float x, float top, float width, const std::string& title)
     {
         char name[96];
         DishName(*app.cook, d.result, name, sizeof(name));
         Text(title, x, top, 0.34f, Accent);
         Text(Fit(name, 0.54f, width), x, top + 34, 0.54f, TextColor);
         float y = top + 66;
-        for (const std::string& line : IngredientLines(app, d.items, d.itemCount))
+        for (const Part& p : Parts(d.items, d.itemCount))
         {
-            Text(line, x + 10, y, 0.40f, TextColor);
-            y += 26;
+            Icons::Item(ActorName(app, p.item), x + 4, y - 22, 30);
+            Text(std::to_string(p.count) + "x " + NameOf(app, p.item), x + 44, y, 0.40f, TextColor);
+            y += 32;
         }
-        y += 8;
-        std::string result = Strength(d.result);
-        if (d.result.effect != EffectNone && d.result.effect != LifeMaxUp)
-            result += "   " + Hearts(d.result.life) + " hearts";
-        Text(result, x, y, 0.42f, Gold);
-        y += 28;
-        Text("Sells for " + Number(d.result.price) + "   ingredients worth " + Number(d.cost), x, y, 0.36f, TextDim);
-        y += 24;
+        y += 6;
+        ResultLine(d.result, x, y, 0.42f);
+        y += 32;
+        Icons::Ui("rupee", x + 2, y - 20, 24);
+        float after = Text(Number(d.result.price), x + 32, y, 0.38f, TextColor);
+        Text("   ingredients worth " + Number(d.cost), after, y, 0.36f, TextDim);
+        y += 26;
         const int chance = std::min(100, static_cast<int>(d.result.critChance));
         std::string crit = "Critical " + std::to_string(chance) + "%";
         std::vector<std::string> options;
@@ -419,6 +537,28 @@ namespace
         Text(crit, x, y, 0.36f, TextDim);
     }
 
+    // The short result in the list on the left.
+    std::string Summary(const App& app, const Goal& g, bool& found)
+    {
+        (void)app;
+        switch (g.kind)
+        {
+        case GoalKind::Effect:
+            found = g.result.found;
+            return found ? Strength(g.result.best.result) : "nothing free";
+        case GoalKind::Hearts:
+            found = g.target.found || g.hearty.found;
+            if (g.target.found)
+                return Hearts(g.target.dish.result.life) + " hearts";
+            return g.hearty.found ? "hearty dish" : "nothing free";
+        case GoalKind::Stamina:
+            found = g.target.found;
+            return found ? Strength(g.target.dish.result) : "nothing free";
+        }
+        found = false;
+        return "";
+    }
+
     void DishesTab(App& app)
     {
         const float listW = 400;
@@ -431,26 +571,68 @@ namespace
             const float y = top + i * rowH;
             if (static_cast<int>(i) == app.cursor[0])
                 RoundRect(12, y, listW - 24, rowH - 4, 8, RowOn);
-            Text(g.label, 28, y + 29, 0.44f, TextColor);
-            const std::string summary = g.result.found ? Strength(g.result.best.result) : "nothing free";
-            Text(summary, listW - 28, y + 29, 0.38f, g.result.found ? Gold : TextDim, ALIGN_RIGHT);
+            Icons::Ui(g.kind == GoalKind::Hearts ? "heart" : (g.effect == LifeMaxUp ? "heart" : EffectIcon(g.effect)), 22,
+                      y + 6, 30, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
+            Text(g.label, 62, y + 29, 0.44f, TextColor);
+            bool found = false;
+            const std::string summary = Summary(app, g, found);
+            Text(summary, listW - 28, y + 29, 0.38f, found ? Gold : TextDim, ALIGN_RIGHT);
         }
 
         const Goal& g = app.goals[app.cursor[0]];
         const float x = listW + 40;
         const float width = ScreenW - x - 40;
         Text(std::string(g.label) + " (" + g.detail + ")", x, top + 30, 0.40f, TextDim);
-        if (!g.result.found)
+        const std::string nothing = app.wholePouch ? "Nothing in the pouch makes this."
+                                                   : "Nothing free makes this. Y searches the whole pouch, X stops "
+                                                     "counting hidden needs.";
+        switch (g.kind)
         {
-            Text(app.wholePouch ? "Nothing in the pouch makes this." :
-                                  "Nothing free makes this. Y searches the whole pouch, X stops counting hidden needs.",
-                 x, top + 80, 0.42f, TextColor, ALIGN_LEFT, width);
-            return;
+        case GoalKind::Effect:
+        {
+            if (!g.result.found)
+            {
+                Text(nothing, x, top + 80, 0.42f, TextColor, ALIGN_LEFT, width);
+                return;
+            }
+            DrawDish(app, g.result.best, x, top + 72, width, "BEST");
+            const FoundDish& c = g.result.cheapest;
+            if (c.itemCount > 0 && c.cost < g.result.best.cost)
+                DrawDish(app, c, x, top + 72 + 300, width, "CHEAPEST AS STRONG");
+            break;
         }
-        DrawDish(app, g.result.best, x, top + 72, width, "BEST");
-        const FoundDish& c = g.result.cheapest;
-        if (c.itemCount > 0 && c.cost < g.result.best.cost)
-            DrawDish(app, c, x, top + 72 + 300, width, "CHEAPEST AS STRONG");
+        case GoalKind::Hearts:
+        {
+            const std::string target = Hearts(HeartsTarget(app));
+            const std::string all = Hearts(app.maxHearts);
+            float y = top + 72;
+            if (g.target.found)
+            {
+                DrawDish(app, g.target.dish, x, y, width,
+                         g.target.reached ? "CHEAPEST TO HEAL " + target + " OF YOUR " + all + " HEARTS"
+                                          : "NOTHING HEALS " + target + " HEARTS: THE MOST");
+                y += 300;
+            }
+            if (g.hearty.found)
+                DrawDish(app, g.hearty.dish, x, y, width, "OR ANY YELLOW-HEART DISH: IT HEALS EVERY HEART");
+            if (!g.target.found && !g.hearty.found)
+                Text(nothing, x, top + 80, 0.42f, TextColor, ALIGN_LEFT, width);
+            break;
+        }
+        case GoalKind::Stamina:
+        {
+            const std::string wheels = Wheels(StaminaTarget(app), 1000);
+            if (!g.target.found)
+            {
+                Text(nothing, x, top + 80, 0.42f, TextColor, ALIGN_LEFT, width);
+                return;
+            }
+            DrawDish(app, g.target.dish, x, top + 72, width,
+                     g.target.reached ? "CHEAPEST TO REFILL YOUR " + wheels + " WHEELS"
+                                      : "NOTHING REFILLS " + wheels + " WHEELS: THE MOST");
+            break;
+        }
+        }
     }
 
     void ReserveTab(App& app)
@@ -465,15 +647,16 @@ namespace
                  " with more fairies",
              28, y, 0.38f, TextColor);
         y += 28;
-        Text("Rupees to keep: " + Number(own) + " for your armor and the fountains" +
+        Icons::Ui("rupee", 26, y - 19, 24);
+        Text("To keep: " + Number(own) + " for your armor and the fountains" +
                  (app.countHidden ? ", " + Number(hidden) + " hidden" : std::string(", hidden not counted")) +
                  "   (you have " + Number(p.rupees) + ")",
-             28, y, 0.38f, p.rupees >= p.RupeesNeeded(mask) ? Good : Warn);
+             56, y, 0.38f, p.rupees >= p.RupeesNeeded(mask) ? Good : Warn);
         y += 18;
 
         const float colHave = 640, colOwn = 800, colHidden = 960, colFree = 1100;
         Rect(0, y, ScreenW, 30, BarColor);
-        Text("Material", 28, y + 21, 0.34f, TextDim);
+        Text("Material", 56, y + 21, 0.34f, TextDim);
         Text("Have", colHave, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Your armor", colOwn, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Hidden", colHidden, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
@@ -500,7 +683,9 @@ namespace
                 Rect(0, ry, ScreenW, rowH, RowAlt);
             const bool named = !row.name.empty() || row.reveal >= 2;
             const std::string name = !row.name.empty() ? row.name : (row.reveal >= 2 ? NameOf(app, m.item) : "Not found yet");
-            Text(Fit(name, 0.38f, 420), 28, ry + 21, 0.38f, named ? TextColor : TextDim);
+            if (named)
+                Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
+            Text(Fit(name, 0.38f, 400), 56, ry + 21, 0.38f, named ? TextColor : TextDim);
             Text(Number(m.have), colHave, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
             Text(Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]), colOwn, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
             const int32_t h = m.need[ArmorNotOwned] + m.need[Crafted] + m.need[Quests];
@@ -535,6 +720,48 @@ namespace
         }
     }
 
+    struct SellLine
+    {
+        std::vector<Part> parts; // a pot; empty for a raw sale
+        uint32_t rawItem = 0;
+        int32_t rawCount = 0;
+        int32_t price = 0;
+        int32_t raw = 0;
+        int count = 0; // identical pots
+    };
+
+    std::vector<SellLine> SellLines(const App& app)
+    {
+        const SalePlan& s = *app.sale;
+        std::vector<SellLine> lines;
+        for (int i = 0; i < s.potCount; i++)
+        {
+            const SalePot& pot = s.pots[i];
+            if (!lines.empty() && lines.back().count > 0 && lines.back().price == pot.price && i > 0 &&
+                memcmp(s.pots[i - 1].items, pot.items, sizeof(pot.items)) == 0)
+            {
+                lines.back().count++;
+                continue;
+            }
+            SellLine l;
+            l.parts = Parts(pot.items, pot.itemCount);
+            l.price = pot.price;
+            l.raw = pot.rawPrice;
+            l.count = 1;
+            lines.push_back(l);
+        }
+        for (int i = 0; i < s.rawCount; i++)
+        {
+            SellLine l;
+            l.rawItem = s.raw[i].item;
+            l.rawCount = s.raw[i].count;
+            l.price = s.raw[i].price;
+            l.raw = s.raw[i].price;
+            lines.push_back(l);
+        }
+        return lines;
+    }
+
     void SellTab(App& app)
     {
         const SalePlan& s = *app.sale;
@@ -548,41 +775,19 @@ namespace
                  " rupees raw   Sell as they are: " + Number(s.rawTotal),
              28, y, 0.38f, TextColor);
         y += 28;
+        Icons::Ui("rupee", 26, y - 20, 26);
         Text("All of it: " + Number(total) + " rupees, " + Number(app.plan->rupees + total) + " with what you have",
-             28, y, 0.40f, Gold);
+             58, y, 0.40f, Gold);
         y += 14;
 
-        // The pots, identical ones together.
-        struct Line
-        {
-            std::string text;
-            int32_t price;
-            int32_t raw;
-            int count;
-        };
-        std::vector<Line> lines;
-        for (int i = 0; i < s.potCount; i++)
-        {
-            const SalePot& pot = s.pots[i];
-            std::string t;
-            for (const std::string& part : IngredientLines(app, pot.items, pot.itemCount))
-                t += (t.empty() ? "" : " + ") + part;
-            if (!lines.empty() && lines.back().text == t && lines.back().price == pot.price)
-                lines.back().count++;
-            else
-                lines.push_back({t, pot.price, pot.rawPrice, 1});
-        }
-        for (int i = 0; i < s.rawCount; i++)
-            lines.push_back({"Sell raw: " + std::to_string(s.raw[i].count) + "x " + NameOf(app, s.raw[i].item),
-                             s.raw[i].price, s.raw[i].price, 0});
-
+        const std::vector<SellLine> lines = SellLines(app);
         Rect(0, y, ScreenW, 30, BarColor);
         Text("Cook and sell", 28, y + 21, 0.34f, TextDim);
         Text("Each", 1020, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Raw", 1140, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Pots", 1240, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         y += 32;
-        const float rowH = 30;
+        const float rowH = 34;
         const int visible = std::max(1, static_cast<int>((ScreenH - FooterH - 16 - y) / rowH));
         int& cursor = app.cursor[2];
         int& scroll = app.scroll[2];
@@ -593,19 +798,35 @@ namespace
             scroll = cursor - visible + 1;
         for (int i = scroll; i < static_cast<int>(lines.size()) && i < scroll + visible; i++)
         {
-            const Line& l = lines[i];
+            const SellLine& l = lines[i];
             const float ry = y + (i - scroll) * rowH;
+            const float baseline = ry + 24;
             if (i == cursor)
                 Rect(0, ry, ScreenW, rowH, RowOn);
             else if (i % 2)
                 Rect(0, ry, ScreenW, rowH, RowAlt);
-            Text(Fit(l.text, 0.36f, 900), 28, ry + 21, 0.36f, l.count ? TextColor : TextDim);
-            Text(Number(l.price), 1020, ry + 21, 0.38f, Gold, ALIGN_RIGHT);
             if (l.count)
             {
-                Text(Number(l.raw), 1140, ry + 21, 0.36f, TextDim, ALIGN_RIGHT);
-                Text("x" + std::to_string(l.count), 1240, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
+                // Each ingredient: its icon and how many, then the name of the first ones while there is room.
+                float x = 24;
+                for (size_t k = 0; k < l.parts.size(); k++)
+                {
+                    Icons::Item(ActorName(app, l.parts[k].item), x, ry + 3, 28);
+                    x = Text("x" + std::to_string(l.parts[k].count), x + 30, baseline, 0.36f, TextColor) + 8;
+                    const std::string name = NameOf(app, l.parts[k].item);
+                    if (x + Width(name, 0.34f) < 880)
+                        x = Text(name, x, baseline, 0.34f, TextDim) + 18;
+                }
+                Text(Number(l.raw), 1140, baseline, 0.36f, TextDim, ALIGN_RIGHT);
+                Text("x" + std::to_string(l.count), 1240, baseline, 0.38f, TextColor, ALIGN_RIGHT);
             }
+            else
+            {
+                Icons::Item(ActorName(app, l.rawItem), 24, ry + 3, 28);
+                Text("Sell raw: " + std::to_string(l.rawCount) + "x " + NameOf(app, l.rawItem), 62, baseline, 0.36f,
+                     TextDim);
+            }
+            Text(Number(l.price), 1020, baseline, 0.38f, Gold, ALIGN_RIGHT);
         }
         if (lines.empty())
             Text("Nothing free to sell.", 28, y + 30, 0.40f, TextDim);
@@ -622,15 +843,7 @@ namespace
         {
         case 0: return static_cast<int>(app.goals.size());
         case 1: return static_cast<int>(app.rows.size());
-        default:
-        {
-            int pots = 0;
-            for (int i = 0; i < app.sale->potCount; i++)
-                pots += i == 0 || memcmp(app.sale->pots[i].items, app.sale->pots[i - 1].items,
-                                         sizeof(app.sale->pots[i].items)) != 0 ||
-                        app.sale->pots[i].price != app.sale->pots[i - 1].price;
-            return pots + app.sale->rawCount;
-        }
+        default: return static_cast<int>(SellLines(app).size());
         }
     }
 }
@@ -666,6 +879,7 @@ int main()
     g_font = &font;
     std::unique_ptr<ShapeBatch> shapes(new ShapeBatch());
     g_shapes = shapes.get();
+    Icons::Init();
 
     App app;
     bool loaded = false;
@@ -719,7 +933,7 @@ int main()
             }
         }
 
-        // Shapes and text both go into batches: all the shapes are drawn first, the text over them.
+        // Shapes, icons and text all go into queues: the shapes are drawn first, then the icons, then the text.
         glClearColor(Background.r, Background.g, Background.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         font.BeginBatch();
@@ -739,6 +953,7 @@ int main()
                 SellTab(app);
         }
         g_shapes->Render(g_projection);
+        Icons::Flush(g_projection, ScreenH);
         font.RenderBatch();
         eglSwapBuffers(s_display, s_surface);
 
@@ -753,6 +968,7 @@ int main()
     }
 
     Log("SHUTDOWN");
+    Icons::Destroy();
     shapes.reset();
     font.Destroy();
     deinitEgl();

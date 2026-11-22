@@ -99,6 +99,16 @@ namespace Compendium
         return GetBool(Crc32(name), out);
     }
 
+    bool SaveFile::GetF32(const char* name, float& out) const
+    {
+        const long i = Find(Crc32(name));
+        if (i < 0)
+            return false;
+        const uint32_t v = Value(static_cast<size_t>(i));
+        memcpy(&out, &v, sizeof(out));
+        return true;
+    }
+
     int SaveFile::ReadPouch(PouchItem* out, int max) const
     {
         const long names = Find(Crc32("PorchItem"));

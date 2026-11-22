@@ -114,45 +114,13 @@ namespace Compendium
             return s;
         }
 
-        // Cooks every multiset of up to 5 candidates, keeping the best and the cheapest as strong.
-        void Enumerate(const CookData& data, const Candidates& c, Effect goal, SearchResult& out)
+        // Calls `visit(pick, depth)` for every multiset of 1 to 5 candidates within the stock: `pick` holds `depth`
+        // candidate indexes in non-decreasing order.
+        template <typename Visit>
+        void ForEachPot(const Candidates& c, Visit visit)
         {
             int pick[5] = {};
             int used[MaxCandidates] = {};
-            Score bestScore;
-            Score cheapestScore;
-
-            auto visit = [&](int depth) {
-                uint32_t items[5];
-                int32_t cost = 0;
-                for (int i = 0; i < depth; i++)
-                {
-                    items[i] = c.items[pick[i]].hash;
-                    if (c.items[pick[i]].actor->hasSellingPrice)
-                        cost += c.items[pick[i]].actor->sellingPrice;
-                }
-                const CookResult r = Cook(data, items, depth);
-                out.evaluated++;
-                if (r.failure || r.monsterExtract)
-                    return;
-                if (goal == EffectNone ? r.effect == LifeMaxUp : r.effect != goal)
-                    return;
-                const Score s = ScoreOf(r, goal);
-                FoundDish d;
-                for (int i = 0; i < depth; i++)
-                    d.items[i] = items[i];
-                d.itemCount = depth;
-                d.result = r;
-                d.cost = cost;
-                if (!out.found || Better(s, cost, bestScore, out.best.cost))
-                {
-                    out.best = d;
-                    bestScore = s;
-                }
-                out.found = true;
-            };
-
-            // Every non-decreasing sequence of candidate indexes of length 1 to 5 (a multiset), within the stock.
             int depth = 0;
             int next = 0;
             while (true)
@@ -164,7 +132,7 @@ namespace Compendium
                         pick[depth] = next;
                         used[next]++;
                         depth++;
-                        visit(depth);
+                        visit(pick, depth);
                         continue; // go deeper, starting at the same index
                     }
                     next++;
@@ -177,68 +145,105 @@ namespace Compendium
                 used[pick[depth]]--;
                 next = pick[depth] + 1;
             }
+        }
 
+        // The pot of `pick`, cooked. False when it is not a dish of the goal (another effect, a failure, random).
+        bool CookPot(const CookData& data, const Candidates& c, const int* pick, int depth, Effect goal, FoundDish& out)
+        {
+            out.itemCount = depth;
+            out.cost = 0;
+            for (int i = 0; i < depth; i++)
+            {
+                out.items[i] = c.items[pick[i]].hash;
+                if (c.items[pick[i]].actor->hasSellingPrice)
+                    out.cost += c.items[pick[i]].actor->sellingPrice;
+            }
+            out.result = Cook(data, out.items, depth);
+            if (out.result.failure || out.result.monsterExtract)
+                return false;
+            return goal == EffectNone ? out.result.effect != LifeMaxUp : out.result.effect == goal;
+        }
+
+        // Every pot of the candidates, keeping the best and the cheapest as strong.
+        void Enumerate(const CookData& data, const Candidates& c, Effect goal, SearchResult& out)
+        {
+            Score bestScore;
+            ForEachPot(c, [&](const int* pick, int depth) {
+                FoundDish d;
+                out.evaluated++;
+                if (!CookPot(data, c, pick, depth, goal, d))
+                    return;
+                const Score s = ScoreOf(d.result, goal);
+                if (!out.found || Better(s, d.cost, bestScore, out.best.cost))
+                {
+                    out.best = d;
+                    bestScore = s;
+                }
+                out.found = true;
+            });
             if (!out.found)
                 return;
-            // Second pass for the cheapest dish as strong as the best: same first key.
-            const int32_t target = ScoreOf(out.best.result, goal).keys[0];
+
+            // The cheapest dish as strong as the best: same first key.
+            const int32_t target = bestScore.keys[0];
+            Score cheapestScore;
             bool have = false;
-            depth = 0;
-            next = 0;
-            for (int i = 0; i < MaxCandidates; i++)
-                used[i] = 0;
-            auto consider = [&](int d) {
-                uint32_t items[5];
-                int32_t cost = 0;
-                for (int i = 0; i < d; i++)
-                {
-                    items[i] = c.items[pick[i]].hash;
-                    if (c.items[pick[i]].actor->hasSellingPrice)
-                        cost += c.items[pick[i]].actor->sellingPrice;
-                }
-                if (have && cost > out.cheapest.cost)
+            ForEachPot(c, [&](const int* pick, int depth) {
+                FoundDish d;
+                if (!CookPot(data, c, pick, depth, goal, d))
                     return;
-                const CookResult r = Cook(data, items, d);
-                if (r.failure || r.monsterExtract)
-                    return;
-                if (goal == EffectNone ? r.effect == LifeMaxUp : r.effect != goal)
-                    return;
-                const Score s = ScoreOf(r, goal);
+                const Score s = ScoreOf(d.result, goal);
                 if (s.keys[0] != target)
                     return;
-                if (have && cost == out.cheapest.cost && !Better(s, cost, cheapestScore, cost))
+                if (have && (d.cost > out.cheapest.cost ||
+                             (d.cost == out.cheapest.cost && !Better(s, d.cost, cheapestScore, d.cost))))
                     return;
-                FoundDish dish;
-                for (int i = 0; i < d; i++)
-                    dish.items[i] = items[i];
-                dish.itemCount = d;
-                dish.result = r;
-                dish.cost = cost;
-                out.cheapest = dish;
+                out.cheapest = d;
                 cheapestScore = s;
                 have = true;
-            };
-            while (true)
-            {
-                if (depth < 5 && next < c.count)
+            });
+        }
+
+        // The value a target is set on: hearts (quarters) for EffectNone, the effect's strength otherwise.
+        int32_t TargetKey(const CookResult& r, Effect goal)
+        {
+            return goal == EffectNone ? r.life : r.vitality;
+        }
+
+        // The cheapest pot reaching `minimum`; among equals, the one going least over it, then the one with fewer
+        // items. Without any, the strongest pot.
+        void EnumerateTarget(const CookData& data, const Candidates& c, Effect goal, int32_t minimum, TargetResult& out)
+        {
+            FoundDish strongest;
+            bool haveStrongest = false;
+            ForEachPot(c, [&](const int* pick, int depth) {
+                FoundDish d;
+                out.evaluated++;
+                if (!CookPot(data, c, pick, depth, goal, d))
+                    return;
+                const int32_t key = TargetKey(d.result, goal);
+                if (key >= minimum)
                 {
-                    if (used[next] < c.items[next].count)
+                    const int32_t over = key - minimum;
+                    const int32_t bestOver = out.reached ? TargetKey(out.dish.result, goal) - minimum : 0;
+                    if (!out.reached || d.cost < out.dish.cost ||
+                        (d.cost == out.dish.cost && (over < bestOver ||
+                                                     (over == bestOver && d.itemCount < out.dish.itemCount))))
                     {
-                        pick[depth] = next;
-                        used[next]++;
-                        depth++;
-                        consider(depth);
-                        continue;
+                        out.dish = d;
+                        out.reached = true;
                     }
-                    next++;
-                    continue;
                 }
-                if (depth == 0)
-                    break;
-                depth--;
-                used[pick[depth]]--;
-                next = pick[depth] + 1;
-            }
+                else if (!haveStrongest || key > TargetKey(strongest.result, goal) ||
+                         (key == TargetKey(strongest.result, goal) && d.cost < strongest.cost))
+                {
+                    strongest = d;
+                    haveStrongest = true;
+                }
+            });
+            out.found = out.reached || haveStrongest;
+            if (!out.reached && haveStrongest)
+                out.dish = strongest;
         }
 
         // Helpers that can only add to a dish without bringing another effect.
@@ -277,6 +282,49 @@ namespace Compendium
             return out;
         AddHelpers(c, data, stock, stockCount);
         Enumerate(data, c, effect, out);
+        return out;
+    }
+
+    TargetResult FindCheapestReaching(const CookData& data, const StockItem* stock, int stockCount, Effect goal,
+                                      int32_t minimum)
+    {
+        TargetResult out;
+        Candidates c;
+        if (goal == EffectNone)
+        {
+            // Hearts: the foods with the most hearts and those with the most hearts per rupee, plus spices adding
+            // hearts. Yellow-heart foods are left out (they make a different dish, FindCheapestReaching(LifeMaxUp)).
+            auto food = [](const Actor& a) { return IsFood(a) && a.hitPointRecover > 0 && a.effectType != LifeMaxUp; };
+            AddTop(c, data, stock, stockCount, 6, food,
+                   [](const Actor& a, const Actor& b) { return a.hitPointRecover > b.hitPointRecover; });
+            AddTop(c, data, stock, stockCount, 6, food, [](const Actor& a, const Actor& b) {
+                // hearts per rupee, compared without division
+                return a.hitPointRecover * (b.sellingPrice > 0 ? b.sellingPrice : 1) >
+                       b.hitPointRecover * (a.sellingPrice > 0 ? a.sellingPrice : 1);
+            });
+            AddTop(c, data, stock, stockCount, 2,
+                   [](const Actor& a) { return a.HasTag(Tags::CookSpice()) && !a.HasTag(Tags::CookEnemy()) && a.spiceHitPoint > 0; },
+                   [](const Actor& a, const Actor& b) { return a.spiceHitPoint > b.spiceHitPoint; });
+        }
+        else
+        {
+            auto withEffect = [&](const Actor& a) {
+                return !a.HasTag(Tags::CookEnemy()) && a.effectLevel > 0 && a.effectType == goal;
+            };
+            AddTop(c, data, stock, stockCount, 8, withEffect,
+                   [](const Actor& a, const Actor& b) { return a.effectLevel > b.effectLevel; });
+            AddTop(c, data, stock, stockCount, 8, withEffect,
+                   [](const Actor& a, const Actor& b) { return a.sellingPrice < b.sellingPrice; });
+            if (c.count == 0)
+                return out;
+            // Monster parts, for elixirs: the cheapest.
+            AddTop(c, data, stock, stockCount, 1,
+                   [&](const Actor& a) { return a.HasTag(Tags::CookEnemy()) && a.hash != data.monsterExtract; },
+                   [](const Actor& a, const Actor& b) { return a.sellingPrice < b.sellingPrice; });
+        }
+        if (c.count == 0)
+            return out;
+        EnumerateTarget(data, c, goal, minimum, out);
         return out;
     }
 

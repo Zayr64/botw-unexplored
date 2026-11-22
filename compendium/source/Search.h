@@ -35,9 +35,23 @@ namespace Compendium
         int evaluated = 0;  // combinations cooked
     };
 
+    struct TargetResult
+    {
+        bool found = false;
+        bool reached = false; // false: nothing reaches the target and `dish` is the strongest there is
+        FoundDish dish;
+        int evaluated = 0;
+    };
+
     // Dishes with `effect` (LifeMaxUp for yellow hearts, GutsRecover, ExGutsMaxUp, or a timed effect).
     SearchResult FindBestForEffect(const CookData& data, const StockItem* stock, int stockCount, Effect effect);
 
     // The dish that restores the most hearts (not counting yellow-heart dishes, which restore all).
     SearchResult FindMostHearts(const CookData& data, const StockItem* stock, int stockCount);
+
+    // The cheapest dish that is at least `minimum` strong, so nothing is wasted: EffectNone for hearts (in quarters,
+    // yellow-heart dishes left out), GutsRecover for stamina (1000 = one wheel), LifeMaxUp for yellow hearts (in
+    // quarters; any of them also restores every heart). Among the cheapest, the one going least over the target.
+    TargetResult FindCheapestReaching(const CookData& data, const StockItem* stock, int stockCount, Effect goal,
+                                      int32_t minimum);
 }

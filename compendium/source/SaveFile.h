@@ -31,6 +31,7 @@ namespace Compendium
         bool GetS32(const char* name, int32_t& out) const;
         bool GetBool(uint32_t hash, bool& out) const;
         bool GetBool(const char* name, bool& out) const;
+        bool GetF32(const char* name, float& out) const;
         // Whether the save has this flag at all.
         bool Has(uint32_t hash) const;
 

@@ -25,7 +25,7 @@ else
 fi
 sed 's#"Graphics/InitGL.h"#"HostInitGL.h"#' "$REPO/compendium/app/CompendiumMain.cpp" > "$OUT/Main_host.cpp"
 SRCS=("$OUT/Main_host.cpp" "$HV/host.cpp" "$REPO/compendium/app/SaveSource.cpp" "$REPO/compendium/app/CompendiumLog.cpp"
-      "$REPO/source/Utf8.cpp" "$REPO/source/ImageOverride.cpp")
+      "$REPO/compendium/app/Icons.cpp" "$REPO/source/Utf8.cpp" "$REPO/source/ImageOverride.cpp")
 for f in "$REPO"/compendium/source/*.cpp; do SRCS+=("$f"); done
 for f in Font ShapeBatch Shader Vertex Texture2D stb_image; do SRCS+=("$REPO/source/Graphics/$f.cpp"); done
 lib() { ls "$LIBDIR"/$1.so* 2>/dev/null | head -1; }
@@ -36,6 +36,8 @@ mkdir -p "$HOME/hostview-run"
 RUN="$(mktemp -d "$HOME/hostview-run/compendium-$MODE-XXXXXX")"
 mkdir -p "$RUN/sdmc:/switch/botw-compendium"
 cp "$DATA" "$RUN/sdmc:/switch/botw-compendium/cook-data.txt"
+# The icons made by gen_icons.py, if HOSTVIEW_ICONS points at them.
+if [[ -n "${HOSTVIEW_ICONS:-}" ]]; then cp -r "$HOSTVIEW_ICONS" "$RUN/sdmc:/switch/botw-compendium/icons"; fi
 ln -s "$REPO/compendium/romfs" "$RUN/romfs:"
 case "$MODE" in
     closed) ln -s "$SAVE" "$RUN/save:" ;;
