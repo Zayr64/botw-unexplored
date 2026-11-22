@@ -48,3 +48,7 @@ fi
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_regions.cpp source/Regions.cpp source/RegionData.cpp source/ShrineFlags.cpp -o /tmp/test_regions
 /tmp/test_regions
 python3 tests/test_data_mapping.py
+# Cooking app: needs cook-data.txt, made from the game's files (cozinha/tools/gen_cook_data.py), so it is skipped
+# without COOK_DATA. COOK_CASES: dishes read from the game's screen (cozinha/tests/savage13_cases.py).
+"$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icozinha/source cozinha/tests/test_cook.cpp cozinha/source/Cook.cpp cozinha/source/CookData.cpp cozinha/source/SaveFile.cpp cozinha/source/Search.cpp cozinha/source/Sale.cpp -o /tmp/test_cook
+/tmp/test_cook ${COOK_DATA:+"$COOK_DATA"} ${COOK_CASES:+"$COOK_CASES"}
