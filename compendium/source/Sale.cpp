@@ -1,6 +1,6 @@
 #include "Sale.h"
 
-namespace Cozinha
+namespace Compendium
 {
     namespace
     {

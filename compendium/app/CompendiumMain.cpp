@@ -1,4 +1,4 @@
-// BotW Cozinha: the best dishes from what is in the pouch, what to hold back for armor and quests, and what to sell.
+// BotW Compendium: the best dishes from what is in the pouch, what to hold back for armor and quests, and what to sell.
 //
 // Three tabs (L/R): Dishes, Reserve, Sell. Everything is computed once from the save; X and Y change what counts as
 // free and compute again. Nothing is ever written to the game's save.
@@ -29,7 +29,7 @@
 #include "SaveSource.h"
 #include "Search.h"
 
-using namespace Cozinha;
+using namespace Compendium;
 
 namespace
 {
@@ -51,7 +51,7 @@ namespace
     const glm::vec3 Good(0.47f, 0.86f, 0.56f);
     const glm::vec3 Warn(0.99f, 0.76f, 0.33f);
 
-    const char* DataPath = "sdmc:/switch/botw-cozinha/cook-data.txt";
+    const char* DataPath = "sdmc:/switch/botw-compendium/cook-data.txt";
 
     Font* g_font = nullptr;
     ShapeBatch* g_shapes = nullptr;
@@ -267,7 +267,7 @@ namespace
         FILE* f = fopen(DataPath, "rb");
         if (!f)
         {
-            app.error = "cook-data.txt is missing in switch/botw-cozinha/ (it is made on the PC from the game's files)";
+            app.error = "cook-data.txt is missing in switch/botw-compendium/ (it is made on the PC from the game's files)";
             return false;
         }
         std::string text;
@@ -346,9 +346,10 @@ namespace
     {
         Rect(0, 0, ScreenW, HeaderH, BarColor);
         Rect(0, HeaderH, ScreenW, 1, Hairline);
-        Text("BotW Cozinha", 28, 42, 0.62f, Gold);
+        const std::string title = "BotW Compendium";
+        Text(title, 28, 42, 0.62f, Gold);
         const char* tabs[] = {"Dishes", "Reserve", "Sell"};
-        float x = 300;
+        float x = 28 + Width(title, 0.62f) + 36;
         for (int i = 0; i < 3; i++)
         {
             const float w = Width(tabs[i], 0.46f) + 36;
@@ -637,7 +638,7 @@ namespace
 int main()
 {
     LogInit();
-    Log("START: botw-cozinha");
+    Log("START: botw-compendium");
     appletLockExit();
     const bool romfs = R_SUCCEEDED(romfsInit());
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);

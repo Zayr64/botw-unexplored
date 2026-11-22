@@ -5,7 +5,7 @@
 
 #include "TextLine.h"
 
-namespace Cozinha
+namespace Compendium
 {
     namespace
     {

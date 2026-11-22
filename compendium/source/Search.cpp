@@ -1,6 +1,6 @@
 #include "Search.h"
 
-namespace Cozinha
+namespace Compendium
 {
     namespace
     {

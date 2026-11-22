@@ -7,7 +7,7 @@
 // Where the app gets game_data.sav from.
 //
 // With BotW closed, the newest Normal Mode slot of the user's save, opened read-only; a copy goes to
-// sdmc:/switch/botw-cozinha/save/ for the times the game is open. With BotW open (the app started from the Album),
+// sdmc:/switch/botw-compendium/save/ for the times the game is open. With BotW open (the app started from the Album),
 // the save cannot be opened, so the newest copy on the SD card is used: this app's, or the one BotW Unexplored keeps.
 namespace SaveSource
 {

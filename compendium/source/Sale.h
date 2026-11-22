@@ -12,7 +12,7 @@
 // and capped at what they cost to buy. Five items is always the best multiplier, but monster parts only make a dish
 // (an elixir) with a critter, so the critters set how many monster parts can be cooked. Ore, dragon parts and star
 // fragments are worth 2 or 1 in a pot: they are sold as they are.
-namespace Cozinha
+namespace Compendium
 {
     constexpr int MaxSalePots = 60;   // the pouch holds 60 dishes
     constexpr int MaxRawSales = 64;

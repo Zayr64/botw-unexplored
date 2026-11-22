@@ -5,9 +5,9 @@
 
 // The game's cooking data (ActorInfo values, Cooking/CookData), read from cook-data.txt.
 //
-// The file is generated on the PC from a dump of the game (cozinha/tools/gen_cook_data.py) and lives only on the SD
+// The file is generated on the PC from a dump of the game (compendium/tools/gen_cook_data.py) and lives only on the SD
 // card. Everything here is fixed-size arrays filled once, with no allocation, so the same code can run in an overlay.
-namespace Cozinha
+namespace Compendium
 {
     // CookEffectId of the decomp (uking::CookEffectId).
     enum Effect : int32_t

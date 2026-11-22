@@ -15,7 +15,7 @@
 //   Crafted         Ancient Oven items never obtained (hidden)
 //   Quests          side quests not finished that take items (hidden)
 // "Hidden" follows the user's choice of 22/11: it counts, but what it is for is only shown on request.
-namespace Cozinha
+namespace Compendium
 {
     enum Tier : int
     {

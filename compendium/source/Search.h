@@ -11,7 +11,7 @@
 // those with no effect that add time, hearts or a sure critical (spices, monster parts for elixirs, plain food), and
 // nothing else. So the search takes every ingredient with the effect plus the few best helpers, and cooks every
 // combination of up to five of them with the game's own rules (Cook). Tens of thousands of combinations per effect.
-namespace Cozinha
+namespace Compendium
 {
     struct StockItem
     {

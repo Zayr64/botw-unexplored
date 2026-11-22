@@ -1,7 +1,7 @@
 // Cooking simulator against dishes read from the game's screen.
 //
 // Usage: test_cook <cook-data.txt> [cases.tsv]
-// cook-data.txt comes from the game's files (cozinha/tools/gen_cook_data.py), so it is not in the repository; without
+// cook-data.txt comes from the game's files (compendium/tools/gen_cook_data.py), so it is not in the repository; without
 // it the test says so and passes. cases.tsv comes from savage13/cooking's test dishes (savage13_cases.py).
 
 #include <cmath>
@@ -21,7 +21,7 @@
 #include "SaveFile.h"
 #include "Search.h"
 
-using namespace Cozinha;
+using namespace Compendium;
 
 namespace
 {

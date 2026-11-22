@@ -6,7 +6,7 @@
 #include <cstring>
 
 // Whitespace-separated words of one line of cook-data.txt.
-namespace Cozinha
+namespace Compendium
 {
     class TextLine
     {

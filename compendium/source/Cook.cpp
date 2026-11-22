@@ -5,7 +5,7 @@
 // Follows uking::CookingMgr (zeldaret/botw, src/Game/Cooking/cookManager.cpp) function by function; the comments name
 // the function each part comes from. Keep the order of the steps: it changes the results.
 
-namespace Cozinha
+namespace Compendium
 {
     namespace
     {

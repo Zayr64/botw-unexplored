@@ -116,8 +116,8 @@ def main():
     wanted_tags = recipe_tags | {crc(t) for t in COOK_TAGS}
     special = {str(system["FA"]), str(system["FCA"]), str(system["MEA"])}
 
-    lines = ["BOTW_COZINHA_DATA 1",
-             "# Generated from the game's files by cozinha/tools/gen_cook_data.py. Do not share."]
+    lines = ["BOTW_COMPENDIUM_DATA 1",
+             "# Generated from the game's files by compendium/tools/gen_cook_data.py. Do not share."]
     nmmr = [f32_bits(v) for v in system["NMMR"]]
     nmssr = [int(v) for v in system["NMSSR"]]
     lines.append("SYS %08x %08x %08x %08x %08x %d %d %d %s %s" % (

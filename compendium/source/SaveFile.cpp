@@ -4,7 +4,7 @@
 
 #include "CookData.h"
 
-namespace Cozinha
+namespace Compendium
 {
     namespace
     {

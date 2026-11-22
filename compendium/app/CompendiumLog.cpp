@@ -1,4 +1,4 @@
-// The Log() of source/Log.h for this app: sdmc:/switch/botw-cozinha/log.txt, emptied at each start.
+// The Log() of source/Log.h for this app: sdmc:/switch/botw-compendium/log.txt, emptied at each start.
 #include "Log.h"
 
 #include <cstdio>
@@ -7,13 +7,13 @@
 
 namespace
 {
-    const char* LogPath = "sdmc:/switch/botw-cozinha/log.txt";
+    const char* LogPath = "sdmc:/switch/botw-compendium/log.txt";
 }
 
 void LogInit()
 {
     mkdir("sdmc:/switch", 0777);
-    mkdir("sdmc:/switch/botw-cozinha", 0777);
+    mkdir("sdmc:/switch/botw-compendium", 0777);
     FILE* f = fopen(LogPath, "w");
     if (f)
         fclose(f);

@@ -8,7 +8,7 @@
 // The file is a 0x0C byte header and then 8-byte records: the CRC32 of the flag's name and 4 bytes of value. Texts and
 // arrays are several records in a row with the same hash (a 64-character text is 16 records). The records are sorted
 // by hash, so a flag is found by binary search; a file that is not sorted is searched from the start instead.
-namespace Cozinha
+namespace Compendium
 {
     constexpr int PouchSize = 420;
     constexpr int PouchNameLength = 64;

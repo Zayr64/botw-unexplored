@@ -1,7 +1,7 @@
 // The cooking app's planning, on the PC: reads cook-data.txt and a game_data.sav and prints the reserve, the best
 // dish for each effect and the sale plan.
 //
-// Usage: cozinha_cli <cook-data.txt> <game_data.sav> [--reveal] [--whole-pouch]
+// Usage: compendium_cli <cook-data.txt> <game_data.sav> [--reveal] [--whole-pouch]
 //   --reveal       show what the hidden tiers are for (armor not owned, Ancient Oven, quests): spoilers
 //   --whole-pouch  search dishes with everything in the pouch, not only what is free after the reserve
 
@@ -19,7 +19,7 @@
 #include "SaveFile.h"
 #include "Search.h"
 
-using namespace Cozinha;
+using namespace Compendium;
 
 namespace
 {

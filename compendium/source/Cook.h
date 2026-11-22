@@ -10,7 +10,7 @@
 //
 // The random parts (critical success, Monster Extract) are not rolled here: the result is the dish without them, plus
 // the chance of a critical success and which bonuses it could give, so the caller can show or compute each one.
-namespace Cozinha
+namespace Compendium
 {
     enum class CritBonus : uint8_t
     {

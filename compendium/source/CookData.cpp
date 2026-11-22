@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace Cozinha
+namespace Compendium
 {
     uint32_t Crc32(const char* text)
     {
@@ -106,7 +106,7 @@ namespace Cozinha
             if (!header)
             {
                 char version[8];
-                ok = strcmp(kind, "BOTW_COZINHA_DATA") == 0 && line.Word(version, sizeof(version)) &&
+                ok = strcmp(kind, "BOTW_COMPENDIUM_DATA") == 0 && line.Word(version, sizeof(version)) &&
                      strcmp(version, "1") == 0;
                 if (!ok)
                 {

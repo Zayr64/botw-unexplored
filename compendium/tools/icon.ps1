@@ -1,5 +1,5 @@
-# Draws cozinha/icon.jpg (256x256): a golden cooking pot with steam on the dark slate of BotW Unexplored's icon.
-# Usage: powershell -File cozinha/tools/icon.ps1 <output.jpg>
+# Draws compendium/icon.jpg (256x256): a golden cooking pot with steam on the dark slate of BotW Unexplored's icon.
+# Usage: powershell -File compendium/tools/icon.ps1 <output.jpg>
 param([string]$Out = "icon.jpg")
 Add-Type -AssemblyName System.Drawing
 $size = 256

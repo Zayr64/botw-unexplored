@@ -13,8 +13,8 @@ namespace SaveSource
     namespace
     {
         const u64 BotwId = 0x01007ef00011e000ULL;
-        const char* AppFolder = "sdmc:/switch/botw-cozinha";
-        const char* CopyFolder = "sdmc:/switch/botw-cozinha/save";
+        const char* AppFolder = "sdmc:/switch/botw-compendium";
+        const char* CopyFolder = "sdmc:/switch/botw-compendium/save";
 
         bool ReadFile(const std::string& path, std::vector<uint8_t>& out)
         {
