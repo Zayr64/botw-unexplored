@@ -124,7 +124,12 @@ namespace Icons
 
     void Enemy(const std::string& actor, float x, float top, float size)
     {
-        Queue(std::string(Folder) + "enemies/" + actor + ".jpg", x, top, size, glm::vec4(1.0f));
+        // The model render (png, from Zelda Wiki) when there is one, else the Compendium photo (jpg, from the game).
+        const std::string model = std::string(Folder) + "enemies/" + actor + ".png";
+        if (s_ready && Get(model))
+            Queue(model, x, top, size, glm::vec4(1.0f));
+        else
+            Queue(std::string(Folder) + "enemies/" + actor + ".jpg", x, top, size, glm::vec4(1.0f));
     }
 
     void Flush(const glm::mat4& projection, float screenHeight)

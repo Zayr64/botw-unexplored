@@ -910,7 +910,7 @@ namespace
             // The family by the name of its lowest rank the player has defeated.
             const std::string family = st.knownRank >= 0 ? NameOf(app, Crc32(sp.ranks[st.knownRank].actor)) : "Unknown family";
             if (st.knownRank >= 0)
-                Icons::Enemy(sp.ranks[st.currentKnown ? st.current : st.knownRank].actor, 24, ry + 2, 30);
+                Icons::Enemy(sp.ranks[st.currentKnown ? st.current : st.knownRank].actor, 22, ry + 1, 32);
             Text(family, 62, ry + 24, 0.38f, st.knownRank >= 0 ? TextColor : TextDim);
             std::string rank;
             if (st.current < 0)
@@ -967,7 +967,7 @@ namespace
             const bool named = fs.kills > 0 || row.reveal > 0;
             const char* label = NameOf(app, Crc32(f.actor));
             if (named)
-                Icons::Enemy(f.actor, 24, ry + 2, 26);
+                Icons::Enemy(f.actor, 24, ry + 1, 28);
             Text(named ? Fit(label, 0.38f, 560) : std::string("Not defeated yet"), 60, ry + 21, 0.38f,
                  named ? TextColor : TextDim);
             // Each counter stops at its limit (10 for most enemies): further kills add nothing.
