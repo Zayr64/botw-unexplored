@@ -12,10 +12,13 @@
 // and capped at what they cost to buy. Five items is always the best multiplier, but monster parts only make a dish
 // (an elixir) with a critter, so the critters set how many monster parts can be cooked. Ore, dragon parts and star
 // fragments are worth 2 or 1 in a pot: they are sold as they are.
+//
+// Two critters make what no shop sells, yellow hearts and extra stamina: the plan can keep them out of the pots.
 namespace Compendium
 {
     constexpr int MaxSalePots = 60;   // the pouch holds 60 dishes
     constexpr int MaxRawSales = 64;
+    constexpr int MaxKeptCritters = 8;
 
     struct SalePot
     {
@@ -43,8 +46,15 @@ namespace Compendium
         int rawCount = 0;
         RawSale raw[MaxRawSales];   // free items best sold as they are, most valuable first
         int32_t rawTotal = 0;
+        int keptCount = 0;
+        RawSale kept[MaxKeptCritters]; // free critters left out of the pots (`keepPrized`); not in any total
     };
 
-    // `free`: what is left after the reserve. `potLimit`: dishes the pouch can still take.
-    void PlanSale(const CookData& data, const StockItem* free, int freeCount, int potLimit, SalePlan& out);
+    // A critter whose dishes give yellow hearts or extra stamina.
+    bool IsPrizedCritter(const Actor& actor);
+
+    // `free`: what is left after the reserve. `potLimit`: dishes the pouch can still take. `keepPrized`: leave the
+    // prized critters out of the pots.
+    void PlanSale(const CookData& data, const StockItem* free, int freeCount, int potLimit, SalePlan& out,
+                  bool keepPrized = false);
 }

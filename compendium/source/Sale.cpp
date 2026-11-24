@@ -29,7 +29,13 @@ namespace Compendium
         }
     }
 
-    void PlanSale(const CookData& data, const StockItem* free, int freeCount, int potLimit, SalePlan& out)
+    bool IsPrizedCritter(const Actor& actor)
+    {
+        return actor.HasTag(Tags::CookInsect()) && (actor.effectType == LifeMaxUp || actor.effectType == ExGutsMaxUp);
+    }
+
+    void PlanSale(const CookData& data, const StockItem* free, int freeCount, int potLimit, SalePlan& out,
+                  bool keepPrized)
     {
         out = SalePlan();
         Kind parts[MaxKinds];
@@ -61,6 +67,16 @@ namespace Compendium
                 parts[partKinds].actor = a;
                 parts[partKinds].count = free[i].count;
                 partKinds++;
+            }
+            else if (keepPrized && IsPrizedCritter(*a))
+            {
+                if (out.keptCount < MaxKeptCritters)
+                {
+                    RawSale& r = out.kept[out.keptCount++];
+                    r.item = a->hash;
+                    r.count = free[i].count;
+                    r.price = free[i].count * a->sellingPrice;
+                }
             }
             else if (a->HasTag(Tags::CookInsect()) && a->hash != fairy && critterKinds < MaxKinds)
             {

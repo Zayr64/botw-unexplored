@@ -27,3 +27,14 @@ press X
 press R
 wait 2
 shot 08-sell
+press Y
+wait 3
+shot 09-sell-valuable-critters-too
+press Y
+wait 3
+press R
+wait 2
+shot 10-exp
+press RIGHT
+wait 2
+shot 11-exp-next-page

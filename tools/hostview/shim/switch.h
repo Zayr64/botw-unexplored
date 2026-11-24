@@ -24,6 +24,14 @@ enum : u64 {
     HidNpadButton_StickL = BITL(4), HidNpadButton_StickR = BITL(5), HidNpadButton_L = BITL(6), HidNpadButton_R = BITL(7),
     HidNpadButton_ZL = BITL(8), HidNpadButton_ZR = BITL(9), HidNpadButton_Plus = BITL(10), HidNpadButton_Minus = BITL(11),
     HidNpadButton_Left = BITL(12), HidNpadButton_Up = BITL(13), HidNpadButton_Right = BITL(14), HidNpadButton_Down = BITL(15),
+    // The sticks as buttons, as the console reports them.
+    HidNpadButton_StickLLeft = BITL(16), HidNpadButton_StickLUp = BITL(17), HidNpadButton_StickLRight = BITL(18),
+    HidNpadButton_StickLDown = BITL(19), HidNpadButton_StickRLeft = BITL(20), HidNpadButton_StickRUp = BITL(21),
+    HidNpadButton_StickRRight = BITL(22), HidNpadButton_StickRDown = BITL(23),
+    HidNpadButton_AnyLeft = HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft,
+    HidNpadButton_AnyUp = HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp,
+    HidNpadButton_AnyRight = HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight,
+    HidNpadButton_AnyDown = HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown,
 };
 enum { HidNpadStyleSet_NpadStandard = 0x1F };
 

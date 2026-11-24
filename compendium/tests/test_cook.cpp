@@ -238,6 +238,24 @@ namespace
         const CookResult expected = Cook(data, pot, 5);
         Check(sale->potCount == 1 && sale->pots[0].price == expected.price && sale->partsLeft == 5,
               "one critter cooks four talons; five are left: " + std::to_string(sale->potCount) + " pots");
+
+        // A critter that makes yellow hearts stays out of the pots when the plan is asked to keep it.
+        const Actor* lizard = data.FindActorByDisplayName("Hearty Lizard");
+        if (!lizard)
+        {
+            Check(false, "Hearty Lizard in the data");
+            return;
+        }
+        StockItem more[3] = {free[0], free[1], StockItem()};
+        more[2].hash = lizard->hash;
+        more[2].count = 2;
+        PlanSale(data, more, 3, 60, *sale, true);
+        Check(sale->potCount == 1 && sale->keptCount == 1 && sale->kept[0].item == lizard->hash &&
+                  sale->kept[0].count == 2,
+              "two Hearty Lizards kept out of the sale: " + std::to_string(sale->potCount) + " pots");
+        PlanSale(data, more, 3, 60, *sale);
+        Check(sale->potCount == 3 && sale->keptCount == 0 && sale->partsLeft == 0,
+              "and cooked when not kept: " + std::to_string(sale->potCount) + " pots");
     }
 
     void SavageCases(const CookData& data, const char* path)
