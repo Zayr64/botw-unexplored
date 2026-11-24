@@ -909,7 +909,9 @@ namespace
                 Rect(0, ry, ScreenW, rowH, RowAlt);
             // The family by the name of its lowest rank the player has defeated.
             const std::string family = st.knownRank >= 0 ? NameOf(app, Crc32(sp.ranks[st.knownRank].actor)) : "Unknown family";
-            Text(family, 28, ry + 24, 0.38f, st.knownRank >= 0 ? TextColor : TextDim);
+            if (st.knownRank >= 0)
+                Icons::Enemy(sp.ranks[st.currentKnown ? st.current : st.knownRank].actor, 24, ry + 2, 30);
+            Text(family, 62, ry + 24, 0.38f, st.knownRank >= 0 ? TextColor : TextDim);
             std::string rank;
             if (st.current < 0)
                 rank = "below the first rank";
@@ -939,7 +941,7 @@ namespace
         y += d.speciesCount * rowH + 10;
 
         Rect(0, y, ScreenW, 30, BarColor);
-        Text("Enemy", 28, y + 21, 0.34f, TextDim);
+        Text("Enemy", 60, y + 21, 0.34f, TextDim);
         Text("Defeated", 760, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Points each", 960, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
         Text("Points", 1150, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
@@ -964,7 +966,9 @@ namespace
                 Rect(0, ry, ScreenW, lineH, RowAlt);
             const bool named = fs.kills > 0 || row.reveal > 0;
             const char* label = NameOf(app, Crc32(f.actor));
-            Text(named ? Fit(label, 0.38f, 600) : std::string("Not defeated yet"), 28, ry + 21, 0.38f,
+            if (named)
+                Icons::Enemy(f.actor, 24, ry + 2, 26);
+            Text(named ? Fit(label, 0.38f, 560) : std::string("Not defeated yet"), 60, ry + 21, 0.38f,
                  named ? TextColor : TextDim);
             // Each counter stops at its limit (10 for most enemies): further kills add nothing.
             const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());

@@ -70,6 +70,20 @@ def colorize(image, color):
     return out
 
 
+ENEMY_SIZE = 96
+
+
+def enemy_names(cook_data):
+    names = set()
+    for line in Path(cook_data).read_text(encoding="utf-8").splitlines():
+        parts = line.split(" ")
+        if parts[0] == "LEVELFLAG" and len(parts) > 2:
+            names.add(parts[2])
+        elif parts[0] == "LEVELSPECIES":
+            names.update(parts[3::2])
+    return sorted(names)
+
+
 def item_names(cook_data):
     names = set()
     for line in Path(cook_data).read_text(encoding="utf-8").splitlines():
@@ -101,6 +115,16 @@ def main():
         image.save(out / "items" / (name + ".png"), optimize=True)
         made += 1
 
+    # Enemies of the EXP tab: their picture in the Hyrule Compendium (UI/PictureBook/<actor>.jpg, 280 px).
+    (out / "enemies").mkdir(parents=True, exist_ok=True)
+    enemies = 0
+    for name in enemy_names(cook_data):
+        path = romfs / "UI/PictureBook" / (name + ".jpg")
+        if path.exists():
+            Image.open(path).convert("RGB").resize((ENEMY_SIZE, ENEMY_SIZE), Image.LANCZOS).save(
+                out / "enemies" / (name + ".jpg"), quality=90)
+            enemies += 1
+
     pack = oead.Sarc((romfs / "Pack/Bootup.pack").read_bytes())
     layout = oead.Sarc(oead.yaz0.decompress(bytes(pack.get_file("Layout/Common.sblarc").data)))
     wanted = set(UI_ICONS.values())
@@ -117,7 +141,8 @@ def main():
             image.save(out / "ui" / (app_name + ".png"), optimize=True)
         else:
             print("not found:", texture)
-    print(f"{out}: {made} item icons ({missing} items without one), {len(found)} interface icons")
+    print(f"{out}: {made} item icons ({missing} items without one), {len(found)} interface icons, "
+          f"{enemies} enemy pictures")
 
 
 if __name__ == "__main__":

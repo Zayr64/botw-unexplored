@@ -122,6 +122,11 @@ namespace Icons
         Queue(std::string(Folder) + "ui/" + name + ".png", x, top, size, tint);
     }
 
+    void Enemy(const std::string& actor, float x, float top, float size)
+    {
+        Queue(std::string(Folder) + "enemies/" + actor + ".jpg", x, top, size, glm::vec4(1.0f));
+    }
+
     void Flush(const glm::mat4& projection, float screenHeight)
     {
         if (!s_ready || s_queue.empty())
