@@ -30,6 +30,7 @@
 #include "SaveFile.h"
 #include "SaveSource.h"
 #include "Search.h"
+#include "Level.h"
 
 using namespace Compendium;
 
@@ -208,6 +209,12 @@ namespace
         int reveal = 0;   // 0 nothing shown, 1 what the hidden part is for, 2 the name too
     };
 
+    struct LevelRow
+    {
+        int index;      // in LevelData::flags
+        int reveal = 0; // for an enemy not defeated yet: 1 shows its name
+    };
+
     struct App
     {
         std::unique_ptr<CookData> cook;
@@ -223,11 +230,14 @@ namespace
         std::unique_ptr<SalePlan> sale;
         std::vector<Goal> goals;
         std::vector<MaterialRow> rows;
+        std::unique_ptr<LevelData> level;   // null when cook-data.txt has no level tables
+        std::unique_ptr<LevelPlan> levelPlan;
+        std::vector<LevelRow> levelRows;
         bool countHidden = true; // the tiers for armor not owned, the Ancient Oven and quests
         bool wholePouch = false; // dishes from everything in the pouch, not only what is free
         int tab = 0;
-        int cursor[3] = {0, 0, 0};
-        int scroll[3] = {0, 0, 0};
+        int cursor[4] = {0, 0, 0, 0};
+        int scroll[4] = {0, 0, 0, 0};
         std::string error;
         int evaluated = 0;
     };
@@ -397,6 +407,32 @@ namespace
 
         app.plan.reset(new ReservePlan());
         PlanReserve(*app.cook, *app.reserve, app.save, app.pouch.data(), app.pouchCount, *app.plan);
+        {
+            std::unique_ptr<LevelData> level(new LevelData());
+            char levelError[160] = {};
+            if (level->Load(text.data(), text.size(), levelError, sizeof(levelError)))
+            {
+                app.level = std::move(level);
+                app.levelPlan.reset(new LevelPlan());
+                PlanLevel(*app.level, app.save, *app.levelPlan);
+                for (int i = 0; i < app.level->flagCount; i++)
+                    app.levelRows.push_back({i, 0});
+                // Defeated enemies first, by the points they brought; then the others, by their points.
+                const LevelPlan& lp = *app.levelPlan;
+                const LevelData& ld = *app.level;
+                std::stable_sort(app.levelRows.begin(), app.levelRows.end(), [&](const LevelRow& a, const LevelRow& b) {
+                    const bool da = lp.flags[a.index].kills > 0, db = lp.flags[b.index].kills > 0;
+                    if (da != db)
+                        return da;
+                    if (da)
+                        return lp.flags[a.index].total > lp.flags[b.index].total;
+                    return ld.flags[a.index].point < ld.flags[b.index].point;
+                });
+                Log("Level points:", static_cast<int>(lp.points));
+            }
+            else
+                Log("No level tables:", std::string(levelError));
+        }
         app.sale.reset(new SalePlan());
 
         app.goals = {
@@ -445,9 +481,9 @@ namespace
         Rect(0, HeaderH, ScreenW, 1, Hairline);
         const std::string title = "BotW Compendium";
         Text(title, 28, 42, 0.62f, Gold);
-        const char* tabs[] = {"Dishes", "Reserve", "Sell"};
+        const char* tabs[] = {"Dishes", "Reserve", "Sell", "EXP"};
         float x = 28 + Width(title, 0.62f) + 36;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 4; i++)
         {
             const float w = Width(tabs[i], 0.46f) + 36;
             if (i == app.tab)
@@ -480,6 +516,8 @@ namespace
         std::string hints = "L/R tab   Up/Down move   ";
         if (app.tab == 1)
             hints += "A what for   ";
+        if (app.tab == 3)
+            hints += "A name   ";
         hints += app.countHidden ? "X hidden needs: on   " : "X hidden needs: off   ";
         if (app.tab == 0)
             hints += app.wholePouch ? "Y whole pouch   " : "Y free only   ";
@@ -841,6 +879,103 @@ namespace
             Text("Nothing free to sell.", 28, y + 30, 0.40f, TextDim);
     }
 
+    // The hidden level: the points, the enemy and weapon levels, each family's rank, and the enemies counted.
+    void ExpTab(App& app)
+    {
+        if (!app.level)
+        {
+            Text("This cook-data.txt has no level tables: make it again with the current gen_cook_data.py.", 28,
+                 HeaderH + 60, 0.40f, Warn, ALIGN_LEFT, ScreenW - 56);
+            return;
+        }
+        const LevelData& d = *app.level;
+        const LevelPlan& p = *app.levelPlan;
+        char buf[160];
+        float y = HeaderH + 34;
+        snprintf(buf, sizeof(buf), "%s of %s points (%d of %d enemies)   enemy level %.1f   weapon level %.1f",
+                 Number(static_cast<int32_t>(p.points)).c_str(), Number(static_cast<int32_t>(p.maxPoints)).c_str(),
+                 p.defeatedKinds, d.flagCount, p.enemyLevel, p.weaponLevel);
+        Text(buf, 28, y, 0.40f, Gold);
+        y += 12;
+
+        // Families: the rank the level reaches and the way to the next one.
+        const float rowH = 34;
+        for (int s = 0; s < d.speciesCount; s++)
+        {
+            const Species& sp = d.species[s];
+            const SpeciesState& st = p.species[s];
+            const float ry = y + s * rowH;
+            if (s % 2)
+                Rect(0, ry, ScreenW, rowH, RowAlt);
+            // The family by the name of its lowest rank the player has defeated.
+            const std::string family = st.knownRank >= 0 ? NameOf(app, Crc32(sp.ranks[st.knownRank].actor)) : "Unknown family";
+            Text(family, 28, ry + 24, 0.38f, st.knownRank >= 0 ? TextColor : TextDim);
+            std::string rank;
+            if (st.current < 0)
+                rank = "below the first rank";
+            else if (st.currentKnown)
+                rank = NameOf(app, Crc32(sp.ranks[st.current].actor));
+            else
+                rank = "rank " + std::to_string(st.current + 1) + " of " + std::to_string(sp.rankCount);
+            Text("now: " + rank, 300, ry + 24, 0.36f, TextColor);
+            if (st.current + 1 < sp.rankCount)
+            {
+                const float from = st.current >= 0 ? sp.ranks[st.current].value : 0.0f;
+                const float to = sp.ranks[st.current + 1].value;
+                const float f = to > from ? (p.enemyLevel - from) / (to - from) : 0.0f;
+                const float bx = 640, bw = 250;
+                RoundRect(bx, ry + 12, bw, 10, 5, glm::vec4(1.0f, 1.0f, 1.0f, 0.12f));
+                RoundRect(bx, ry + 12, std::max(10.0f, bw * std::min(1.0f, std::max(0.0f, f))), 10, 5,
+                          glm::vec4(Gold, 1.0f));
+                snprintf(buf, sizeof(buf), "%.1f / %.0f", p.enemyLevel, to);
+                Text(buf, bx + bw + 16, ry + 24, 0.34f, TextDim);
+                Text(st.nextKnown ? "next: " + std::string(NameOf(app, Crc32(sp.ranks[st.current + 1].actor)))
+                                  : "next: hidden",
+                     ScreenW - 28, ry + 24, 0.34f, TextDim, ALIGN_RIGHT);
+            }
+            else
+                Text("top rank", 640, ry + 24, 0.34f, Good);
+        }
+        y += d.speciesCount * rowH + 10;
+
+        Rect(0, y, ScreenW, 30, BarColor);
+        Text("Enemy", 28, y + 21, 0.34f, TextDim);
+        Text("Defeated", 760, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
+        Text("Points each", 960, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
+        Text("Points", 1150, y + 21, 0.34f, TextDim, ALIGN_RIGHT);
+        y += 32;
+        const float lineH = 30;
+        const int visible = std::max(1, static_cast<int>((ScreenH - FooterH - 10 - y) / lineH));
+        int& cursor = app.cursor[3];
+        int& scroll = app.scroll[3];
+        if (cursor < scroll)
+            scroll = cursor;
+        if (cursor >= scroll + visible)
+            scroll = cursor - visible + 1;
+        for (int i = scroll; i < static_cast<int>(app.levelRows.size()) && i < scroll + visible; i++)
+        {
+            const LevelRow& row = app.levelRows[i];
+            const LevelFlag& f = d.flags[row.index];
+            const LevelFlagState& fs = p.flags[row.index];
+            const float ry = y + (i - scroll) * lineH;
+            if (i == cursor)
+                Rect(0, ry, ScreenW, lineH, RowOn);
+            else if (i % 2)
+                Rect(0, ry, ScreenW, lineH, RowAlt);
+            const bool named = fs.kills > 0 || row.reveal > 0;
+            const char* label = NameOf(app, Crc32(f.actor));
+            Text(named ? Fit(label, 0.38f, 600) : std::string("Not defeated yet"), 28, ry + 21, 0.38f,
+                 named ? TextColor : TextDim);
+            // Each counter stops at its limit (10 for most enemies): further kills add nothing.
+            const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());
+            Text(defeated, 760, ry + 21, 0.38f, fs.kills == 0 ? TextDim : (f.max > 0 && fs.kills >= f.max ? Good : TextColor),
+                 ALIGN_RIGHT);
+            snprintf(buf, sizeof(buf), "%g", f.point);
+            Text(buf, 960, ry + 21, 0.38f, TextDim, ALIGN_RIGHT);
+            Text(Number(static_cast<int32_t>(fs.total)), 1150, ry + 21, 0.38f, fs.kills ? Gold : TextDim, ALIGN_RIGHT);
+        }
+    }
+
     void Message(const std::string& text, const glm::vec3& color)
     {
         Text(text, 80, 300, 0.48f, color, ALIGN_LEFT, ScreenW - 160);
@@ -852,7 +987,8 @@ namespace
         {
         case 0: return static_cast<int>(app.goals.size());
         case 1: return static_cast<int>(app.rows.size());
-        default: return static_cast<int>(SellLines(app).size());
+        case 2: return static_cast<int>(SellLines(app).size());
+        default: return static_cast<int>(app.levelRows.size());
         }
     }
 }
@@ -906,9 +1042,9 @@ int main()
         if (loaded && ok)
         {
             if (down & (HidNpadButton_R | HidNpadButton_ZR))
-                app.tab = (app.tab + 1) % 3;
+                app.tab = (app.tab + 1) % 4;
             if (down & (HidNpadButton_L | HidNpadButton_ZL))
-                app.tab = (app.tab + 2) % 3;
+                app.tab = (app.tab + 3) % 4;
             // Up/Down, repeating while held.
             int move = 0;
             if (held & (HidNpadButton_Up | HidNpadButton_Down))
@@ -925,6 +1061,8 @@ int main()
             const int rows = RowCount(app);
             if (move && rows > 0)
                 app.cursor[app.tab] = std::max(0, std::min(rows - 1, app.cursor[app.tab] + move));
+            if ((down & HidNpadButton_A) && app.tab == 3 && !app.levelRows.empty())
+                app.levelRows[app.cursor[3]].reveal = 1;
             if ((down & HidNpadButton_A) && app.tab == 1 && !app.rows.empty())
             {
                 MaterialRow& row = app.rows[app.cursor[1]];
@@ -958,8 +1096,10 @@ int main()
                 DishesTab(app);
             else if (app.tab == 1)
                 ReserveTab(app);
-            else
+            else if (app.tab == 2)
                 SellTab(app);
+            else
+                ExpTab(app);
         }
         g_shapes->Render(g_projection);
         Icons::Flush(g_projection, ScreenH);

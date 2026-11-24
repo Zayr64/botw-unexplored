@@ -178,6 +178,7 @@ def main():
         lines.append("TAG %08x %s" % (crc(t), t))
 
     reserve_lines(info, romfs, names, {l.split(" ")[2] for l in lines if l.startswith("ACTOR ")}, out_path.parent, lines)
+    level_lines(boot, names, lines)
 
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"{out_path}: {count} actors, {len(cook['Recipes'])} recipes, {len(cook['SingleRecipes'])} single recipes, "
@@ -227,6 +228,43 @@ def use_icon_name(a, by_name):
     itemUseIconActorName points to."""
     alias = str(a.get("itemUseIconActorName", "")) if a is not None else ""
     return alias if alias and alias in by_name else None
+
+
+def level_lines(boot, names, lines):
+    """The game's hidden level (Ecosystem/LevelSensor.byml, read by ksys::eco::LevelSensor): the kill-count flags with
+    their points, the two factors that turn points into the enemy and weapon levels, and, for each enemy family, the
+    level each of its ranks appears at."""
+    sensor = oead.byml.from_binary(oead.yaz0.decompress(bytes(boot.get_file("Ecosystem/LevelSensor.sbyml").data)))
+    setting = sensor["setting"]
+    lines.append("LEVELSET %08x %08x" % (f32_bits(setting["Level2EnemyPower"]), f32_bits(setting["Level2WeaponPower"])))
+    labelled = set()
+    # The most each flag can hold (MaxValue in GameData/gamedata.ssarc; a kill counter stops at it).
+    limits = {}
+    gamedata = oead.Sarc(oead.yaz0.decompress(bytes(boot.get_file("GameData/gamedata.ssarc").data)))
+    for f in gamedata.get_files():
+        if "s32_data" in f.name or "bool_data" in f.name:
+            for table in oead.byml.from_binary(bytes(f.data)).values():
+                for entry in table:
+                    if "DataName" in entry and "MaxValue" in entry:
+                        value = entry["MaxValue"]
+                        limits[str(entry["DataName"])] = 1 if isinstance(value, bool) else int(value)
+
+    def label(actor):
+        if actor in names and actor not in labelled:
+            lines.append("LABEL %08x %s" % (crc(actor), names[actor]))
+            labelled.add(actor)
+
+    for f in sensor["flag"]:
+        flag = str(f["name"])
+        actor = flag[len("Defeated_"):-len("_Num")] if flag.startswith("Defeated_") and flag.endswith("_Num") else flag
+        lines.append("LEVELFLAG %08x %s %08x %d" % (crc(flag), actor, f32_bits(f["point"]), limits.get(flag, 0)))
+        label(actor)
+    for s in sensor["enemy"]:
+        actors = list(s["actors"])
+        lines.append("LEVELSPECIES %s %d %s" % (str(s["species"]), len(actors), " ".join(
+            "%s %08x" % (str(a["name"]), f32_bits(a["value"])) for a in actors)))
+        for a in actors:
+            label(str(a["name"]))
 
 
 def reserve_lines(info, romfs, names, cook_actors, folder, lines):

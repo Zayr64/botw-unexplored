@@ -50,5 +50,5 @@ fi
 python3 tests/test_data_mapping.py
 # Cooking app: needs cook-data.txt, made from the game's files (compendium/tools/gen_cook_data.py), so it is skipped
 # without COOK_DATA. COOK_CASES: dishes read from the game's screen (compendium/tests/savage13_cases.py).
-"$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_cook.cpp compendium/source/Cook.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp compendium/source/Search.cpp compendium/source/Sale.cpp -o /tmp/test_cook
+"$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_cook.cpp compendium/source/Cook.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp compendium/source/Search.cpp compendium/source/Sale.cpp compendium/source/Level.cpp -o /tmp/test_cook
 /tmp/test_cook ${COOK_DATA:+"$COOK_DATA"} ${COOK_CASES:+"$COOK_CASES"}

@@ -20,6 +20,7 @@
 #include "Sale.h"
 #include "SaveFile.h"
 #include "Search.h"
+#include "Level.h"
 
 using namespace Compendium;
 
@@ -343,6 +344,13 @@ int main(int argc, char** argv)
            data->recipeCount, data->singleRecipeCount, sizeof(CookData));
 
     KnownDishes(*data);
+    {
+        std::unique_ptr<LevelData> level(new LevelData());
+        char levelError[128] = {};
+        Check(level->Load(text.data(), text.size(), levelError, sizeof(levelError)) && level->flagCount == 50 &&
+                  level->speciesCount == 5 && level->enemyPower > 0.0f,
+              std::string("level tables: ") + levelError);
+    }
     SearchAndSale(*data);
     if (argc >= 3)
         SavageCases(*data, argv[2]);
