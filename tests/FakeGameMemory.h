@@ -73,7 +73,30 @@ struct FakeFlag
 {
     LiveGameData::FlagKind kind;
     uint32_t hash;
-    uint8_t value[32];
+    uint8_t value[64];
+};
+
+// Bytes of the value of each kind, as the tests write and compare them.
+inline size_t FakeValueSize(LiveGameData::FlagKind kind)
+{
+    switch (kind)
+    {
+    case LiveGameData::FlagKind::Bool: return 1;
+    case LiveGameData::FlagKind::S32: return 4;
+    case LiveGameData::FlagKind::String32: return 32;
+    case LiveGameData::FlagKind::Vector3f: return 12;
+    case LiveGameData::FlagKind::F32: return 4;
+    case LiveGameData::FlagKind::String64: return 64;
+    default: return 0;
+    }
+}
+
+// An array flag: every element is a Flag<T> object with the array's hash.
+struct FakeArray
+{
+    LiveGameData::FlagKind kind;
+    uint32_t hash;
+    std::vector<std::vector<uint8_t>> values; // FakeValueSize(kind) bytes each
 };
 
 // Builds what LiveGameData reads: Manager -> flag buffer -> pointer tables -> flag objects.
@@ -85,7 +108,7 @@ public:
     uint64_t manager = 0x2100000000ULL;
     uint64_t flagBuffer = 0x2100100000ULL;
     uint64_t proxyBuffer = 0x2100200000ULL; // tables that point at objects that are not Flag<T>
-    std::pair<uint64_t, size_t> lastBuffer[4]; // per kind: where its last buffer of objects is
+    std::pair<uint64_t, size_t> lastBuffer[static_cast<int>(LiveGameData::FlagKind::Count)]; // per kind: where its last buffer of objects is
 
     // Flags are stored in the order given, in buffers of `perBuffer` objects with unmapped memory between
     // them; the tables are sorted by hash like the game's. `vtableShift` makes the objects of a kind look
@@ -148,7 +171,7 @@ public:
                 const uint64_t vtable = mainBase + info.vtable + vtableShift;
                 std::memcpy(object.data(), &vtable, 8);
                 std::memcpy(object.data() + info.hashOffset, &flags[i].hash, 4);
-                const size_t valueSize = kind == 0 ? 1 : kind == 1 ? 4 : kind == 2 ? 32 : 12;
+                const size_t valueSize = FakeValueSize(static_cast<LiveGameData::FlagKind>(kind));
                 std::memcpy(object.data() + info.valueOffset, flags[i].value, valueSize);
                 bytes.insert(bytes.end(), object.begin(), object.end());
                 if (!listed || (*listed)[i])
@@ -173,6 +196,53 @@ public:
             for (size_t i = 0; i < entries.size(); ++i)
                 memory.Put<uint64_t>(table + i * 8, entries[i].second);
             const uint64_t header = flagBuffer + layout.tablesOffset + static_cast<uint64_t>(info.table) * 16;
+            memory.Put<int32_t>(header, static_cast<int32_t>(entries.size()));
+            memory.Put<int32_t>(header + 4, static_cast<int32_t>(entries.size()));
+            memory.Put<uint64_t>(header + 8, table);
+        }
+    }
+
+    // The tables of array flags of the flag buffer: one table per kind present, each entry a PtrArray of the
+    // elements, whose objects lie one after the other. Call after Build. `vtableShift` as in Build.
+    void BuildArrays(const LiveGameData::Layout& layout, const std::vector<FakeArray>& arrays, uint64_t vtableShift = 0)
+    {
+        const int kindCount = static_cast<int>(LiveGameData::FlagKind::Count);
+        uint64_t objects = 0x3200000000ULL; // away from the objects of Build (0x23.. to 0x28..)
+        uint64_t headers = 0x3100000000ULL;
+        for (int kind = 0; kind < kindCount; ++kind)
+        {
+            const LiveGameData::Layout::Kind& info = layout.kinds[kind];
+            std::vector<uint64_t> entries;
+            for (const FakeArray& array : arrays)
+            {
+                if (static_cast<int>(array.kind) != kind)
+                    continue;
+                const uint64_t elements = headers + 0x10;
+                memory.Map(headers, 0x10 + array.values.size() * 8);
+                memory.Put<int32_t>(headers, static_cast<int32_t>(array.values.size()));
+                memory.Put<int32_t>(headers + 4, static_cast<int32_t>(array.values.size()));
+                memory.Put<uint64_t>(headers + 8, elements);
+                for (size_t i = 0; i < array.values.size(); ++i)
+                {
+                    std::vector<uint8_t> object(info.size, 0);
+                    const uint64_t vtable = mainBase + info.vtable + vtableShift;
+                    std::memcpy(object.data(), &vtable, 8);
+                    std::memcpy(object.data() + info.hashOffset, &array.hash, 4);
+                    std::memcpy(object.data() + info.valueOffset, array.values[i].data(),
+                                std::min(array.values[i].size(), FakeValueSize(array.kind)));
+                    memory.Write(objects, object.data(), object.size());
+                    memory.Put<uint64_t>(elements + i * 8, objects);
+                    objects += info.size;
+                }
+                entries.push_back(headers);
+                headers += (0x10 + array.values.size() * 8 + 0xFFF) & ~0xFFFULL;
+                objects = (objects + 0x1FFF) & ~0xFFFULL; // a page between the arrays
+            }
+            const uint64_t table = 0x3000000000ULL + static_cast<uint64_t>(kind) * 0x10000000ULL;
+            const uint64_t header = flagBuffer + layout.arrayTablesOffset + static_cast<uint64_t>(info.table) * 16;
+            memory.Map(table, entries.size() * 8 + 8);
+            for (size_t i = 0; i < entries.size(); ++i)
+                memory.Put<uint64_t>(table + i * 8, entries[i]);
             memory.Put<int32_t>(header, static_cast<int32_t>(entries.size()));
             memory.Put<int32_t>(header + 4, static_cast<int32_t>(entries.size()));
             memory.Put<uint64_t>(header + 8, table);

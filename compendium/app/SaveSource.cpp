@@ -2,10 +2,14 @@
 
 #include <cstdio>
 #include <cstring>
+#include <sstream>
 #include <sys/stat.h>
 
 #include <switch.h>
 
+#include "GameMemory.h"
+#include "LiveGameData.h"
+#include "LiveSave.h"
 #include "Log.h"
 
 namespace SaveSource
@@ -98,6 +102,52 @@ namespace SaveSource
                 Log("Could not keep a copy of caption.sav");
         }
 
+        // BotW running behind this app: its flags and pouch as they are now, made into a save (LiveSave). With the
+        // Album open the game is paused, so what is read stays true while this app is on the screen.
+        bool LoadLive(Loaded& out)
+        {
+            std::string message;
+            if (GameMemory::Open(message) != GameMemory::Status::Ready)
+            {
+                out.liveMessage = message;
+                Log("LIVE: not available:", message);
+                return false;
+            }
+            Compendium::LiveSave live;
+            LiveGameData::Options options;
+            options.f32 = true; // StaminaMax
+            options.arrays = Compendium::LiveArrays();
+            options.arrayCount = Compendium::LiveArrayCount();
+            LiveGameData::Report report;
+            const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), LiveGameData::Botw160(),
+                                                    live, report, options);
+            GameMemory::Close();
+            std::istringstream details(report.details);
+            for (std::string line; std::getline(details, line);)
+                Log("LIVE: " + line);
+
+            std::string why;
+            if (!scanned)
+                why = report.error;
+            else if (!report.f32)
+                why = "the game's stamina could not be read";
+            else if (report.arraysFound != Compendium::LiveArrayCount())
+                why = "the game's pouch could not be read";
+            else if (!live.Build(out.bytes, why))
+                out.bytes.clear();
+            if (!why.empty())
+            {
+                out.liveMessage = why;
+                Log("LIVE: not used:", why);
+                return false;
+            }
+            out.kind = Kind::Live;
+            out.slot = -1;
+            out.saveTime = 0;
+            Log("LIVE: read from the running game, records", static_cast<int>(live.RecordCount()));
+            return true;
+        }
+
         // The newest copy among this app's and BotW Unexplored's (any slot).
         void LoadCopy(const std::string& profile, Loaded& out)
         {
@@ -144,6 +194,7 @@ namespace SaveSource
         switch (kind)
         {
         case Kind::Game: return "Save read from the game";
+        case Kind::Live: return "Live from the game";
         case Kind::Copy: return "Copy of the save on the SD card";
         case Kind::UnexploredCopy: return "BotW Unexplored's copy of the save";
         default: return "No save";
@@ -209,8 +260,10 @@ namespace SaveSource
             return out;
         }
 
-        // The save is locked while BotW runs (or the user has none): use a copy.
+        // The save is locked while BotW runs (or the user has none): the game's memory, else a copy.
         out.gameRunning = true;
+        if (LoadLive(out))
+            return out;
         LoadCopy(profile, out);
         if (out.kind == Kind::None)
         {

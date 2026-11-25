@@ -35,6 +35,8 @@ fi
 /tmp/test_shrine_flags
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource -Itests tests/test_live_game_data.cpp source/LiveGameData.cpp -o /tmp/test_live_game_data
 /tmp/test_live_game_data
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource -Itests tests/test_live_extras.cpp source/LiveGameData.cpp -o /tmp/test_live_extras
+/tmp/test_live_extras
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_chests.cpp source/ChestData.cpp -o /tmp/test_chests
 /tmp/test_chests
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_chests.cpp source/ShrineChests.cpp source/ShrineChestData.cpp -o /tmp/test_shrine_chests
@@ -52,3 +54,6 @@ python3 tests/test_data_mapping.py
 # without COOK_DATA. COOK_CASES: dishes read from the game's screen (compendium/tests/savage13_cases.py).
 "$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_cook.cpp compendium/source/Cook.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp compendium/source/Search.cpp compendium/source/Sale.cpp compendium/source/Level.cpp -o /tmp/test_cook
 /tmp/test_cook ${COOK_DATA:+"$COOK_DATA"} ${COOK_CASES:+"$COOK_CASES"}
+"$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source -Isource -Itests compendium/tests/test_live_save.cpp compendium/source/LiveSave.cpp compendium/source/SaveFile.cpp compendium/source/CookData.cpp source/LiveGameData.cpp -o /tmp/test_live_save
+# LIVE_SAVE: a real game_data.sav to check too (never in the repository).
+/tmp/test_live_save ${LIVE_SAVE:+"$LIVE_SAVE"}

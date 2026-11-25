@@ -5,6 +5,7 @@
 //   HOSTVIEW_LIVE_MAP    "CDungeon:Dungeon042" to put the game inside a shrine
 //   HOSTVIEW_LIVE_BREAK  1: the flag objects look like something else (another game version)
 //   HOSTVIEW_LIVE_HARD   1: the game runs in Master Mode
+//   HOSTVIEW_LIVE_NO_POUCH 1: the pouch's arrays are missing
 #include "CheatService.h"
 
 #include <cstdio>
@@ -20,6 +21,28 @@
 namespace
 {
     FakeGame* s_Game = nullptr;
+
+    uint32_t Crc32(const char* text)
+    {
+        uint32_t crc = 0xFFFFFFFFu;
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; p++)
+        {
+            crc ^= *p;
+            for (int k = 0; k < 8; k++)
+                crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
+        return ~crc;
+    }
+
+    // The save does not tell the type of a flag: the f32 the apps read, and the arrays of the pouch, by name.
+    bool IsF32(uint32_t hash)
+    {
+        static const uint32_t f32s[] = {Crc32("StaminaMax"), Crc32("WM_BloodyMoonTimer"), Crc32("WM_Time")};
+        for (const uint32_t f : f32s)
+            if (f == hash)
+                return true;
+        return false;
+    }
 
     bool EnvOn(const char* name)
     {
@@ -53,11 +76,36 @@ namespace
         }
 
         std::vector<FakeFlag> flags;
+        std::vector<FakeArray> arrays;
+        const uint32_t pouchNames = Crc32("PorchItem"), pouchCounts = Crc32("PorchItem_Value1"),
+                       pouchEquipped = Crc32("PorchItem_EquipFlag");
         for (const auto& entry : values)
         {
             FakeFlag flag = {LiveGameData::FlagKind::Bool, entry.first, {}};
             const std::vector<uint32_t>& list = entry.second;
-            if (list.size() == 1 && list[0] <= 1)
+            if (entry.first == pouchNames || entry.first == pouchCounts || entry.first == pouchEquipped)
+            {
+                // The pouch, as the game keeps it: three arrays of 420 (names of 64 characters, 16 records each).
+                FakeArray array = {entry.first == pouchNames ? LiveGameData::FlagKind::String64
+                                   : entry.first == pouchCounts ? LiveGameData::FlagKind::S32
+                                                                : LiveGameData::FlagKind::Bool,
+                                   entry.first, {}};
+                const size_t per = entry.first == pouchNames ? 16 : 1;
+                for (size_t i = 0; i + per <= list.size(); i += per)
+                {
+                    std::vector<uint8_t> bytes(per * 4, 0);
+                    std::memcpy(bytes.data(), &list[i], per * 4);
+                    array.values.push_back(bytes);
+                }
+                arrays.push_back(array);
+                continue;
+            }
+            if (list.size() == 1 && IsF32(entry.first))
+            {
+                flag.kind = LiveGameData::FlagKind::F32;
+                std::memcpy(flag.value, &list[0], 4);
+            }
+            else if (list.size() == 1 && list[0] <= 1)
                 flag.value[0] = static_cast<uint8_t>(list[0] | 0x20);
             else if (list.size() == 1)
             {
@@ -102,6 +150,9 @@ namespace
 
         s_Game = new FakeGame();
         s_Game->Build(LiveGameData::Botw160(), flags, 4096, EnvOn("HOSTVIEW_LIVE_BREAK") ? 0x40 : 0);
+        // HOSTVIEW_LIVE_NO_POUCH 1: the arrays are not there (the pouch cannot be read live).
+        if (!EnvOn("HOSTVIEW_LIVE_NO_POUCH"))
+            s_Game->BuildArrays(LiveGameData::Botw160(), arrays, EnvOn("HOSTVIEW_LIVE_BREAK") ? 0x40 : 0);
         if (const char* position = getenv("HOSTVIEW_LIVE_POS"))
         {
             float x = 0, y = 0, z = 0;

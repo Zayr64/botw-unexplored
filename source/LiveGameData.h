@@ -30,8 +30,13 @@ namespace LiveGameData
         S32,      // value: 4 bytes
         String32, // value: up to 32 characters, zero terminated
         Vector3f, // value: 3 floats
+        F32,      // value: 4 bytes; only read when asked for (Options::f32)
+        String64, // value: up to 64 characters, zero terminated; only in arrays asked for (Options::arrays)
         Count
     };
+
+    // The four kinds every scan reads; the others are extras that never make a scan fail.
+    constexpr int CoreKinds = 4;
 
     class Visitor
     {
@@ -39,6 +44,22 @@ namespace LiveGameData
         virtual ~Visitor() {}
         // `address` is where the value is in the game's memory, to read that one flag again later.
         virtual void OnFlag(FlagKind kind, uint32_t hash, const uint8_t* value, uint64_t address) = 0;
+        // An element of an array flag that was asked for, in index order (all of an array's elements share its hash).
+        virtual void OnArrayElement(FlagKind kind, uint32_t hash, int index, const uint8_t* value)
+        {
+            (void)kind;
+            (void)hash;
+            (void)index;
+            (void)value;
+        }
+    };
+
+    // What a scan reads besides the four core kinds.
+    struct Options
+    {
+        bool f32 = false;                 // the f32 flags (time of day, the Blood Moon timer, stamina...)
+        const uint32_t* arrays = nullptr; // hashes of array flags to read (bool, s32 or string64 arrays)
+        int arrayCount = 0;
     };
 
     struct Layout
@@ -48,13 +69,15 @@ namespace LiveGameData
         uint64_t flagBuffer1Offset; // Manager + this: mFlagBuffer1 (TriggerParam*), written by its setters
         uint64_t flagBufferRef;     // Manager + this: mParam.mParam, which must point at one of the two
         uint64_t tablesOffset;     // TriggerParam + this: first sead::PtrArray {s32 size, s32 capacity, T** data}
+        uint64_t arrayTablesOffset; // TriggerParam + this: the same nine tables for array flags; each entry points at
+                                    // a PtrArray of the array's Flag<T> objects, in index order
         uint64_t playerPointer;    // main + this: pointer chain to Link's actor
         uint64_t playerActorOffset;
         uint64_t playerMatrixOffset; // sead::Matrix34f, row major, translation in the last column
         struct Kind
         {
             int table;          // index of its PtrArray in the TriggerParam
-            uint64_t vtable;    // main + this
+            uint64_t vtable;    // main + this (for the extras: what is expected; the scan takes it from the game's table)
             uint32_t size;      // of the Flag<T> object
             uint32_t hashOffset;
             uint32_t valueOffset;
@@ -72,11 +95,15 @@ namespace LiveGameData
         int tableSize[static_cast<int>(FlagKind::Count)] = {};
         int objects[static_cast<int>(FlagKind::Count)] = {};
         int pages = 0;
+        bool f32 = false;    // every f32 flag was read (asked for, and its objects looked right)
+        int arraysFound = 0; // arrays asked for that were found and read whole
     };
 
-    // Calls the visitor for every flag object of the four kinds. False (with report.error) when anything
-    // looks different from what is expected; the visitor may already have been called by then.
-    bool Scan(Memory& memory, uint64_t mainBase, const Layout& layout, Visitor& visitor, Report& report);
+    // Calls the visitor for every flag object of the four core kinds, and for the extras in `options`. False (with
+    // report.error) when anything about the core kinds looks different from what is expected; the visitor may
+    // already have been called by then. An extra that cannot be read is only left out (report.f32, arraysFound).
+    bool Scan(Memory& memory, uint64_t mainBase, const Layout& layout, Visitor& visitor, Report& report,
+              const Options& options = Options());
 
     // Link's position right now. False while the game is loading or Link does not exist.
     bool ReadPlayerPosition(Memory& memory, uint64_t mainBase, const Layout& layout, float position[3]);

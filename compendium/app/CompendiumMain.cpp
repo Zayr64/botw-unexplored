@@ -645,6 +645,13 @@ namespace
                 source = "Save read from the game" + (date.empty() ? std::string() : ", " + date);
                 brief = date.empty() ? std::string("Save from the game") : "Save of " + date;
             }
+            else if (app.loaded.kind == SaveSource::Kind::Live)
+            {
+                // BotW is open and was read as it is now: pouch, rupees, hearts and stamina of this moment.
+                source = "Live from the game";
+                brief = "Live";
+                color = Good;
+            }
             else
             {
                 source = app.loaded.kind == SaveSource::Kind::UnexploredCopy ? "BotW is open: BotW Unexplored's copy"

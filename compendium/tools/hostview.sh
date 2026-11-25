@@ -2,10 +2,12 @@
 # Builds BotW Compendium for the PC with tools/hostview's fake of libnx and runs it with a script of button presses,
 # saving the screenshots the script asks for (see tools/hostview/README.md for the script commands).
 #
-#   compendium/tools/hostview.sh <cook-data.txt> <BotW save folder> <script> <output folder> [closed|running]
+#   compendium/tools/hostview.sh <cook-data.txt> <BotW save folder> <script> <output folder> [closed|running|running-copy]
 #
 # closed:  the save folder is "mounted" (game closed).
-# running: BotW "runs": the save cannot be mounted; the folder's 0/game_data.sav is BotW Unexplored's copy on the SD.
+# running: BotW "runs": the save cannot be mounted; the folder's 0/game_data.sav is both the running game's memory
+#          (tools/hostview/extra/HostCheatService.cpp) and BotW Unexplored's copy on the SD.
+# running-copy: the same, but the game's memory cannot be read (no game for the cheat service): the copy is used.
 # HOSTVIEW_SYSROOT: as in tools/hostview/build.sh.
 set -euo pipefail
 DATA="$1"; SAVE="$2"; SCRIPT="$3"; OUTDIR="$4"; MODE="${5:-closed}"
@@ -17,7 +19,7 @@ LIBDIR="${HOSTVIEW_LIBDIR:-/usr/lib/x86_64-linux-gnu}"
 mkdir -p "$OUT" "$OUTDIR"
 
 FLAGS=(-std=gnu++17 -O1 -g -Wall -Wno-unused-function -D__SWITCH__ -I"$HV/shim" -I"$REPO/include" -I"$REPO/source"
-       -I"$REPO/compendium/source" -I"$REPO/compendium/app")
+       -I"$REPO/compendium/source" -I"$REPO/compendium/app" -I"$REPO/tests")
 if [[ -n "${HOSTVIEW_SYSROOT:-}" ]]; then
     FLAGS+=(-I"$HOSTVIEW_SYSROOT/usr/include" -I"$HOSTVIEW_SYSROOT/usr/include/freetype2")
 else
@@ -25,7 +27,8 @@ else
 fi
 sed 's#"Graphics/InitGL.h"#"HostInitGL.h"#' "$REPO/compendium/app/CompendiumMain.cpp" > "$OUT/Main_host.cpp"
 SRCS=("$OUT/Main_host.cpp" "$HV/host.cpp" "$REPO/compendium/app/SaveSource.cpp" "$REPO/compendium/app/CompendiumLog.cpp"
-      "$REPO/compendium/app/Icons.cpp" "$REPO/source/Utf8.cpp" "$REPO/source/ImageOverride.cpp")
+      "$REPO/compendium/app/Icons.cpp" "$REPO/source/Utf8.cpp" "$REPO/source/ImageOverride.cpp"
+      "$REPO/source/LiveGameData.cpp" "$REPO/source/GameMemory.cpp" "$HV/extra/HostCheatService.cpp")
 for f in "$REPO"/compendium/source/*.cpp; do SRCS+=("$f"); done
 for f in Font ShapeBatch Shader Vertex Texture2D stb_image; do SRCS+=("$REPO/source/Graphics/$f.cpp"); done
 lib() { ls "$LIBDIR"/$1.so* 2>/dev/null | head -1; }
@@ -41,11 +44,12 @@ if [[ -n "${HOSTVIEW_ICONS:-}" ]]; then cp -r "$HOSTVIEW_ICONS" "$RUN/sdmc:/swit
 ln -s "$REPO/compendium/romfs" "$RUN/romfs:"
 case "$MODE" in
     closed) ln -s "$SAVE" "$RUN/save:" ;;
-    running)
+    running|running-copy)
         mkdir -p "$RUN/sdmc:/switch/botw-unexplored/saves/4369 - 8738/0"
         cp "$SAVE/0/game_data.sav" "$RUN/sdmc:/switch/botw-unexplored/saves/4369 - 8738/0/"
         [[ -e "$SAVE/0/caption.sav" ]] && cp "$SAVE/0/caption.sav" "$RUN/sdmc:/switch/botw-unexplored/saves/4369 - 8738/0/"
-        export HOSTVIEW_GAME_RUNNING=1 HOSTVIEW_APPLET=1 ;;
+        export HOSTVIEW_GAME_RUNNING=1 HOSTVIEW_APPLET=1
+        if [[ "$MODE" == running ]]; then export HOSTVIEW_LIVE_SAVE="${HOSTVIEW_LIVE_SAVE:-$SAVE/0/game_data.sav}"; fi ;;
     *) echo "unknown mode $MODE"; exit 2 ;;
 esac
 cd "$RUN"
