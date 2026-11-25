@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IconScale.h"
 #include "Graphics/Mesh.hpp"
 #include "Graphics/Shader.h" 
 #include "Graphics/Texture2D.h"
@@ -139,16 +140,9 @@ void MapObject<T>::AddToMesh()
 template <typename T>
 void MapObject<T>::Update(bool clear)
 {
-    // The same size on the screen at every zoom up to 1.7, then growing with the map. On the overview,
-    // where hundreds of icons pile up, they shrink to a bit more than half.
-    float overview = (Map::m_Zoom - 0.2f) / (0.9f - 0.2f);
-    if (overview < 0.0f) overview = 0.0f;
-    if (overview > 1.0f) overview = 1.0f;
-    m_Scale = (0.85f / Map::m_Zoom) * 0.5f * (0.55f + 0.45f * overview);
-
-    float minScale = 0.25f;
-    if (m_Scale < minScale)
-        m_Scale = minScale;
+    // Smaller on the overview, one size on the screen up to zoom 1.7, growing with the map up to
+    // IconScale::GrowthZoom and one size again from there (IconScale.h).
+    m_Scale = IconScale::ForZoom(Map::m_Zoom);
 
     if (clear) m_Mesh.Clear();
 
