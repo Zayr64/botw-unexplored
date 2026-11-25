@@ -22,6 +22,7 @@ public:
     static constexpr ButtonTypes WeaponChests = ButtonTypes::WeaponChests;
     static constexpr ButtonTypes MaterialChests = ButtonTypes::MaterialChests;
     static constexpr ButtonTypes Walls = ButtonTypes::Walls;
+    static constexpr ButtonTypes HeroPath = ButtonTypes::HeroPath;
 
 public:
     // Position is the top-left corner

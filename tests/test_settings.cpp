@@ -35,6 +35,7 @@ int main()
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Walls) == 9, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::WeaponChests) == 10, "");
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::MaterialChests) == 11, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::HeroPath) == 12, "");
 
     // A release from before the chests reads header, version, 4 values, 7 entries, showMode and language, and
     // stops: the file starts with exactly those lines, and the chests come after them.
@@ -46,10 +47,26 @@ int main()
         while (std::getline(written, line))
             lines.push_back(line);
     }
-    assert(lines.size() == 20);
+    assert(lines.size() == 21);
     assert(lines[0] == "BOTW_UNEXPLORED_SETTINGS" && lines[1] == "2" && lines[5] == "0");
     assert(lines[6 + 3] == "1" && lines[13] == "2" && lines[14] == "1");
     assert(lines[15] == "0" && lines[16] == "1" && lines[17] == "0" && lines[18] == "0" && lines[19] == "0");
+    assert(lines[20] == "1"); // the Hero's Path, on unless switched off
+
+    // The file of a release before the Hero's Path (zayr19 and before) ends one line earlier: the entry keeps the value
+    // it had (on by default).
+    const std::string beforePathFile =
+        "BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n0\n1\n1\n0\n1\n";
+    SettingsIO::Settings defaults;
+    assert(defaults.visible[12]);
+    std::stringstream beforePath(beforePathFile);
+    SettingsIO::Settings fromBeforePath;
+    assert(SettingsIO::Load(beforePath, fromBeforePath) == SettingsIO::LoadResult::Current);
+    assert(fromBeforePath.visible[12] && fromBeforePath.visible[11]);
+    // Switched off, it stays off.
+    std::stringstream pathOff(beforePathFile + "0\n");
+    SettingsIO::Settings pathOffSettings;
+    assert(SettingsIO::Load(pathOff, pathOffSettings) == SettingsIO::LoadResult::Current && !pathOffSettings.visible[12]);
 
     // The file of the release with chests and no walls ends one line earlier: the walls stay off.
     std::stringstream beforeWalls("BOTW_UNEXPLORED_SETTINGS\n2\n4\n-5\n0.5\n1\n1\n1\n0\n0\n0\n1\n0\n0\n-1\n1\n1\n");

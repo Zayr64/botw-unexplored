@@ -31,6 +31,9 @@ fi
 /tmp/test_map_hd_grid
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_icon_scale.cpp source/IconScale.cpp -o /tmp/test_icon_scale
 /tmp/test_icon_scale
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_hero_path.cpp source/HeroPath.cpp -o /tmp/test_hero_path
+# HERO_PATH_DIR: the tracker folder of a real save, to check too (never in the repository).
+/tmp/test_hero_path ${HERO_PATH_DIR:+"$HERO_PATH_DIR"}
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_image_override.cpp source/ImageOverride.cpp -o /tmp/test_image_override
 /tmp/test_image_override
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_flags.cpp source/ShrineFlags.cpp -o /tmp/test_shrine_flags

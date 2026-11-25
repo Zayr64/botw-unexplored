@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "BloodMoon.h"
+#include "HeroPath.h"
 #include "Chests.h"
 #include "Data.h"
 #include "Walls.h"
@@ -108,6 +109,10 @@ namespace SavefileIO
     bool IsProgressFlagSet(uint32_t flagHash);
     // The game has the Expansion Pass: a chest of it opened, its main quest ready or a save in Master Mode.
     bool HasExpansionPass();
+    // The Hero's Path of the save shown: from save:/tracker with the game closed, else from the copy of it on the SD
+    // (the last time this app ran with the game closed). Empty when there is none.
+    const HeroPath::Path& GetHeroPath();
+    double HeroPathMeters();
     int GetMostRecentSavefile(const std::string& dir, bool masterMode = false); // Needs slash at end of dir
 
     void CopySavefiles();

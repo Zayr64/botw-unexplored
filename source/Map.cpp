@@ -246,6 +246,43 @@ namespace
     }
 
     // A ring that breathes around the object whose card is open.
+    // The Hero's Path: a line of one width on the screen at every zoom, over the map and under the icons. Points
+    // closer than a pixel and a half to the last one drawn are skipped (the overview has tens of thousands), and only
+    // the stretches near the view are drawn.
+    LineRenderer* s_HeroPathLines = nullptr;
+    constexpr float HeroPathPixels = 2.5f;
+    const glm::vec4 HeroPathColor(0.34f, 1.0f, 0.71f, 0.85f);
+
+    void RenderHeroPath()
+    {
+        const HeroPath::Path& path = SavefileIO::GetHeroPath();
+        if (path.segments.empty() || s_HeroPathLines == nullptr)
+            return;
+        const float width = HeroPathPixels / Map::m_Zoom;
+        const float minStep = 1.5f / Map::m_Zoom;
+        const float margin = 4.0f / Map::m_Zoom;
+        constexpr float MapScale = 0.25f;
+        for (const HeroPath::Segment& segment : path.segments)
+        {
+            const size_t count = segment.points.size();
+            glm::vec2 last(segment.points[0].x * MapScale, -segment.points[0].z * MapScale);
+            for (size_t i = 1; i < count; ++i)
+            {
+                const glm::vec2 point(segment.points[i].x * MapScale, -segment.points[i].z * MapScale);
+                if (i + 1 < count && glm::distance(point, last) < minStep)
+                    continue;
+                if (Map::IsInView(last, margin) || Map::IsInView(point, margin))
+                {
+                    if (s_HeroPathLines->IsFull())
+                        s_HeroPathLines->RenderLines(Map::m_ProjectionMatrix, Map::m_ViewMatrix);
+                    s_HeroPathLines->AddSegment(last, point, width, HeroPathColor);
+                }
+                last = point;
+            }
+        }
+        s_HeroPathLines->RenderLines(Map::m_ProjectionMatrix, Map::m_ViewMatrix);
+    }
+
     void RenderSelectedObjectHighlight()
     {
         glm::vec2 position;
@@ -416,6 +453,7 @@ bool Map::Init()
     m_Font.m_ViewMatrix = &m_ViewMatrix;
 
     m_LineRenderer = new LineRenderer();
+    s_HeroPathLines = new LineRenderer(4096);
     Ui::Init();
 
     m_KorokDialog = new KorokDialog();
@@ -940,6 +978,8 @@ void Map::Render()
 
     if (SavefileIO::LoadedSavefile)
     {
+        if (m_Legend->m_Show[IconButton::ButtonTypes::HeroPath])
+            RenderHeroPath();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Koroks])
         {
             // Render korok paths
@@ -1122,6 +1162,8 @@ void Map::Destroy()
     m_ImageViewer = nullptr;
     delete m_LineRenderer;
     m_LineRenderer = nullptr;
+    delete s_HeroPathLines;
+    s_HeroPathLines = nullptr;
     Ui::Destroy();
 
     m_Font.Destroy();

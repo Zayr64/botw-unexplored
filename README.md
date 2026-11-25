@@ -9,6 +9,11 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Koroks, shrines, DLC shrines, Hinoxes, Taluses, and Moldugas.
 - **Breakable walls**: the 140 walls of the world map that a bomb opens, as one more category that starts switched off. The card only says whether the wall was broken.
 - **Treasure chests** of the world map that are still closed and hold something rare, in three categories that start switched off, each with an icon of its own colour: `Armor & key items` (armor, key items and horse gear: what is kept for good), `Rare weapons` (weapons, bows and shields found in at most two chests of the whole map) and `Rare materials` (the same for materials). A chest card shows what the chest holds (the item and how many) under the name of its group, whether it is opened and how far it is. The other chests, with arrows, gems, rupees and gear found in many chests, are not on the map: the Progress tab counts them. Chests of the Expansion Pass show once the save has a sign of it (one of them opened, the Champions' Ballad or a Master Mode save); chests that only exist in Master Mode show only there. Chests inside shrines and Divine Beasts are not on the map (a shrine card tells when one is left).
+- **Hero's Path**: where Link has walked, from the save's `tracker/trackblockNN.sav` files, as a mint line over the
+  map and under the icons, one width on the screen at every zoom; split where Link warped, died or went into a shrine.
+  Its legend row (on by default) tells how far that is. The game keeps the newest part in memory, where the app does
+  not read it: with the game open the line is the one of the last time the app ran with it closed (a copy of the files
+  is kept in `saves/<profile>/tracker/`).
 - **Live progress while playing**: with BotW 1.6.0 running behind the app (opened from the Album), the game's own flags are read from its memory every time the app opens, and again with `-`. Nothing is written to the game. The chip at the top right tells where the progress comes from: `Live from the game`, `Save backup` (the memory could not be read; the reason shows for a few seconds and goes to `log.txt`) or `Save`.
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
 - A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
@@ -121,7 +126,8 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, and the Blood Moon estimate. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, the Blood Moon estimate, the size of the icons at each zoom, and the
+reading of the Hero's Path files (`HERO_PATH_DIR` adds the tracker folder of a real save). GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 
@@ -130,6 +136,7 @@ They cover settings migration and validation, UTF-8 decoding, manual-progress pr
 - [zeldamods object map](https://objmap.zeldamods.org/) — positions, contents and save flags of the treasure chests, read from the game's map files (`tools/gen_chests.py` turns them into `source/ChestData.cpp`, `tools/gen_shrine_chests.py` does the same for the chests inside the shrines, and `tools/gen_walls.py` for the breakable walls), and the outline of the fifteen regions (`tools/gen_regions.py`).
 - [leoetlino/botw](https://github.com/leoetlino/botw) — the game's data in readable form, from which `tools/gen_progress.py` takes the kind of each quest, the flags of its first and last step, who gives it and what it waits for, and the armor pieces with their levels of upgrade and which of them only amiibo give.
 - [Hyrule Compendium API](https://gadhagod.github.io/Hyrule-Compendium-API/) — the category of each entry of the compendium, which the game's data does not tell.
+- [savage13/heros_path](https://github.com/savage13/heros_path) (BSD-2-Clause), the [zephenryus notes](https://gist.github.com/zephenryus/e46c797ccecf6134d4245bb9f2e5e2a5) and [jinghaihan/botw-totk-atlas](https://github.com/jinghaihan/botw-totk-atlas) (MIT) — the format of the Hero's Path files and where its line breaks (`source/HeroPath.cpp`).
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.

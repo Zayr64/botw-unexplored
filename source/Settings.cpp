@@ -68,7 +68,7 @@ namespace
             if (!ParseBool(value, settings.visible[read])) return false;
         // The file of a release with a single category of special chests: the two groups split from it show if it did.
         if (read > SettingsIO::SpecialChestsEntry && read <= SettingsIO::FirstSplitEntry)
-            for (size_t entry = SettingsIO::FirstSplitEntry; entry < SettingsIO::CategoryCount; ++entry)
+            for (size_t entry = SettingsIO::FirstSplitEntry; entry < SettingsIO::HeroPathEntry; ++entry)
                 settings.visible[entry] = settings.visible[SettingsIO::SpecialChestsEntry];
         return true;
     }

@@ -164,6 +164,7 @@ namespace Localization
         MinutesOfPlay,
         BloodMoonNotYet,
         BloodMoonNote,
+        HeroPath,
         Count
     };
 

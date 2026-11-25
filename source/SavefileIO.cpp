@@ -91,6 +91,10 @@ namespace
     private:
         bool m_Mounted;
     };
+
+    // The Hero's Path (defined further down).
+    void LoadHeroPath(const std::string& folder);
+    std::string ProfileFolder(u64 uid1, u64 uid2);
 }
 
 bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool followGameMode)
@@ -136,6 +140,7 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         Map::m_GameRunningDialog->SetOpen(false);
         Map::m_MasterModeDialog->SetOpen(false);
         Map::m_NoSavefileDialog->SetOpen(false);
+        LoadHeroPath("save:/tracker/"); // the save is still mounted here
 
         if (!chooseProfile)
             CopySavefiles();
@@ -186,6 +191,8 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         candidate.noSavefileForUser = false;
         candidate.masterModeFileLoaded = loadMasterMode;
         CommitState(candidate);
+        // The game keeps the path in memory where this app does not read it: the copy of the last closed-game run.
+        LoadHeroPath(ProfileFolder(candidate.accountUid1, candidate.accountUid2) + "/tracker/");
         Map::m_GameRunningDialog->SetOpen(false);
         Map::m_MasterModeDialog->SetOpen(false);
         Map::m_NoSavefileDialog->SetOpen(false);
@@ -540,6 +547,18 @@ void SavefileIO::CopySavefiles()
         Log("Copied savefile " + savefileFolders[i] + " to " + target);
     }
 
+    // The Hero's Path, kept with the copies for when the game is open.
+    const std::string trackerFolder = savesFolder + "/tracker";
+    if (!DirectoryExists(trackerFolder))
+        mkdir(trackerFolder.c_str(), 0777);
+    for (int i = 0; i < HeroPath::MaxFiles; ++i)
+    {
+        char name[32];
+        std::snprintf(name, sizeof(name), "/trackblock%02d.sav", i);
+        if (FileExists(std::string("save:/tracker") + name))
+            CopyFile(std::string("save:/tracker") + name, trackerFolder + name);
+    }
+
 }
 
 s32 SavefileIO::CopyFile(const std::string &srcPath, const std::string &dstPath)
@@ -805,6 +824,41 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     parsedState.playerInsideShrine = false;
 }
 
+    HeroPath::Path s_HeroPath;
+    double s_HeroPathMeters = 0.0;
+
+    std::string ProfileFolder(u64 uid1, u64 uid2)
+    {
+        return "sdmc:/switch/botw-unexplored/saves/" + std::to_string(uid1) + " - " + std::to_string(uid2);
+    }
+
+    // The trackblock files of `folder` ("save:/tracker/" or the copy on the SD) made into the Hero's Path.
+    void LoadHeroPath(const std::string& folder)
+    {
+        std::vector<HeroPath::Record> records;
+        int files = 0;
+        for (int i = 0; i < HeroPath::MaxFiles; ++i)
+        {
+            char name[32];
+            std::snprintf(name, sizeof(name), "trackblock%02d.sav", i);
+            std::vector<uint8_t> data;
+            if (!ReadFileBuffer((folder + name).c_str(), data))
+                continue;
+            std::string error;
+            if (!HeroPath::ReadFile(data.data(), data.size(), records, error))
+            {
+                Log("HERO PATH: " + std::string(name) + ": " + error);
+                continue;
+            }
+            ++files;
+        }
+        s_HeroPath = HeroPath::Build(std::move(records));
+        s_HeroPathMeters = HeroPath::Length(s_HeroPath);
+        Log("HERO PATH: " + folder + ", " + std::to_string(files) + " files, " + std::to_string(s_HeroPath.points) +
+            " points in " + std::to_string(s_HeroPath.segments.size()) + " segments, " +
+            std::to_string(static_cast<int>(s_HeroPathMeters / 1000.0)) + " km");
+    }
+
 bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parsedState)
 {
     Log("Opening savefile", filepath);
@@ -999,6 +1053,16 @@ bool LoadLive(LiveState& live)
     }
     return true;
 }
+}
+
+const HeroPath::Path& SavefileIO::GetHeroPath()
+{
+    return s_HeroPath;
+}
+
+double SavefileIO::HeroPathMeters()
+{
+    return s_HeroPathMeters;
 }
 
 bool SavefileIO::ParseFile(const char *filepath)

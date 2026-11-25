@@ -15,6 +15,7 @@ namespace LegendCategories
         WeaponChests,
         MaterialChests,
         Walls,
+        HeroPath, // not objects: the line of where Link has walked (HeroPath.h)
         Count
     };
 

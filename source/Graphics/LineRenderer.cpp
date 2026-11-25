@@ -7,7 +7,7 @@
 
 #define PI 3.14159265358979323846f
 
-LineRenderer::LineRenderer()
+LineRenderer::LineRenderer(int maxLines) : MAX_LINES(maxLines)
 {
     // Shader
     std::string vertexShaderSource = R"text(
@@ -77,6 +77,25 @@ void LineRenderer::AddLine(glm::vec2 start, glm::vec2 end, float width, glm::vec
         m_Mesh.AddVertex(vertex);
     }
 
+    for (int i = 0; i < 6; i++)
+        m_Mesh.AddIndex(BasicVertices::Quad::Indices[i] + m_Mesh.GetVertices().size() - 4);
+}
+
+void LineRenderer::AddSegment(glm::vec2 start, glm::vec2 end, float width, glm::vec4 color)
+{
+    const glm::vec2 along = end - start;
+    const float length = sqrtf(along.x * along.x + along.y * along.y);
+    if (!(length > 0.0f))
+        return;
+    const glm::vec2 side = glm::vec2(-along.y, along.x) * (0.5f * width / length);
+    const glm::vec2 corners[4] = {start - side, end - side, end + side, start + side};
+    for (int i = 0; i < 4; i++)
+    {
+        ColorVertex vertex;
+        vertex.position = glm::vec3(corners[i], 0.0f);
+        vertex.color = color;
+        m_Mesh.AddVertex(vertex);
+    }
     for (int i = 0; i < 6; i++)
         m_Mesh.AddIndex(BasicVertices::Quad::Indices[i] + m_Mesh.GetVertices().size() - 4);
 }

@@ -1,4 +1,6 @@
 #include "Legend.h"
+
+#include <cstdio>
 #include "MapCompletion.h"
 
 #include "Graphics/ShapeBatch.h"
@@ -51,7 +53,7 @@ namespace
     }
 
     constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
-    constexpr float RowHeight = 50.0f; // nine rows end just above the bottom bar
+    constexpr float RowHeight = 44.0f; // ten rows end just above the bottom bar (nine of 50 until zayr19)
     constexpr float RowGap = 6.0f;
     constexpr float RowRadius = 8.0f;
 
@@ -63,6 +65,7 @@ namespace
         case IconButton::WeaponChests: return Localization::Text::WeaponChests;
         case IconButton::MaterialChests: return Localization::Text::MaterialChests;
         case IconButton::Walls: return Localization::Text::Walls;
+        case IconButton::HeroPath: return Localization::Text::HeroPath;
         default:
             // Koroks to Moldugas, in the order of the categories
             return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
@@ -109,9 +112,10 @@ Legend::Legend()
         m_Show[i] = false;
     }
 
-    // Show koroks and shrines by default
+    // Show koroks, shrines and the Hero's Path by default (as SettingsIO::Settings does)
     m_Buttons[0]->Click(this, true);
     m_Buttons[1]->Click(this, true);
+    m_Buttons[IconButton::HeroPath]->Click(this, true);
 
     // Set first highlighted button
     UpdateSelectedButton();
@@ -311,6 +315,7 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case WeaponChests: iconPath = Data::IconOf(Data::ChestGroup::Weapon); break;
     case MaterialChests: iconPath = Data::IconOf(Data::ChestGroup::Material); break;
     case Walls: iconPath = "romfs:/wall.png"; break;
+    case HeroPath: iconPath = "romfs:/heropath.png"; break;
     default: break;
     }
 
@@ -387,6 +392,8 @@ void IconButton::DrawShapes()
     else
         shapes.AddRoundedRect(left, bottom, right, top, RowRadius, m_IsToggled ? Ui::Colors::RowOn : Ui::Colors::RowOff);
 
+    if (m_Type == HeroPath)
+        return; // a line, not things to find: no bar
     int found = 0, total = 0;
     Count(found, total);
     Ui::ProgressBar(left + 64.0f, bottom + 8.0f, m_Width - 64.0f - 14.0f, 4.0f,
@@ -407,11 +414,19 @@ void IconButton::DrawText()
     Count(found, total);
 
     const glm::vec3& color = m_IsToggled ? Ui::Colors::Text : Ui::Colors::TextDim;
-    const float baseline = m_Position.y - 27.0f;
+    const float baseline = m_Position.y - 24.0f;
     const std::string& label = Localization::Get(LabelOf(m_Type));
     Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
-    Ui::Text(std::to_string(found) + "/" + std::to_string(total), glm::vec2(m_Position.x + m_Width - 14.0f, baseline),
-             0.40f, color, ALIGN_RIGHT);
+    std::string value = std::to_string(found) + "/" + std::to_string(total);
+    if (m_Type == HeroPath)
+    {
+        // How far Link has walked, as the path tells (in the region shown or not: the path is one).
+        const double km = SavefileIO::HeroPathMeters() / 1000.0;
+        char text[32];
+        std::snprintf(text, sizeof(text), km >= 100.0 ? "%.0f km" : "%.1f km", km);
+        value = SavefileIO::GetHeroPath().segments.empty() ? std::string("-") : std::string(text);
+    }
+    Ui::Text(value, glm::vec2(m_Position.x + m_Width - 14.0f, baseline), 0.40f, color, ALIGN_RIGHT);
 }
 
 bool IconButton::Click(Legend* legend)
