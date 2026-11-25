@@ -1,6 +1,7 @@
 #include "MapHd.h"
 
 #include <condition_variable>
+#include <cstdlib>
 #include <fstream>
 #include <mutex>
 #include <thread>
@@ -48,12 +49,25 @@ namespace
         unsigned char* pixels = nullptr;
         int width = 0;
         int height = 0;
+        bool fromDecoder = true; // freed by stbi_image_free; false: a halved copy, freed by free
     };
+
+    void FreePixels(Decoded& decoded)
+    {
+        if (!decoded.pixels)
+            return;
+        if (decoded.fromDecoder)
+            stbi_image_free(decoded.pixels);
+        else
+            std::free(decoded.pixels);
+        decoded.pixels = nullptr;
+    }
 
     bool s_Enabled = false;
     bool s_Active = false;
     bool s_Application = true;  // false when opened from the Album, with little memory
     int s_MaxLoaded = MapHdGrid::MaxLoadedApplication;
+    int s_Reduction = 1;        // 2 from the Album: each chunk halved before it becomes a texture
     unsigned int s_NextMemoryCheck = 0;
     bool s_MemoryLogged = false;
     unsigned int s_Frame = 0;
@@ -86,6 +100,19 @@ namespace
             int channels = 0;
             const std::string path = std::string(Directory) + MapHdGrid::ChunkFileName(index);
             decoded.pixels = stbi_load(path.c_str(), &decoded.width, &decoded.height, &channels, 3);
+            if (decoded.pixels && s_Reduction == 2)
+            {
+                // From the Album: the chunk at half its size, so that it takes a quarter of the memory.
+                const int width = MapHdGrid::HalfSize(decoded.width), height = MapHdGrid::HalfSize(decoded.height);
+                unsigned char* half = static_cast<unsigned char*>(std::malloc(static_cast<size_t>(width) * height * 3));
+                if (half)
+                    MapHdGrid::Halve(decoded.pixels, decoded.width, decoded.height, half);
+                FreePixels(decoded);
+                decoded.pixels = half;
+                decoded.fromDecoder = false;
+                decoded.width = width;
+                decoded.height = height;
+            }
 
             lock.lock();
             s_Decoded = decoded;
@@ -97,12 +124,17 @@ namespace
     void Upload(const Decoded& decoded)
     {
         Chunk& chunk = s_Chunks[decoded.index];
-        if (!decoded.pixels || decoded.width != MapHdGrid::ChunkWidthPixels(decoded.index) ||
-            decoded.height != MapHdGrid::ChunkHeightPixels(decoded.index))
+        int width = MapHdGrid::ChunkWidthPixels(decoded.index), height = MapHdGrid::ChunkHeightPixels(decoded.index);
+        if (s_Reduction == 2)
+        {
+            width = MapHdGrid::HalfSize(width);
+            height = MapHdGrid::HalfSize(height);
+        }
+        if (!decoded.pixels || decoded.width != width || decoded.height != height)
         {
             Log("MAP HD: could not load", MapHdGrid::ChunkFileName(decoded.index));
-            if (decoded.pixels)
-                stbi_image_free(decoded.pixels);
+            Decoded failed = decoded;
+            FreePixels(failed);
             chunk.state = ChunkState::Failed;
             return;
         }
@@ -123,7 +155,8 @@ namespace
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glGenerateMipmap(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, 0);
-        stbi_image_free(decoded.pixels);
+        Decoded uploaded = decoded;
+        FreePixels(uploaded);
 
         // Same corner order and texture coordinates as the low-resolution map, which is also loaded flipped.
         const MapHdGrid::Rect rect = MapHdGrid::ChunkRect(decoded.index);
@@ -213,6 +246,7 @@ void MapHd::Init()
     }
 
     stbi_set_flip_vertically_on_load(true); // like every other texture in the app
+    s_Reduction = MapHdGrid::Reduction(s_Application); // before the decoding thread starts
     s_Stop = false;
     s_Worker = std::thread(Worker);
     s_Enabled = true;
@@ -220,7 +254,7 @@ void MapHd::Init()
     s_NextMemoryCheck = 0;
     s_MemoryLogged = false;
     Log("MAP HD: on, up to " + std::to_string(s_MaxLoaded) + " chunks" +
-        (s_Application ? "" : ", each loaded only while memory allows"));
+        (s_Application ? "" : " at half size (the map at 2x), each loaded only while memory allows"));
 }
 
 void MapHd::Update(const glm::vec2& cameraPosition, float zoom, float halfWidth, float halfHeight)
@@ -316,8 +350,8 @@ void MapHd::Destroy()
     s_Wake.notify_one();
     if (s_Worker.joinable())
         s_Worker.join();
-    if (s_HasDecoded && s_Decoded.pixels)
-        stbi_image_free(s_Decoded.pixels);
+    if (s_HasDecoded)
+        FreePixels(s_Decoded);
     s_HasDecoded = false;
 
     for (int index = 0; index < MapHdGrid::ChunkCount; ++index)

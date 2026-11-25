@@ -58,9 +58,27 @@ int main()
     // From the Album fewer chunks stay loaded, but more than a screen needs at the lowest zoom they show at
     assert(MaxLoadedChunks(true) == 40 && MaxLoadedChunks(false) == 24);
     assert(static_cast<int>(wide.size()) < MaxLoadedChunks(false));
-    // ...and one more is loaded only while 64 MB stay free after its 8 MB
-    assert(!HasMemoryForChunk(0) && !HasMemoryForChunk(71ull * 1024 * 1024));
-    assert(HasMemoryForChunk(72ull * 1024 * 1024) && HasMemoryForChunk(UINT64_MAX));
+    // ...and one more is loaded only while 32 MB stay free after its 8 MB: with the 60 MB the console has from the
+    // Album once the map is up, some 20 halved chunks (about 1 MB each) fit, more than a screen needs
+    assert(!HasMemoryForChunk(0) && !HasMemoryForChunk(39ull * 1024 * 1024));
+    assert(HasMemoryForChunk(40ull * 1024 * 1024) && HasMemoryForChunk(60ull * 1024 * 1024) && HasMemoryForChunk(UINT64_MAX));
+    assert((60 - 40) + 1 >= static_cast<int>(wide.size()));
+
+    // From the Album each chunk is halved: 2 x 2 means, an odd edge alone
+    assert(Reduction(true) == 1 && Reduction(false) == 2);
+    assert(HalfSize(1024) == 512 && HalfSize(736) == 368 && HalfSize(784) == 392 && HalfSize(5) == 3);
+    {
+        // 3 x 2 RGB: the first output pixel is the mean of the 2 x 2 block, the second the last column alone
+        const unsigned char pixels[3 * 2 * 3] = {0, 10, 255, 100, 20, 255, 7, 7, 7,
+                                                 0, 30, 0,   100, 40, 0,   9, 9, 9};
+        unsigned char out[2 * 1 * 3] = {};
+        Halve(pixels, 3, 2, out);
+        assert(out[0] == 50 && out[1] == 25 && out[2] == 128);
+        assert(out[3] == 8 && out[4] == 8 && out[5] == 8);
+        // Every chunk of the grid halves to whole pixels
+        for (int index = 0; index < ChunkCount; ++index)
+            assert(ChunkWidthPixels(index) % 2 == 0 && ChunkHeightPixels(index) % 2 == 0);
+    }
 
     // Eviction: the least recently used chunk, never one used in the current frame
     assert(PickEviction({{3, 10}, {7, 4}, {9, 8}}, 12) == 7);

@@ -81,6 +81,38 @@ int MapHdGrid::MaxLoadedChunks(bool application)
     return application ? MaxLoadedApplication : MaxLoadedApplet;
 }
 
+int MapHdGrid::Reduction(bool application)
+{
+    return application ? 1 : 2;
+}
+
+int MapHdGrid::HalfSize(int size)
+{
+    return (size + 1) / 2;
+}
+
+void MapHdGrid::Halve(const unsigned char* pixels, int width, int height, unsigned char* out)
+{
+    const int halfWidth = HalfSize(width);
+    const int halfHeight = HalfSize(height);
+    for (int y = 0; y < halfHeight; ++y)
+    {
+        const int y0 = y * 2;
+        const int y1 = std::min(y0 + 1, height - 1);
+        for (int x = 0; x < halfWidth; ++x)
+        {
+            const int x0 = x * 2;
+            const int x1 = std::min(x0 + 1, width - 1);
+            for (int c = 0; c < 3; ++c)
+            {
+                const int sum = pixels[(y0 * width + x0) * 3 + c] + pixels[(y0 * width + x1) * 3 + c] +
+                                pixels[(y1 * width + x0) * 3 + c] + pixels[(y1 * width + x1) * 3 + c];
+                out[(y * halfWidth + x) * 3 + c] = static_cast<unsigned char>((sum + 2) / 4);
+            }
+        }
+    }
+}
+
 bool MapHdGrid::HasMemoryForChunk(uint64_t freeBytes)
 {
     return freeBytes >= AppletReserveBytes + ChunkPeakBytes;
