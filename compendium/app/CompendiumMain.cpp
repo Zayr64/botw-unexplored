@@ -36,12 +36,19 @@ using namespace Compendium;
 
 namespace
 {
-    const float ScreenW = 1280.0f;
-    const float ScreenH = 720.0f;
-    const float HeaderH = 64.0f;
+    // Everything is drawn on a canvas of ScreenW x ScreenH stretched to the 1280x720 screen: with a zoom above 1 the
+    // canvas is smaller, so text, icons and rows grow together, and each tab lays itself out on what is left.
+    // COMPENDIUM_ZOOM 1 is the size up to 0.1.10; 1.25 chosen on 25/11 for the console's own screen.
+#ifndef COMPENDIUM_ZOOM
+#define COMPENDIUM_ZOOM 1.25f
+#endif
+    const float Zoom = COMPENDIUM_ZOOM;
+    const float ScreenW = 1280.0f / Zoom;
+    const float ScreenH = 720.0f / Zoom;
+    const float HeaderH = 56.0f;
     const float FooterH = 46.0f;
-    // The font is rasterised at 48 px: 0.36 is 17 px, the smallest text on the screen (read from a sofa, or on the
-    // console's own 7 inch screen).
+    // Text scales are fractions of the font's 44 px: 0.36 is 16 px on the canvas, the smallest text (times the zoom
+    // on the screen).
     const float SmallText = 0.36f;
 
     const glm::vec4 Background(0.035f, 0.05f, 0.06f, 1.0f);
@@ -104,6 +111,39 @@ namespace
         while (!t.empty() && Width(t + "...", scale) > width)
             t.pop_back();
         return t + "...";
+    }
+
+    // The full text when it fits the width, else the brief one (cut if even that does not fit).
+    std::string Pick(const std::string& full, const std::string& brief, float scale, float width)
+    {
+        return Width(full, scale) <= width ? full : Fit(brief, scale, width);
+    }
+
+    // The words of a text on lines no wider than `width`.
+    std::vector<std::string> Wrap(const std::string& s, float scale, float width)
+    {
+        std::vector<std::string> lines;
+        std::string line;
+        size_t start = 0;
+        while (start < s.size())
+        {
+            size_t end = s.find(' ', start);
+            if (end == std::string::npos)
+                end = s.size();
+            const std::string word = s.substr(start, end - start);
+            const std::string longer = line.empty() ? word : line + " " + word;
+            if (!line.empty() && Width(longer, scale) > width)
+            {
+                lines.push_back(line);
+                line = word;
+            }
+            else
+                line = longer;
+            start = end + 1;
+        }
+        if (!line.empty())
+            lines.push_back(line);
+        return lines;
     }
 
     std::string Number(int32_t n)
@@ -248,6 +288,7 @@ namespace
         bool computing = false;        // X or Y was pressed: the dishes are cooked again after this frame
         std::string error;
         int evaluated = 0;
+        int dishPage = 0; // the Dishes tab with room for one dish: 0 the first (best), 1 the other (A)
     };
 
     // Keeps the cursor in the list and the list's window on the cursor.
@@ -526,26 +567,33 @@ namespace
     {
         Rect(0, 0, ScreenW, HeaderH, BarColor);
         Rect(0, HeaderH, ScreenW, 1, Hairline);
-        const std::string title = "BotW Compendium";
-        Text(title, 28, 42, 0.62f, Gold);
         const char* tabs[] = {"Dishes", "Reserve", "Sell", "EXP"};
-        float x = 28 + Width(title, 0.62f) + 36;
+        float tabsW = 0.0f;
+        for (int i = 0; i < 4; i++)
+            tabsW += Width(tabs[i], 0.46f) + 36 + 8;
+        const std::string rupees = app.plan ? Number(app.plan->rupees) : std::string();
+        const float rupeesW = app.plan ? Width(rupees, 0.46f) + 40 : 0.0f;
+        // The title gets shorter when the zoom leaves no room for it.
+        std::string title = "BotW Compendium";
+        if (24 + Width(title, 0.62f) + 28 + tabsW + rupeesW + 24 > ScreenW)
+            title = "Compendium";
+        Text(title, 24, 38, 0.62f, Gold);
+        float x = 24 + Width(title, 0.62f) + 28;
         for (int i = 0; i < 4; i++)
         {
             const float w = Width(tabs[i], 0.46f) + 36;
             if (i == app.tab)
-                RoundRect(x, 14, w, 36, 10, RowOn);
-            Text(tabs[i], x + w / 2, 40, 0.46f, i == app.tab ? TextColor : TextDim, ALIGN_CENTER);
+                RoundRect(x, 10, w, 36, 10, RowOn);
+            Text(tabs[i], x + w / 2, 36, 0.46f, i == app.tab ? TextColor : TextDim, ALIGN_CENTER);
             x += w + 8;
         }
         if (app.plan)
         {
-            const std::string rupees = Number(app.plan->rupees);
             const float w = Width(rupees, 0.46f);
-            Text(rupees, ScreenW - 28, 41, 0.46f, TextColor, ALIGN_RIGHT);
-            Icons::Ui("rupee", ScreenW - 28 - w - 40, 16, 30);
+            Text(rupees, ScreenW - 24, 37, 0.46f, TextColor, ALIGN_RIGHT);
+            Icons::Ui("rupee", ScreenW - 24 - w - 40, 12, 30);
             if (app.computing)
-                Text("Cooking again...", ScreenW - 28 - w - 64, 41, SmallText, Accent, ALIGN_RIGHT);
+                Text("Cooking again...", ScreenW - 24 - w - 64, 37, SmallText, Accent, ALIGN_RIGHT);
         }
     }
 
@@ -569,7 +617,10 @@ namespace
     {
         std::string key;
         std::string label;
+        int keep; // when the footer has no room for every hint, the lowest go first
     };
+
+    std::string DishToggleHint(const App& app);
 
     // What the buttons do right now: only the ones that do something on this tab and on the selected row.
     std::vector<Hint> Hints(const App& app)
@@ -577,45 +628,61 @@ namespace
         std::vector<Hint> hints;
         if (!app.loading && app.error.empty())
         {
-            hints.push_back({"L/R", "tab"});
-            hints.push_back({"Up/Down", "move"});
+            hints.push_back({"L/R", "tab", 1});
+            hints.push_back({"Up/Down", "move", 0});
             if (app.visible[app.tab] > 0 && RowCount(app) > app.visible[app.tab])
-                hints.push_back({"Left/Right", "page"});
+                hints.push_back({"Left/Right", "page", 2});
             if (app.tab == 1 && !app.rows.empty())
             {
                 const int next = NextReveal(app, app.rows[app.cursor[1]]);
                 if (next)
-                    hints.push_back({"A", next == 1 ? "what for" : "name"});
+                    hints.push_back({"A", next == 1 ? "what for" : "name", 3});
             }
             if (app.tab == 3 && app.levelPlan && !app.levelRows.empty())
             {
                 const LevelRow& row = app.levelRows[app.cursor[3]];
                 if (row.reveal == 0 && app.levelPlan->flags[row.index].kills == 0)
-                    hints.push_back({"A", "name"});
+                    hints.push_back({"A", "name", 3});
             }
             if (app.tab == 0)
-                hints.push_back({"Y", app.wholePouch ? "ingredients: whole pouch" : "ingredients: free only"});
+            {
+                const std::string other = DishToggleHint(app);
+                if (!other.empty())
+                    hints.push_back({"A", other, 3});
+                hints.push_back({"Y", app.wholePouch ? "ingredients: whole pouch" : "ingredients: free only", 3});
+            }
             if (app.tab == 2 && app.prizedFree > 0)
-                hints.push_back({"Y", app.sellPrized ? "valuable critters: sold" : "valuable critters: kept"});
+                hints.push_back({"Y", app.sellPrized ? "valuable critters: sold" : "valuable critters: kept", 3});
             if (app.tab != 3)
-                hints.push_back({"X", app.countHidden ? "hidden needs: on" : "hidden needs: off"});
+                hints.push_back({"X", app.countHidden ? "hidden needs: on" : "hidden needs: off", 3});
         }
-        hints.push_back({"+", "exit"});
+        hints.push_back({"+", "exit", 2});
         return hints;
     }
 
     // The hints on the right of the footer: each button on a key cap, what it does in grey. Returns where they start.
-    float DrawHints(const std::vector<Hint>& hints)
+    float DrawHints(std::vector<Hint> hints)
     {
         const float scale = SmallText;
         const float pad = 8.0f;
         const float keyGap = 8.0f;
         const float gap = 20.0f;
-        float total = 0.0f;
-        for (const Hint& h : hints)
-            total += Width(h.key, scale) + 2 * pad + keyGap + Width(h.label, scale) + gap;
-        total -= gap;
-        const float start = ScreenW - 24 - total;
+        auto total = [&]() {
+            float w = -gap;
+            for (const Hint& h : hints)
+                w += Width(h.key, scale) + 2 * pad + keyGap + Width(h.label, scale) + gap;
+            return w;
+        };
+        // With a big zoom not every hint fits: moving and tabs go first, they are learned on the first day.
+        while (total() > ScreenW - 48 && hints.size() > 1)
+        {
+            size_t drop = 0;
+            for (size_t i = 1; i < hints.size(); i++)
+                if (hints[i].keep < hints[drop].keep)
+                    drop = i;
+            hints.erase(hints.begin() + drop);
+        }
+        const float start = ScreenW - 24 - total();
         const float baseline = ScreenH - 16;
         float x = start;
         for (const Hint& h : hints)
@@ -666,9 +733,11 @@ namespace
                 color = Warn;
             }
         }
+        // The long form, else the short one, else nothing (a cut date says nothing).
         const float room = hintsStart - 24 - 28;
-        Text(Width(source, SmallText) <= room ? source : Fit(brief, SmallText, room), 24, ScreenH - 16, SmallText,
-             color);
+        const std::string& shown = Width(source, SmallText) <= room ? source : brief;
+        if (Width(shown, SmallText) <= room)
+            Text(shown, 24, ScreenH - 16, SmallText, color);
     }
 
     // The result of a dish on one line, with the game's icons: effect, hearts. Returns the x after it.
@@ -732,31 +801,51 @@ namespace
         return crit;
     }
 
-    const float PartStep = 32.0f; // the height of an ingredient's line in a dish
+    const float PartStep = 30.0f; // the height of an ingredient's line in a dish
 
-    // From a dish's title to its last line (baselines).
-    float DishHeight(const FoundDish& d)
+    // A dish's name: smaller before it is cut, and on two lines when it does not fit even so.
+    std::vector<std::string> NameLines(const std::string& name, float width, float& scale)
     {
-        return 130.0f + PartStep * Parts(d.items, d.itemCount).size();
+        scale = 0.54f;
+        while (scale > 0.46f && Width(name, scale) > width)
+            scale -= 0.02f;
+        if (Width(name, scale) <= width)
+            return {name};
+        std::vector<std::string> lines = Wrap(name, scale, width);
+        if (lines.size() > 2)
+        {
+            std::string rest = lines[1];
+            for (size_t i = 2; i < lines.size(); i++)
+                rest += " " + lines[i];
+            lines.resize(2);
+            lines[1] = rest;
+        }
+        for (std::string& line : lines)
+            line = Fit(line, scale, width);
+        return lines;
     }
 
-    // `top`: the baseline of the title.
-    void DrawDish(const App& app, const FoundDish& d, float x, float top, float width, const std::string& title)
+    // `top`: the baseline of the title. Returns the baseline of the last line.
+    float DrawDish(const App& app, const FoundDish& d, float x, float top, float width, const std::string& title)
     {
         char name[96];
         DishName(*app.cook, d.result, name, sizeof(name));
         Text(Fit(title, SmallText, width), x, top, SmallText, Accent);
-        // A long name gets smaller before it is cut.
         float nameScale = 0.54f;
-        while (nameScale > 0.45f && Width(name, nameScale) > width)
-            nameScale -= 0.02f;
-        Text(Fit(name, nameScale, width), x, top + 34, nameScale, TextColor);
+        const std::vector<std::string> nameLines = NameLines(name, width, nameScale);
+        float y = top + 34;
+        for (size_t i = 0; i < nameLines.size(); i++)
+        {
+            Text(nameLines[i], x, y, nameScale, TextColor);
+            if (i + 1 < nameLines.size())
+                y += 28;
+        }
 
         const uint8_t mask = TierMask(app);
         const float step = PartStep;
         const float icon = 30.0f;
         const float scale = 0.40f;
-        float y = top + 34 + step;
+        y += step;
         for (const Part& p : Parts(d.items, d.itemCount))
         {
             // With the whole pouch, say which ingredients come out of what the Reserve tab holds back.
@@ -782,31 +871,31 @@ namespace
         // What the dish sells for, and what its ingredients would sell for as they are.
         Icons::Ui("rupee", x + 2, y - 20, 24);
         const float after = Text("Sells for " + Number(d.result.price), x + 32, y, 0.38f, TextColor);
-        Text("ingredients worth " + Number(d.cost), after + 18, y, SmallText, TextDim);
+        Text(Fit("ingredients worth " + Number(d.cost), SmallText, x + width - after - 18), after + 18, y, SmallText,
+             TextDim);
         y += 26;
         Text(Fit(CritText(app, d), SmallText, width), x, y, SmallText, TextDim);
+        return y;
     }
 
     struct ShownDish
     {
         const FoundDish* dish;
         std::string title;
+        std::string brief; // what A says to switch to it when only one dish fits
     };
 
-    // One or two dishes on the right of the Dishes tab, side by side: two dishes of five different ingredients do
-    // not fit one under the other, and this way the lines of one can be compared with the other's.
+    // Two dishes side by side: two dishes of five different ingredients do not fit one under the other, and this way
+    // the lines of one can be compared with the other's.
     void DrawDishes(const App& app, const std::vector<ShownDish>& shown, float x, float top, float width)
     {
         const float gap = 44;
         const float w = (width - gap) / 2;
-        float tallest = 0.0f;
+        float bottom = top;
         for (size_t i = 0; i < shown.size() && i < 2; i++)
-        {
-            DrawDish(app, *shown[i].dish, x + i * (w + gap), top, w, shown[i].title);
-            tallest = std::max(tallest, DishHeight(*shown[i].dish));
-        }
+            bottom = std::max(bottom, DrawDish(app, *shown[i].dish, x + i * (w + gap), top, w, shown[i].title));
         if (shown.size() > 1)
-            Rect(x + w + gap / 2, top - 16, 1, tallest + 26, Hairline);
+            Rect(x + w + gap / 2, top - 16, 1, bottom - top + 26, Hairline);
     }
 
     // The short result in the list on the left.
@@ -831,11 +920,83 @@ namespace
         return "";
     }
 
+    // The dishes of a goal: the best and the cheapest as strong, or the cheapest reaching the target.
+    std::vector<ShownDish> ShownDishes(const App& app, const Goal& g)
+    {
+        std::vector<ShownDish> shown;
+        switch (g.kind)
+        {
+        case GoalKind::Effect:
+        {
+            if (!g.result.found)
+                break;
+            shown.push_back({&g.result.best, "BEST", "best"});
+            const FoundDish& c = g.result.cheapest;
+            if (c.itemCount > 0 && c.cost < g.result.best.cost)
+                shown.push_back({&c, "CHEAPEST AS STRONG", "cheapest"});
+            break;
+        }
+        case GoalKind::Hearts:
+        {
+            const std::string target = Hearts(HeartsTarget(app));
+            const std::string all = Hearts(app.maxHearts);
+            if (g.target.found)
+                shown.push_back({&g.target.dish,
+                                 g.target.reached ? "CHEAPEST TO HEAL " + target + " OF " + all + " HEARTS"
+                                                  : "NOTHING HEALS " + target + " HEARTS: THE MOST",
+                                 "cheapest"});
+            // Its result line says the rest: "and every heart".
+            if (g.hearty.found)
+                shown.push_back({&g.hearty.dish, "OR ANY YELLOW-HEART DISH", "yellow hearts"});
+            break;
+        }
+        case GoalKind::Stamina:
+        {
+            const std::string wheels = Wheels(StaminaTarget(app), 1000);
+            if (g.target.found)
+                shown.push_back({&g.target.dish,
+                                 g.target.reached ? "CHEAPEST TO REFILL YOUR " + wheels + " WHEELS"
+                                                  : "NOTHING REFILLS " + wheels + " WHEELS: THE MOST",
+                                 "cheapest"});
+            break;
+        }
+        }
+        return shown;
+    }
+
+    // The list on the left: as wide as the longest name and result need, a third of the screen or more.
+    float DishListW(const App& app)
+    {
+        float label = 0.0f;
+        for (const Goal& g : app.goals)
+            label = std::max(label, Width(g.label, 0.44f));
+        const float w = 64 + label + 24 + Width("+20 yellow hearts", 0.38f) + 28;
+        return std::min(ScreenW * 0.45f, std::max(w, std::min(400.0f, ScreenW * 0.3125f)));
+    }
+
+    // Two dishes side by side need 640 px; with less, one dish and A for the other.
+    bool TwoDishColumns(const App& app)
+    {
+        return ScreenW - DishListW(app) - 80 >= 640;
+    }
+
+    std::string DishToggleHint(const App& app)
+    {
+        if (app.goals.empty() || TwoDishColumns(app))
+            return "";
+        const std::vector<ShownDish> shown = ShownDishes(app, app.goals[app.cursor[0]]);
+        if (shown.size() < 2)
+            return "";
+        return shown[app.dishPage ? 0 : 1].brief;
+    }
+
     void DishesTab(App& app)
     {
-        const float listW = 400;
+        const float listW = DishListW(app);
         const float top = HeaderH + 12;
-        const float rowH = 46;
+        const float rowH = std::min(46.0f, (ScreenH - HeaderH - FooterH - 16) /
+                                               static_cast<float>(std::max<size_t>(1, app.goals.size())));
+        const float icon = std::min(40.0f, rowH - 6);
         app.visible[0] = 0;
         Rect(0, HeaderH + 1, listW, ScreenH - HeaderH - FooterH - 1, PanelColor);
         for (size_t i = 0; i < app.goals.size(); i++)
@@ -845,63 +1006,48 @@ namespace
             if (static_cast<int>(i) == app.cursor[0])
                 RoundRect(12, y, listW - 24, rowH - 4, 8, RowOn);
             Icons::Ui(g.kind == GoalKind::Hearts ? "heart" : (g.effect == LifeMaxUp ? "heart" : EffectIcon(g.effect)), 18,
-                      y + 1, 40, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
-            Text(g.label, 64, y + 29, 0.44f, TextColor);
+                      y + (rowH - 4 - icon) / 2, icon, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
+            const float baseline = y + (rowH - 4) / 2 + 7;
+            Text(g.label, 24 + icon, baseline, 0.44f, TextColor);
             bool found = false;
             const std::string summary = Summary(app, g, found);
-            Text(summary, listW - 28, y + 29, 0.38f, found ? Gold : TextDim, ALIGN_RIGHT);
+            Text(summary, listW - 28, baseline, 0.38f, found ? Gold : TextDim, ALIGN_RIGHT);
         }
 
         const Goal& g = app.goals[app.cursor[0]];
         const float x = listW + 40;
         const float width = ScreenW - x - 40;
-        Text(std::string(g.label) + " (" + g.detail + ")", x, top + 30, 0.40f, TextDim);
+        float y = top + 30;
+        const std::string heading = std::string(g.label) + " (" + g.detail + ")";
+        Text(Fit(heading, 0.40f, width), x, y, 0.40f, TextDim);
         if (app.wholePouch)
-            Text("Whole pouch: may use what the Reserve tab holds back", ScreenW - 40, top + 30, SmallText, Warn,
-                 ALIGN_RIGHT);
+        {
+            // Beside the heading when there is room, else under it.
+            const std::string warn = "Whole pouch: may use what the Reserve tab holds back";
+            if (Width(heading, 0.40f) + 32 + Width(warn, SmallText) <= width)
+                Text(warn, ScreenW - 40, y, SmallText, Warn, ALIGN_RIGHT);
+            else
+            {
+                y += 26;
+                Text(Fit(warn, SmallText, width), x, y, SmallText, Warn);
+            }
+        }
         const std::string nothing = app.wholePouch ? "Nothing in the pouch makes this."
                                                    : "Nothing free makes this. Y searches the whole pouch, X stops "
                                                      "counting hidden needs.";
-        // The titles fit a column: half of the panel.
-        std::vector<ShownDish> shown;
-        switch (g.kind)
-        {
-        case GoalKind::Effect:
-        {
-            if (!g.result.found)
-                break;
-            shown.push_back({&g.result.best, "BEST"});
-            const FoundDish& c = g.result.cheapest;
-            if (c.itemCount > 0 && c.cost < g.result.best.cost)
-                shown.push_back({&c, "CHEAPEST AS STRONG"});
-            break;
-        }
-        case GoalKind::Hearts:
-        {
-            const std::string target = Hearts(HeartsTarget(app));
-            const std::string all = Hearts(app.maxHearts);
-            if (g.target.found)
-                shown.push_back({&g.target.dish, g.target.reached ? "CHEAPEST TO HEAL " + target + " OF " + all +
-                                                                        " HEARTS"
-                                                                  : "NOTHING HEALS " + target + " HEARTS: THE MOST"});
-            // Its result line says the rest: "and every heart".
-            if (g.hearty.found)
-                shown.push_back({&g.hearty.dish, "OR ANY YELLOW-HEART DISH"});
-            break;
-        }
-        case GoalKind::Stamina:
-        {
-            const std::string wheels = Wheels(StaminaTarget(app), 1000);
-            if (g.target.found)
-                shown.push_back({&g.target.dish, g.target.reached ? "CHEAPEST TO REFILL YOUR " + wheels + " WHEELS"
-                                                                  : "NOTHING REFILLS " + wheels + " WHEELS: THE MOST"});
-            break;
-        }
-        }
+        const std::vector<ShownDish> shown = ShownDishes(app, g);
         if (shown.empty())
-            Text(nothing, x, top + 80, 0.42f, TextColor, ALIGN_LEFT, width);
+            Text(nothing, x, y + 50, 0.42f, TextColor, ALIGN_LEFT, width);
+        else if (TwoDishColumns(app))
+            DrawDishes(app, shown, x, y + 42, width);
         else
-            DrawDishes(app, shown, x, top + 72, width);
+        {
+            const size_t i = std::min(static_cast<size_t>(app.dishPage), shown.size() - 1);
+            std::string title = shown[i].title;
+            if (shown.size() > 1)
+                title += "   " + std::to_string(i + 1) + " of " + std::to_string(shown.size());
+            DrawDish(app, *shown[i].dish, x, y + 42, width, title);
+        }
     }
 
     void ReserveTab(App& app)
@@ -911,40 +1057,97 @@ namespace
         float y = HeaderH + 34;
         const int32_t own = p.rupeesNeeded[OwnedReachable] + p.rupeesNeeded[OwnedNextFairy];
         const int32_t hidden = p.rupeesNeeded[ArmorNotOwned] + p.rupeesNeeded[Crafted] + p.rupeesNeeded[Quests];
-        Text("Great Fairies " + std::to_string(p.fairies) + " of 4   upgrades left on your armor: " +
-                 std::to_string(p.ownedUpgradesLeft[0]) + " now, " + std::to_string(p.ownedUpgradesLeft[1]) +
-                 " more that need other fairies",
+        const std::string fairies = "Great Fairies " + std::to_string(p.fairies) + " of 4";
+        const std::string now = std::to_string(p.ownedUpgradesLeft[0]);
+        const std::string later = std::to_string(p.ownedUpgradesLeft[1]);
+        Text(Pick(fairies + "   upgrades left on your armor: " + now + " now, " + later + " more that need other fairies",
+                  fairies + "   armor upgrades left: " + now + " now, " + later + " later", 0.38f, ScreenW - 56),
              28, y, 0.38f, TextColor);
         y += 28;
         Icons::Ui("rupee", 26, y - 19, 24);
-        Text("To keep: " + Number(own) + " for your armor and the fountains" +
-                 (app.countHidden ? ", " + Number(hidden) + " hidden" : std::string(", hidden not counted")) +
-                 "   (you have " + Number(p.rupees) + ")",
+        const std::string hiddenPart =
+            app.countHidden ? ", " + Number(hidden) + " hidden" : std::string(", hidden not counted");
+        const std::string have = "   (you have " + Number(p.rupees) + ")";
+        Text(Pick("To keep: " + Number(own) + " for your armor and the fountains" + hiddenPart + have,
+                  "To keep: " + Number(own) + " for your armor" + hiddenPart + have, 0.38f, ScreenW - 84),
              56, y, 0.38f, p.rupees >= p.RupeesNeeded(mask) ? Good : Warn);
         y += 18;
 
         const int rows = static_cast<int>(app.rows.size());
         int& cursor = app.cursor[1];
         int& scroll = app.scroll[1];
-        const float colHave = 640, colOwn = 800, colHidden = 960, colFree = 1100;
+        // Number columns from the right, the shortage after the last. Have, Your armor, Hidden and Free while the
+        // names keep 300 px; with a big zoom one Keep column for both needs, and the split goes under the list.
+        const float shortW = Width("short 222 +222", SmallText) + 24;
+        const float step = std::max(Width("Your armor", SmallText), 100.0f) + 40;
+        const float colFree = ScreenW - 24 - shortW;
+        const bool split = colFree - 3 * step - 56 - 60 >= 300;
+        const float colHidden = colFree - step, colOwn = colHidden - step, colKeep = colFree - step;
+        const float colHave = split ? colOwn - step : colKeep - step;
+        const float nameW = colHave - 56 - 70;
         Rect(0, y, ScreenW, 30, BarColor);
         const float afterName = Text("Material", 56, y + 21, SmallText, TextDim);
         Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
         Text("Have", colHave, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Your armor", colOwn, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Hidden", colHidden, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+        if (split)
+        {
+            Text("Your armor", colOwn, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+            Text("Hidden", colHidden, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+        }
+        else
+            Text("Keep", colKeep, y + 21, SmallText, TextDim, ALIGN_RIGHT);
         Text("Free", colFree, y + 21, SmallText, TextDim, ALIGN_RIGHT);
         y += 32;
 
-        const float rowH = 30;
-        const float listBottom = ScreenH - FooterH - 70;
-        const int visible = std::max(1, static_cast<int>((listBottom - y) / rowH));
-        app.visible[1] = visible;
         if (rows == 0)
         {
-            Text("Nothing to hold back: no armor, purchase or quest needs your materials.", 56, y + 30, 0.40f, TextDim);
+            app.visible[1] = 1;
+            Text("Nothing to hold back: no armor, purchase or quest needs your materials.", 56, y + 30, 0.40f, TextDim,
+                 ALIGN_LEFT, ScreenW - 84);
             return;
         }
+
+        // The line under the list: what the selected row's hidden part is for (said when A asks), and with one Keep
+        // column, how it splits.
+        cursor = std::max(0, std::min(cursor, rows - 1));
+        std::vector<std::string> detail;
+        {
+            const MaterialRow& row = app.rows[cursor];
+            const MaterialPlan& m = p.materials[row.index];
+            std::string line;
+            if (HiddenNeed(m) == 0)
+                line = "Nothing hidden: all for the armor you have";
+            else if (row.reveal == 0)
+                line = "A: what the hidden part is for";
+            else
+            {
+                // Only the kinds this material is needed for.
+                const struct
+                {
+                    Tier tier;
+                    const char* what;
+                } kinds[] = {{ArmorNotOwned, " for armor you do not have"},
+                             {Crafted, " for the Ancient Oven"},
+                             {Quests, " for side quests"}};
+                for (const auto& k : kinds)
+                    if (m.need[k.tier] > 0)
+                        line += (line.empty() ? "Hidden: " : ", ") + Number(m.need[k.tier]) + k.what;
+            }
+            if (NextReveal(app, row) == 2)
+                line += "   (A: the name)";
+            if (!split)
+                line = "Your armor " + Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]) +
+                       (HiddenNeed(m) ? ", hidden " + Number(HiddenNeed(m)) : std::string()) + ".   " + line;
+            detail = Wrap(line, 0.38f, ScreenW - 56);
+            if (detail.size() > 2)
+                detail.resize(2);
+        }
+        const float detailTop = ScreenH - FooterH - 40 - 28 * (detail.size() - 1);
+
+        const float rowH = 30;
+        const float listBottom = detailTop - 30;
+        const int visible = std::max(1, static_cast<int>((listBottom - y) / rowH));
+        app.visible[1] = visible;
         KeepInView(cursor, scroll, rows, visible);
         for (int i = scroll; i < rows && i < scroll + visible; i++)
         {
@@ -959,11 +1162,18 @@ namespace
             const std::string name = !row.name.empty() ? row.name : (row.reveal >= 2 ? NameOf(app, m.item) : "Not found yet");
             if (named)
                 Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
-            Text(Fit(name, 0.38f, 400), 56, ry + 21, 0.38f, named ? TextColor : TextDim);
+            Text(Fit(name, 0.38f, nameW), 56, ry + 21, 0.38f, named ? TextColor : TextDim);
             Text(Number(m.have), colHave, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
-            Text(Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]), colOwn, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
             const int32_t h = HiddenNeed(m);
-            Text(h ? Number(h) : "-", colHidden, ry + 21, 0.38f, app.countHidden ? TextColor : TextDim, ALIGN_RIGHT);
+            if (split)
+            {
+                Text(Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]), colOwn, ry + 21, 0.38f, TextColor,
+                     ALIGN_RIGHT);
+                Text(h ? Number(h) : "-", colHidden, ry + 21, 0.38f, app.countHidden ? TextColor : TextDim,
+                     ALIGN_RIGHT);
+            }
+            else
+                Text(Number(m.Needed(mask)), colKeep, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
             const int32_t free = m.Free(mask);
             const int32_t shortBy = m.Needed(mask) - m.have;
             Text(Number(free), colFree, ry + 21, 0.38f, free > 0 ? Good : TextDim, ALIGN_RIGHT);
@@ -980,33 +1190,8 @@ namespace
             }
         }
         ScrollBar(y, visible * rowH, rows, visible, scroll);
-
-        // What the selected row's hidden part is for: only said when A asks.
-        const MaterialRow& row = app.rows[cursor];
-        const MaterialPlan& m = p.materials[row.index];
-        const float by = ScreenH - FooterH - 40;
-        std::string line;
-        if (HiddenNeed(m) == 0)
-            line = "Nothing hidden: all for the armor you have";
-        else if (row.reveal == 0)
-            line = "A: what the hidden part is for";
-        else
-        {
-            // Only the kinds this material is needed for.
-            const struct
-            {
-                Tier tier;
-                const char* what;
-            } kinds[] = {{ArmorNotOwned, " for armor you do not have"},
-                         {Crafted, " for the Ancient Oven"},
-                         {Quests, " for side quests"}};
-            for (const auto& k : kinds)
-                if (m.need[k.tier] > 0)
-                    line += (line.empty() ? "Hidden: " : ", ") + Number(m.need[k.tier]) + k.what;
-        }
-        if (NextReveal(app, row) == 2)
-            line += "   (A: the name)";
-        Text(line, 28, by, 0.38f, Accent);
+        for (size_t i = 0; i < detail.size(); i++)
+            Text(detail[i], 28, detailTop + 28 * i, 0.38f, Accent);
     }
 
     struct SellLine
@@ -1060,22 +1245,49 @@ namespace
         return lines;
     }
 
+    // How many of a pot's ingredients (from the first) keep their names on a row that ends at `limit`; the others show
+    // their icon and count only.
+    size_t NamedParts(const App& app, const SellLine& l, float scale, float limit)
+    {
+        float needed = 24;
+        for (const Part& part : l.parts)
+            needed += 34 + Width(std::to_string(part.count) + "x", scale) + 18;
+        size_t named = 0;
+        for (; named < l.parts.size(); named++)
+        {
+            const float more = Width(std::string(" ") + NameOf(app, l.parts[named].item), scale) + 6;
+            if (needed + more > limit)
+                break;
+            needed += more;
+        }
+        return named;
+    }
+
     void SellTab(App& app)
     {
         const SalePlan& s = *app.sale;
         float y = HeaderH + 34;
         const int32_t total = s.cookedTotal + s.partsLeftRaw + s.rawTotal;
-        Text("Elixirs: " + std::to_string(s.potCount) + " pots sell for " + Number(s.cookedTotal) +
-                 " rupees (their ingredients sold raw: " + Number(s.cookedRawTotal) + ")",
+        const std::string pots = std::to_string(s.potCount);
+        Text(Pick("Elixirs: " + pots + " pots sell for " + Number(s.cookedTotal) + " rupees (their ingredients sold raw: " +
+                      Number(s.cookedRawTotal) + ")",
+                  "Elixirs: " + pots + " pots sell for " + Number(s.cookedTotal) + " (raw: " + Number(s.cookedRawTotal) +
+                      ")",
+                  0.40f, ScreenW - 56),
              28, y, 0.40f, TextColor);
         y += 28;
-        Text("Monster parts left with no critter to cook them: " + Number(s.partsLeft) + ", worth " +
-                 Number(s.partsLeftRaw) + " raw.   Other items to sell raw: " + Number(s.rawTotal) + " rupees",
+        Text(Pick("Monster parts left with no critter to cook them: " + Number(s.partsLeft) + ", worth " +
+                      Number(s.partsLeftRaw) + " raw.   Other items to sell raw: " + Number(s.rawTotal) + " rupees",
+                  "Monster parts with no critter: " + Number(s.partsLeft) + " (" + Number(s.partsLeftRaw) +
+                      " raw).   Other items: " + Number(s.rawTotal),
+                  0.38f, ScreenW - 56),
              28, y, 0.38f, TextColor);
         y += 28;
         Icons::Ui("rupee", 26, y - 20, 26);
-        Text("All of it: " + Number(total) + " rupees   (" + Number(app.plan->rupees + total) + " with the " +
-                 Number(app.plan->rupees) + " you have)",
+        Text(Pick("All of it: " + Number(total) + " rupees   (" + Number(app.plan->rupees + total) + " with the " +
+                      Number(app.plan->rupees) + " you have)",
+                  "All of it: " + Number(total) + "   (" + Number(app.plan->rupees + total) + " with yours)", 0.40f,
+                  ScreenW - 86),
              58, y, 0.40f, Gold);
         y += 14;
 
@@ -1083,7 +1295,7 @@ namespace
         const int rows = static_cast<int>(lines.size());
         int& cursor = app.cursor[2];
         int& scroll = app.scroll[2];
-        const float colEach = 1020, colRaw = 1140, colPots = 1240;
+        const float colPots = ScreenW - 40, colRaw = colPots - 100, colEach = colRaw - 120;
         Rect(0, y, ScreenW, 30, BarColor);
         const float afterName = Text("Cook and sell", 28, y + 21, SmallText, TextDim);
         Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
@@ -1092,15 +1304,40 @@ namespace
         Text("Pots", colPots, y + 21, SmallText, TextDim, ALIGN_RIGHT);
         y += 32;
         const float rowH = 34;
-        const int visible = std::max(1, static_cast<int>((ScreenH - FooterH - 16 - y) / rowH));
-        app.visible[2] = visible;
+        const float scale = 0.38f;
+        const float limit = colEach - 110;
         if (rows == 0)
         {
+            app.visible[2] = 1;
             Text("Nothing free to sell.", 28, y + 30, 0.40f, TextDim);
             return;
         }
+
+        // When some pot cannot name all its ingredients on its row, the selected pot's are spelled out under the
+        // list (the room is kept for any row, so the list does not jump while moving).
+        cursor = std::max(0, std::min(cursor, rows - 1));
+        bool cut = false;
+        for (const SellLine& l : lines)
+            cut = cut || (l.count && NamedParts(app, l, scale, limit) < l.parts.size());
+        std::vector<std::string> detail;
+        if (cut)
+        {
+            const SellLine& l = lines[cursor];
+            std::string text;
+            if (l.count)
+                for (const Part& part : l.parts)
+                    text += (text.empty() ? "" : ", ") + std::to_string(part.count) + "x " + NameOf(app, part.item);
+            detail = Wrap(text, scale, ScreenW - 56);
+            if (detail.size() > 2)
+                detail.resize(2);
+            while (detail.size() < 2)
+                detail.push_back("");
+        }
+        const float detailTop = ScreenH - FooterH - 40 - 28 * (detail.empty() ? 0 : detail.size() - 1);
+        const float listBottom = detail.empty() ? ScreenH - FooterH - 16 : detailTop - 30;
+        const int visible = std::max(1, static_cast<int>((listBottom - y) / rowH));
+        app.visible[2] = visible;
         KeepInView(cursor, scroll, rows, visible);
-        const float scale = 0.38f;
         for (int i = scroll; i < rows && i < scroll + visible; i++)
         {
             const SellLine& l = lines[i];
@@ -1114,18 +1351,7 @@ namespace
             {
                 // Each ingredient: its icon and "4x"; the names too, for as many (from the first) as fit before the
                 // prices.
-                const float limit = colEach - 110;
-                float needed = 24;
-                for (const Part& part : l.parts)
-                    needed += 34 + Width(std::to_string(part.count) + "x", scale) + 18;
-                size_t named = 0;
-                for (; named < l.parts.size(); named++)
-                {
-                    const float more = Width(std::string(" ") + NameOf(app, l.parts[named].item), scale) + 6;
-                    if (needed + more > limit)
-                        break;
-                    needed += more;
-                }
+                const size_t named = NamedParts(app, l, scale, limit);
                 float x = 24;
                 for (size_t k = 0; k < l.parts.size(); k++)
                 {
@@ -1142,14 +1368,17 @@ namespace
             {
                 Icons::Item(ActorName(app, l.rawItem), 24, ry + 3, 28);
                 const std::string item = std::to_string(l.rawCount) + "x " + NameOf(app, l.rawItem);
-                const float after = Text(item, 58, baseline, scale, TextColor);
-                Text(l.kept ? "kept for cooking (Y sells them too)" : "sell as it is", after + 16, baseline, SmallText,
-                     TextDim);
+                const float after = Text(Fit(item, scale, colEach - 140), 58, baseline, scale, TextColor);
+                Text(Fit(l.kept ? "kept for cooking (Y sells them too)" : "sell as it is", SmallText,
+                         std::max(0.0f, colEach - 100 - after - 16)),
+                     after + 16, baseline, SmallText, TextDim);
             }
             if (!l.kept)
                 Text(Number(l.price), colEach, baseline, scale, Gold, ALIGN_RIGHT);
         }
         ScrollBar(y, visible * rowH, rows, visible, scroll);
+        for (size_t i = 0; i < detail.size(); i++)
+            Text(detail[i], 28, detailTop + 28 * i, scale, Accent);
     }
 
     // The hidden level: the points, the enemy and weapon levels, each family's rank, and the enemies counted.
@@ -1166,14 +1395,24 @@ namespace
         const LevelPlan& p = *app.levelPlan;
         char buf[160];
         float y = HeaderH + 34;
-        snprintf(buf, sizeof(buf), "%s of %s points (%d of %d enemies)   enemy level %.1f   weapon level %.1f",
-                 Number(static_cast<int32_t>(p.points)).c_str(), Number(static_cast<int32_t>(p.maxPoints)).c_str(),
-                 p.defeatedKinds, d.flagCount, p.enemyLevel, p.weaponLevel);
-        Text(buf, 28, y, 0.40f, Gold);
+        char levels[96];
+        snprintf(levels, sizeof(levels), "   enemy level %.1f   weapon level %.1f", p.enemyLevel, p.weaponLevel);
+        const std::string points = Number(static_cast<int32_t>(p.points));
+        Text(Pick(points + " of " + Number(static_cast<int32_t>(p.maxPoints)) + " points (" +
+                      std::to_string(p.defeatedKinds) + " of " + std::to_string(d.flagCount) + " enemies)" + levels,
+                  points + " points" + levels, 0.40f, ScreenW - 56),
+             28, y, 0.40f, Gold);
         y += 12;
 
-        // Families: the rank the level reaches and the way to the next one.
+        // Families: the rank the enemy level reaches, its picture and name (named even before the player defeats one:
+        // chosen on 25/11), and the way to the next one.
         const float rowH = 34;
+        float nameW = Width("No rank yet", 0.38f);
+        for (int s = 0; s < d.speciesCount; s++)
+            for (int r = 0; r < d.species[s].rankCount; r++)
+                nameW = std::max(nameW, Width(NameOf(app, Crc32(d.species[s].ranks[r].actor)), 0.38f));
+        const float bx = 62 + nameW + 28;
+        const float bw = std::max(100.0f, std::min(250.0f, ScreenW * 0.2f));
         for (int s = 0; s < d.speciesCount; s++)
         {
             const Species& sp = d.species[s];
@@ -1181,49 +1420,40 @@ namespace
             const float ry = y + s * rowH;
             if (s % 2)
                 Rect(0, ry, ScreenW, rowH, RowAlt);
-            // The family by the name of its lowest rank the player has defeated.
-            const std::string family = st.knownRank >= 0 ? NameOf(app, Crc32(sp.ranks[st.knownRank].actor)) : "Unknown family";
-            if (st.knownRank >= 0)
-                Icons::Enemy(sp.ranks[st.currentKnown ? st.current : st.knownRank].actor, 22, ry + 1, 32);
-            Text(Fit(family, 0.38f, 226), 62, ry + 24, 0.38f, st.knownRank >= 0 ? TextColor : TextDim);
-            std::string rank;
-            if (st.current < 0)
-                rank = "below the first rank";
-            else if (st.currentKnown)
-                rank = NameOf(app, Crc32(sp.ranks[st.current].actor));
+            Icons::Enemy(sp.ranks[std::max(0, st.current)].actor, 22, ry + 1, 32);
+            if (st.current >= 0)
+                Text(NameOf(app, Crc32(sp.ranks[st.current].actor)), 62, ry + 24, 0.38f, TextColor);
             else
-                rank = "rank " + std::to_string(st.current + 1) + " of " + std::to_string(sp.rankCount);
-            Text(Fit("now: " + rank, SmallText, 326), 300, ry + 24, SmallText, TextColor);
+                Text("No rank yet", 62, ry + 24, 0.38f, TextDim);
             if (st.current + 1 < sp.rankCount)
             {
                 const float from = st.current >= 0 ? sp.ranks[st.current].value : 0.0f;
                 const float to = sp.ranks[st.current + 1].value;
                 const float f = to > from ? (p.enemyLevel - from) / (to - from) : 0.0f;
-                const float bx = 640, bw = 250;
                 RoundRect(bx, ry + 12, bw, 10, 5, glm::vec4(1.0f, 1.0f, 1.0f, 0.12f));
                 RoundRect(bx, ry + 12, std::max(10.0f, bw * std::min(1.0f, std::max(0.0f, f))), 10, 5,
                           glm::vec4(Gold, 1.0f));
                 snprintf(buf, sizeof(buf), "%.1f / %.0f", p.enemyLevel, to);
-                Text(buf, bx + bw + 16, ry + 24, SmallText, TextDim);
-                Text(Fit(st.nextKnown ? "next: " + std::string(NameOf(app, Crc32(sp.ranks[st.current + 1].actor)))
-                                      : "next: hidden",
-                         SmallText, 250),
+                const float after = Text(buf, bx + bw + 16, ry + 24, SmallText, TextDim);
+                Text(Fit("next: " + std::string(NameOf(app, Crc32(sp.ranks[st.current + 1].actor))), SmallText,
+                         std::max(0.0f, ScreenW - 28 - after - 20)),
                      ScreenW - 28, ry + 24, SmallText, TextDim, ALIGN_RIGHT);
             }
             else
-                Text("top rank", 640, ry + 24, SmallText, Good);
+                Text("top rank", bx, ry + 24, SmallText, Good);
         }
         y += d.speciesCount * rowH + 10;
 
         const int rows = static_cast<int>(app.levelRows.size());
         int& cursor = app.cursor[3];
         int& scroll = app.scroll[3];
+        const float colPoints = ScreenW - 130, colEach = colPoints - 190, colDefeated = colEach - 200;
         Rect(0, y, ScreenW, 30, BarColor);
         const float afterName = Text("Enemy", 60, y + 21, SmallText, TextDim);
         Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
-        Text("Defeated", 760, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Points each", 960, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Points", 1150, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+        Text("Defeated", colDefeated, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+        Text("Points each", colEach, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+        Text("Points", colPoints, y + 21, SmallText, TextDim, ALIGN_RIGHT);
         y += 32;
         const float lineH = 30;
         const int visible = std::max(1, static_cast<int>((ScreenH - FooterH - 10 - y) / lineH));
@@ -1245,15 +1475,16 @@ namespace
             const char* label = NameOf(app, Crc32(f.actor));
             if (named)
                 Icons::Enemy(f.actor, 24, ry + 1, 28);
-            Text(named ? Fit(label, 0.38f, 560) : std::string("Not defeated yet"), 60, ry + 21, 0.38f,
+            Text(named ? Fit(label, 0.38f, colDefeated - 60 - 110) : std::string("Not defeated yet"), 60, ry + 21, 0.38f,
                  named ? TextColor : TextDim);
             // Each counter stops at its limit (10 for most enemies): further kills add nothing.
             const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());
-            Text(defeated, 760, ry + 21, 0.38f, fs.kills == 0 ? TextDim : (f.max > 0 && fs.kills >= f.max ? Good : TextColor),
-                 ALIGN_RIGHT);
+            Text(defeated, colDefeated, ry + 21, 0.38f,
+                 fs.kills == 0 ? TextDim : (f.max > 0 && fs.kills >= f.max ? Good : TextColor), ALIGN_RIGHT);
             snprintf(buf, sizeof(buf), "%g", f.point);
-            Text(buf, 960, ry + 21, 0.38f, TextDim, ALIGN_RIGHT);
-            Text(Number(static_cast<int32_t>(fs.total)), 1150, ry + 21, 0.38f, fs.kills ? Gold : TextDim, ALIGN_RIGHT);
+            Text(buf, colEach, ry + 21, 0.38f, TextDim, ALIGN_RIGHT);
+            Text(Number(static_cast<int32_t>(fs.total)), colPoints, ry + 21, 0.38f, fs.kills ? Gold : TextDim,
+                 ALIGN_RIGHT);
         }
         ScrollBar(y, visible * lineH, rows, visible, scroll);
     }
@@ -1358,6 +1589,9 @@ int main()
                     app.scroll[app.tab] += move;
                 app.cursor[app.tab] = std::max(0, std::min(rows - 1, app.cursor[app.tab] + move));
             }
+            // With room for one dish, A shows the other (the cheapest as strong, or the yellow-heart dish).
+            if ((down & HidNpadButton_A) && app.tab == 0)
+                app.dishPage = app.dishPage ? 0 : 1;
             if ((down & HidNpadButton_A) && app.tab == 3 && !app.levelRows.empty())
                 app.levelRows[app.cursor[3]].reveal = 1;
             if ((down & HidNpadButton_A) && app.tab == 1 && !app.rows.empty())
