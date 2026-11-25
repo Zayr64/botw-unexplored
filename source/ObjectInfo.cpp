@@ -16,7 +16,6 @@ void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const
                            const std::string& name, bool* found, const Data::Chest* chest)
 {
     m_Chest = chest;
-    m_Reveal = 0;
     m_Type = type;
     m_CompletionHash = completionHash;
     m_MapPosition = mapPosition;
@@ -33,17 +32,6 @@ void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const
         m_Icon = new TexturedQuad();
         m_Icon->Create(iconPath);
     }
-}
-
-bool ObjectInfo::NextRevealIsItem() const
-{
-    return m_Chest != nullptr && (m_Reveal >= 1 || Data::GroupOf(m_Chest->contents) == Data::ChestGroup::Material);
-}
-
-void ObjectInfo::RevealMore()
-{
-    if (CanReveal())
-        m_Reveal = NextRevealIsItem() ? 2 : m_Reveal + 1;
 }
 
 void ObjectInfo::SetOpen(bool open)
@@ -72,8 +60,11 @@ void ObjectInfo::Render()
         : Localization::GetObjectTypeName(m_Type);
     float top = Ui::CardHeader(m_Icon, 40.0f, title, Map::NearestRankText());
 
-    if (!m_Name.empty())
-        top = Ui::Paragraph(top, m_Name, 0.50f, Ui::Colors::Gold) - 6.0f;
+    // A chest's name is what it holds ("Bomb Arrow x10"); until zayr18 it was hidden behind two presses of A.
+    const std::string name = m_Chest != nullptr && m_Chest->item < Data::ChestItemNamesCount
+        ? std::string(Data::ChestItemNames[m_Chest->item]) : m_Name;
+    if (!name.empty())
+        top = Ui::Paragraph(top, name, 0.50f, Ui::Colors::Gold) - 6.0f;
 
     // What was done and what is left, one line each
     if (found && Map::IsManuallyMarked(m_Type, m_CompletionHash))
@@ -120,20 +111,6 @@ void ObjectInfo::Render()
             top = Ui::Paragraph(top, Localization::Get(Text::ChestEnemyCamp), 0.36f, Ui::Colors::TextDim);
         else if (m_Chest->flags & Data::ChestSideQuest)
             top = Ui::Paragraph(top, Localization::Get(Text::ChestSideQuest), 0.36f, Ui::Colors::TextDim);
-
-        // What is inside, under a line of its own: nothing until asked, then the kind of thing, then the item.
-        top -= 8.0f;
-        Ui::Shapes().AddRect(Ui::PanelLeft(), top - 1.0f, Ui::PanelLeft() + Ui::PanelInner(), top, Ui::Colors::Hairline);
-        top = Ui::Paragraph(top - 16.0f, Localization::Get(Text::Contents), 0.30f, Ui::Colors::TextDim) - 3.0f;
-        const bool validKind = m_Chest->contents < static_cast<uint8_t>(Data::ChestContents::Count);
-        const bool validItem = m_Chest->item < Data::ChestItemNamesCount;
-        if (m_Reveal >= 2 && validItem)
-            top = Ui::Paragraph(top, Data::ChestItemNames[m_Chest->item], 0.44f, Ui::Colors::Gold);
-        else if (m_Reveal >= 1 && validKind)
-            top = Ui::Paragraph(top, Localization::Get(static_cast<Text>(static_cast<int>(Text::ContentsWeapon) + m_Chest->contents)),
-                                0.44f, Ui::Colors::Text);
-        else
-            top = Ui::Paragraph(top, Localization::Get(Text::ContentsHidden), 0.44f, Ui::Colors::TextDim);
     }
 
     Ui::Coordinates(m_MapPosition);

@@ -326,8 +326,6 @@ namespace
                 add("A", Text::HintPhoto);
             const bool found = korokCard ? Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Found
                                          : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
-            if (objectCard && Map::m_ObjectInfo->CanReveal())
-                add("A", Map::m_ObjectInfo->NextRevealIsItem() ? Text::HintShowItem : Text::HintReveal);
             if (CanMarkByHand() && !found)
                 add("Y", Text::HintMarkFound);
             add("ZL ZR", Text::HintPreviousNext);
@@ -742,11 +740,9 @@ void Map::Update()
             m_Legend->m_IsOpen = false;
     }
 
-    // A on a Korok card shows its photo full screen; on a chest card it tells a bit more of what is inside
+    // A on a Korok card shows its photo full screen
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_A) && m_KorokDialog->m_IsOpen && m_KorokDialog->HasImage())
         m_ImageViewer->Open(m_KorokDialog->m_Image);
-    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_A) && m_ObjectInfo->m_IsOpen && m_ObjectInfo->CanReveal())
-        m_ObjectInfo->RevealMore();
 
     // Analog stick camera movement
     // Read the sticks' position
