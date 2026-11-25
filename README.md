@@ -26,7 +26,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Shrine cards show whether the shrine is completed and how many of its chests are opened (`Chests 2/3`); a discovered shrine with something left stays on the map.
 - The shrines of the Champions' Ballad show only once that quest has begun, when they can exist in the world. Before that the legend counts 120 shrines.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
-- Optional high-resolution map (4x, 2x from the Album) when zoomed in, read from the SD card (see below).
+- Optional high-resolution map (4x; from the Album 2x, and 4x zoomed in while memory allows) when zoomed in, read from the SD card (see below).
 - Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
 
 ## Installation
@@ -72,8 +72,11 @@ loading them in the background as the map moves. The chunks are not distributed 
 - As an application (title override or forwarder) up to 40 chunks stay in memory (about 4 MB each). From the
   Album the app has little memory (79 MB free on the console with BotW running, 60 MB once the map is up), so each
   chunk is halved as soon as it is decoded (512 pixels, about 1 MB: the map at 2x), up to 24 stay, and one is loaded
-  only while 32 MB stay free after it; where they do not, that part of the map stays as the built-in one. `log.txt`
-  tells what it found (the `MEMORY:` and `MAP HD:` lines).
+  only while 32 MB stay free after it; where they do not, that part of the map stays as the built-in one. Zoomed in
+  (2.5 and over), where a screen holds at most 3 x 3 chunks, the ones on screen are loaded again at full size, the
+  nearest to the center first, while that memory rule allows (the halved one stays on screen until then). `log.txt`
+  tells what it found (the `MEMORY:` and `MAP HD:` lines; at the end, the most chunks loaded at once and the least
+  memory free).
 
 ## Sharper icons (optional)
 

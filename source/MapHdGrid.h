@@ -23,6 +23,10 @@ namespace MapHdGrid
 
     // Below this zoom the low-resolution map already has a pixel or more per screen pixel.
     constexpr float MinZoom = 1.5f;
+    // From this zoom on the halved chunks (2 pixels per map unit) are stretched past 1.25 screen pixels per pixel and
+    // look soft: from the Album the chunks on screen are then loaded again at full size, while memory allows. A
+    // screen holds at most 3 x 3 chunks here, and fewer as the zoom goes on.
+    constexpr float FullZoom = 2.5f;
 
     // Chunks kept loaded. Each takes up to 1024 x 1024 x 3 bytes plus a third for the mipmaps (about 4 MB).
     // Opened from the Album the app has a fraction of the memory: on the console, with BotW running, 79 MB free when
@@ -56,6 +60,8 @@ namespace MapHdGrid
     int MaxLoadedChunks(bool application);
     // How much each chunk is reduced before it becomes a texture: 1 as an application, 2 from the Album.
     int Reduction(bool application);
+    // The reduction wanted for the chunks on screen at this zoom: from the Album, full size from FullZoom on.
+    int WantedReduction(bool application, float zoom);
     // `pixels` (RGB, `width` x `height`) halved into `out`, each pixel the mean of a 2 x 2 block (an odd last row or
     // column counts alone). `out` holds HalfSize(width) x HalfSize(height) pixels.
     int HalfSize(int size);

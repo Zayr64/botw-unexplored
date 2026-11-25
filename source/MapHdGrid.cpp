@@ -86,6 +86,13 @@ int MapHdGrid::Reduction(bool application)
     return application ? 1 : 2;
 }
 
+int MapHdGrid::WantedReduction(bool application, float zoom)
+{
+    if (application || (std::isfinite(zoom) && zoom >= FullZoom))
+        return 1;
+    return 2;
+}
+
 int MapHdGrid::HalfSize(int size)
 {
     return (size + 1) / 2;

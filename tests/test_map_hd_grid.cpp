@@ -66,6 +66,10 @@ int main()
 
     // From the Album each chunk is halved: 2 x 2 means, an odd edge alone
     assert(Reduction(true) == 1 && Reduction(false) == 2);
+    // ...and loaded again at full size when zoomed in, where a screen holds at most 3 x 3 of them
+    assert(WantedReduction(true, 1.5f) == 1 && WantedReduction(false, 1.5f) == 2 && WantedReduction(false, 2.4f) == 2);
+    assert(WantedReduction(false, 2.5f) == 1 && WantedReduction(false, 10.0f) == 1);
+    assert(VisibleChunks(36.0f, -30.0f, 640.0f / FullZoom, 360.0f / FullZoom).size() <= 9);
     assert(HalfSize(1024) == 512 && HalfSize(736) == 368 && HalfSize(784) == 392 && HalfSize(5) == 3);
     {
         // 3 x 2 RGB: the first output pixel is the mean of the 2 x 2 block, the second the last column alone
