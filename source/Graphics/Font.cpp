@@ -1,5 +1,7 @@
 #include "Font.h"
 
+#include <switch.h>
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
@@ -8,6 +10,17 @@
 #include "../Log.h"
 #include "BasicVertices.h"
 #include "../Utf8.h"
+
+namespace
+{
+    // Glyphs are rendered at this height and scaled by each call. The console's font is wider than Arial at the
+    // same height, so it gets a smaller one: 44 takes about the width Arial took at 48 (chosen on 25/11).
+#ifndef SYSTEM_FONT_PIXELS
+#define SYSTEM_FONT_PIXELS 44
+#endif
+    constexpr int FilePixels = 48;
+    constexpr int SystemPixels = SYSTEM_FONT_PIXELS;
+}
 
 size_t split(const std::u32string& txt, std::vector<std::u32string>& strs, char32_t ch)
 {
@@ -36,9 +49,51 @@ int Font::Load(const std::string& filepath)
         m_FreeType = nullptr;
         return -1;
     }
+    return Setup(filepath, FilePixels);
+}
+
+int Font::LoadSystem()
+{
+    Log("FONT: begin (system font)");
+    Result rc = plInitialize(PlServiceType_User);
+    if (R_FAILED(rc))
+    {
+        Log("FONT: pl service failed", static_cast<int>(rc));
+        return -1;
+    }
+    PlFontData font = {};
+    rc = plGetSharedFontByType(&font, PlSharedFontType_Standard);
+    if (R_FAILED(rc) || font.address == nullptr || font.size == 0)
+    {
+        Log("FONT: system font failed", static_cast<int>(rc));
+        plExit();
+        return -1;
+    }
+    if (FT_Init_FreeType(&m_FreeType))
+    {
+        Log("Freetype: Could not init FreeType Library");
+        plExit();
+        return -1;
+    }
+    if (FT_New_Memory_Face(m_FreeType, static_cast<const FT_Byte*>(font.address), static_cast<FT_Long>(font.size), 0,
+                           &m_Face))
+    {
+        Log("Freetype: Failed to load the system font");
+        FT_Done_FreeType(m_FreeType);
+        m_FreeType = nullptr;
+        plExit();
+        return -1;
+    }
+    m_SystemFont = true;
+    Log("FONT: system font, bytes:", static_cast<int>(font.size));
+    return Setup("system font", SystemPixels);
+}
+
+int Font::Setup(const std::string& name, int pixels)
+{
     Log("FONT: face loaded");
 
-    FT_Set_Pixel_Sizes(m_Face, 0, 48);
+    FT_Set_Pixel_Sizes(m_Face, 0, pixels);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     std::string vertexShaderSource = R"text(
@@ -110,7 +165,7 @@ int Font::Load(const std::string& filepath)
         return -1;
     }
 
-    Log("Loaded font", filepath.c_str());
+    Log("Loaded font", name.c_str());
     return 1;
 }
 
@@ -351,6 +406,11 @@ void Font::Destroy()
     {
         FT_Done_FreeType(m_FreeType);
         m_FreeType = nullptr;
+    }
+    if (m_SystemFont)
+    {
+        plExit(); // after the face: its bytes are in the service's shared memory
+        m_SystemFont = false;
     }
     m_Initialized = false;
 }

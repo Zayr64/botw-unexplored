@@ -1280,7 +1280,6 @@ int main()
     LogInit();
     Log("START: botw-compendium");
     appletLockExit();
-    const bool romfs = R_SUCCEEDED(romfsInit());
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
     padInitializeDefault(&pad);
@@ -1288,8 +1287,6 @@ int main()
     if (!initEgl(nwindowGetDefault()))
     {
         Log("EGL failed");
-        if (romfs)
-            romfsExit();
         appletUnlockExit();
         return 1;
     }
@@ -1299,7 +1296,7 @@ int main()
 
     g_projection = glm::ortho(0.0f, ScreenW, 0.0f, ScreenH, -1.0f, 1.0f);
     Font font;
-    if (font.Load("romfs:/arial.ttf") != 1)
+    if (font.LoadSystem() != 1) // the console's own font: nothing in romfs
         Log("Font failed to load");
     font.m_ProjectionMatrix = &g_projection;
     font.m_ViewMatrix = &g_identity;
@@ -1440,8 +1437,6 @@ int main()
     shapes.reset();
     font.Destroy();
     deinitEgl();
-    if (romfs)
-        romfsExit();
     appletUnlockExit();
     return 0;
 }

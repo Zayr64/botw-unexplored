@@ -40,14 +40,14 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE	:=	BotW Compendium
 APP_AUTHOR	:=	Zayr64
-APP_VERSION :=  0.1.9
+APP_VERSION :=  0.1.10
 
 TARGET		:=	botw-compendium
 BUILD		:=	build
 SOURCES		:=	app source ../source/Graphics ../source
 DATA		:=	data
 INCLUDES	:=	app source ../source ../include
-ROMFS		:=	romfs
+ROMFS		:=	
 
 #---------------------------------------------------------------------------------
 # options for code generation

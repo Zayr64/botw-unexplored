@@ -302,6 +302,30 @@ Result fsdevMountSaveDataReadOnly(const char*, u64, AccountUid)
 int fsdevUnmountDevice(const char*) { return 0; }
 Result romfsInit(void) { return 0; }
 Result romfsExit(void) { return 0; }
+
+// The console's font comes from HOSTVIEW_SYSTEM_FONT, a .ttf taken from the firmware (system archive
+// 0100000000000811, nintendo_udsg-r_std_003.bfttf decoded); Nintendo's, so it is never in the repository.
+Result plInitialize(PlServiceType) { return 0; }
+void plExit(void) {}
+Result plGetSharedFontByType(PlFontData* font, PlSharedFontType)
+{
+    static std::vector<char> bytes;
+    if (bytes.empty())
+    {
+        const char* path = getenv("HOSTVIEW_SYSTEM_FONT");
+        std::ifstream file(path ? path : "", std::ios::binary);
+        if (!file)
+        {
+            fprintf(stderr, "hostview: set HOSTVIEW_SYSTEM_FONT to the console's font (.ttf)\n");
+            return 0x1;
+        }
+        bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+    memset(font, 0, sizeof(*font));
+    font->size = static_cast<u32>(bytes.size());
+    font->address = bytes.data();
+    return 0;
+}
 Result socketInitializeDefault(void) { return 1; }
 void socketExit(void) {}
 int nxlinkStdio(void) { return -1; }

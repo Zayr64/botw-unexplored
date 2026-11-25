@@ -9,6 +9,7 @@
 #          (tools/hostview/extra/HostCheatService.cpp) and BotW Unexplored's copy on the SD.
 # running-copy: the same, but the game's memory cannot be read (no game for the cheat service): the copy is used.
 # HOSTVIEW_SYSROOT: as in tools/hostview/build.sh.
+# HOSTVIEW_SYSTEM_FONT: the console's font as a .ttf, as in tools/hostview/run.sh.
 set -euo pipefail
 DATA="$1"; SAVE="$2"; SCRIPT="$3"; OUTDIR="$4"; MODE="${5:-closed}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +42,6 @@ mkdir -p "$RUN/sdmc:/switch/botw-compendium"
 cp "$DATA" "$RUN/sdmc:/switch/botw-compendium/cook-data.txt"
 # The icons made by gen_icons.py, if HOSTVIEW_ICONS points at them.
 if [[ -n "${HOSTVIEW_ICONS:-}" ]]; then cp -r "$HOSTVIEW_ICONS" "$RUN/sdmc:/switch/botw-compendium/icons"; fi
-ln -s "$REPO/compendium/romfs" "$RUN/romfs:"
 case "$MODE" in
     closed) ln -s "$SAVE" "$RUN/save:" ;;
     running|running-copy)

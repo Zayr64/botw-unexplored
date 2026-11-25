@@ -33,6 +33,11 @@ tools/hostview/build.sh
 HOSTVIEW_SAVE_DIR=/path/to/a/botw/save tools/hostview/run.sh app tools/hostview/scripts/tour.txt /tmp/shots
 ```
 
+Both apps draw text with the console's own font, which the pl service hands over on the Switch. On the PC it
+comes from `HOSTVIEW_SYSTEM_FONT`: a `.ttf` of the standard font taken from a firmware dump (system archive
+`0100000000000811`, `nintendo_udsg-r_std_003.bfttf` with its obfuscation undone). It is Nintendo's, so it is not in
+the repository.
+
 The save folder is a copy of a BotW save (`0/game_data.sav`, `0/caption.sav`, ...). Modes and variables are
 described at the top of `run.sh`; `host.cpp` lists the script commands:
 

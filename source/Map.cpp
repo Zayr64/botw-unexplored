@@ -443,8 +443,8 @@ bool Map::Init()
     m_MapBackground.m_ViewMatrix = &m_ViewMatrix;
     MapHd::Init();
 
-    // Load font
-    if (m_Font.Load("romfs:/arial.ttf") != 1)
+    // Load font: the console's own
+    if (m_Font.LoadSystem() != 1)
     {
         Log("MAP: font initialization failed");
         return false;

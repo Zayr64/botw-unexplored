@@ -55,11 +55,17 @@ private:
     FT_Library m_FreeType = nullptr;
     FT_Face m_Face = nullptr;
 
+    bool m_SystemFont = false; // the face is the console's font: the pl service stays open until Destroy
+
     bool LoadGlyph(uint32_t character);
     const Character& GetCharacter(uint32_t character);
+    int Setup(const std::string& name, int pixels);
 
 public:
     int Load(const std::string& filepath);
+
+    // The console's own font (the HOME menu's, from the pl service), so no font file ships with the app.
+    int LoadSystem();
 
     void Destroy();
 

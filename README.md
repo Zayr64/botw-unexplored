@@ -137,6 +137,7 @@ reading of the Hero's Path files (`HERO_PATH_DIR` adds the tracker folder of a r
 - [leoetlino/botw](https://github.com/leoetlino/botw) — the game's data in readable form, from which `tools/gen_progress.py` takes the kind of each quest, the flags of its first and last step, who gives it and what it waits for, and the armor pieces with their levels of upgrade and which of them only amiibo give.
 - [Hyrule Compendium API](https://gadhagod.github.io/Hyrule-Compendium-API/) — the category of each entry of the compendium, which the game's data does not tell.
 - [savage13/heros_path](https://github.com/savage13/heros_path) (BSD-2-Clause), the [zephenryus notes](https://gist.github.com/zephenryus/e46c797ccecf6134d4245bb9f2e5e2a5) and [jinghaihan/botw-totk-atlas](https://github.com/jinghaihan/botw-totk-atlas) (MIT) — the format of the Hero's Path files and where its line breaks (`source/HeroPath.cpp`).
+- Text: the console's own font (the HOME menu's), handed over by the system's pl service at run time, so no font file ships with the app.
 - Icon: the Z is drawn with [The Wild Breath of Zelda](https://www.fontspace.com/the-wild-breath-of-zelda-font-f25653) by Chequered Ink (freeware).
 
 BotW Unexplored is an unofficial homebrew project and is not affiliated with Nintendo.
