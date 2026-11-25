@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "BloodMoon.h"
 #include "Data.h"
 #include "Graphics/Font.h"
 #include "Graphics/ShapeBatch.h"
@@ -48,6 +49,51 @@ namespace
         Ui::Text(std::to_string(counter.done) + "/" + std::to_string(counter.total), glm::vec2(right, baseline),
                  LabelScale, complete ? Ui::Colors::Good : Ui::Colors::Text, ALIGN_RIGHT);
         return top - RowStep;
+    }
+
+    // A row with a text on the right instead of a count.
+    float TextRow(float top, TextId label, const std::string& value, const glm::vec3& color)
+    {
+        const float left = Ui::PanelLeft();
+        const float right = left + Ui::PanelInner();
+        const float baseline = top - (RowStep + CapHeight) * 0.5f;
+        Ui::Text(Localization::Get(label), glm::vec2(left, baseline), LabelScale, Ui::Colors::Text);
+        Ui::Text(value, glm::vec2(right, baseline), LabelScale, color, ALIGN_RIGHT);
+        return top - RowStep;
+    }
+
+    // "2 h 28 min" or "35 min".
+    std::string Duration(int minutes)
+    {
+        if (minutes < 60)
+            return std::to_string(minutes) + " " + Localization::Get(Localization::Text::MinutesOfPlay);
+        return std::to_string(minutes / 60) + " h " + std::to_string(minutes % 60) + " " +
+               Localization::Get(Localization::Text::MinutesOfPlay);
+    }
+
+    // When the next Blood Moon comes, from the save or from the running game. Returns the new top.
+    float BloodMoonRow(float top)
+    {
+        const BloodMoon::Estimate next = BloodMoon::Next(SavefileIO::CurrentState.bloodMoon);
+        switch (next.status)
+        {
+        case BloodMoon::Status::Unknown:
+            return top;
+        case BloodMoon::Status::NotStarted:
+            return TextRow(top, Localization::Text::BloodMoon, Localization::Get(Localization::Text::BloodMoonNotYet),
+                           Ui::Colors::TextDim);
+        case BloodMoon::Status::Tonight:
+            top = TextRow(top, Localization::Text::BloodMoon,
+                          Localization::Get(Localization::Text::BloodMoonTonight) + " " + Duration(next.minutesOfPlay),
+                          Ui::Colors::Warn);
+            break;
+        case BloodMoon::Status::Counting:
+            top = TextRow(top, Localization::Text::BloodMoon,
+                          Localization::Get(Localization::Text::BloodMoonIn) + " " + Duration(next.minutesOfPlay),
+                          Ui::Colors::Text);
+            break;
+        }
+        return Ui::Paragraph(top - 2.0f, Localization::Get(Localization::Text::BloodMoonNote), 0.26f, Ui::Colors::TextDim);
     }
 
     // What this game has: the Expansion Pass and Master Mode add entries and pieces.
@@ -170,6 +216,7 @@ void ProgressPanel::Render(float top)
     if (memories.total > 0)
         top = Row(top, Localization::Text::Memories, memories);
     top = Row(top, Localization::Text::Locations, Locations());
+    top = BloodMoonRow(top);
 
     Ui::FlushShapes();
 }

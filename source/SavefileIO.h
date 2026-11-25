@@ -8,6 +8,7 @@
 #include <switch.h>
 #include <thread>
 
+#include "BloodMoon.h"
 #include "Chests.h"
 #include "Data.h"
 #include "Walls.h"
@@ -31,6 +32,7 @@ namespace SavefileIO
         std::vector<uint32_t> doneLocationStates; // locations with the tower activated or the fairy awakened, sorted
         bool balladStarted = false;               // the Champions' Ballad has begun: its shrines can exist
         std::vector<uint32_t> progressFlags;      // the set flags among those the progress panel counts, sorted
+        BloodMoon::Input bloodMoon;               // the world's clock and the Blood Moon timer
         std::vector<Data::Korok*> foundKoroks;
         std::vector<Data::Korok*> missingKoroks;
         std::vector<Data::Shrine*> foundShrines;

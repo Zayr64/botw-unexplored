@@ -15,7 +15,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
 - The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The names of the locations are not drawn on the map; how many were visited is a number in the Progress tab.
 - The left panel has four tabs, all in numbers only:
-  - **Progress** counts what the map does not show: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the common chests of the world map, memories recalled (out of the pictures the album has so far), locations visited.
+  - **Progress** counts what the map does not show: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the common chests of the world map, memories recalled (out of the pictures the album has so far), locations visited, and when the next Blood Moon comes, in minutes of play (from the world's clock and the Blood Moon timer, by the rule of the game's `TimeMgr` in the zeldaret/botw decomp).
   - **Regions** lists the fifteen regions of the map with what is found of each (Korok seeds and shrines) and shows one alone on the map: only its objects are drawn, counted in the legend and picked by `ZL`/`ZR`/`R`. Each row also tells how many shrine and side quests are taken in that region and are not in the log yet: `3 quests` can be taken now; with none of those, `2 later` wait for something else to happen first. A region is named once its tower is activated; until then it is an "Unknown region".
   - **Collection** has the Hyrule Compendium, in all and by category (385 entries, 389 with the Champions' Ballad, 5 more in Master Mode), and the armor pieces owned at any level of upgrade (65, or 84 with the Expansion Pass; those that only amiibo give are not counted).
 - The map shows only what is still missing. Icons shrink on the overview, where they pile up.
@@ -116,7 +116,7 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the counters of quests, compendium, armor and memories, the quests left to take by region, and the table of regions. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, and the Blood Moon estimate. GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 

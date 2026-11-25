@@ -33,7 +33,9 @@ namespace
         "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium",
         "All entries", "Creatures", "Monsters", "Materials", "Equipment", "Treasure",
         "Armor", "Pieces", "The pieces that only amiibo give are not counted.",
-        "Memories", "quest", "quests", "later", "Common chests"
+        "Memories", "quest", "quests", "later", "Common chests",
+        "Blood Moon", "in about", "tonight, in", "min of play", "not yet",
+        "Only play time in the world counts, not menus or cutscenes."
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

@@ -725,6 +725,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
         const uint32_t hashValue = record.hash;
         // A value other than 0 means found, discovered, visited or defeated.
         const bool set = record.value != 0;
+        BloodMoon::Take(hashValue, record.value, parsedState.bloodMoon);
 
         const auto shrineFlag = shrineFlags.find(hashValue);
         if (shrineFlag != shrineFlags.end() && set)
@@ -865,6 +866,15 @@ public:
                 state.playtime = record.value;
             break;
         }
+        case LiveGameData::FlagKind::F32:
+        {
+            // As the save keeps them: the bits of the float (the world's clock, the Blood Moon timer).
+            SaveParser::Record record;
+            record.hash = hash;
+            std::memcpy(&record.value, value, sizeof(record.value));
+            state.records.push_back(record);
+            break;
+        }
         case LiveGameData::FlagKind::String32:
             if (hash == MapTypeHash)
                 std::memcpy(mapType, value, 32);
@@ -921,7 +931,9 @@ bool LoadLive(LiveState& live)
     LiveCollector collector;
     collector.state.records.reserve(70000);
     LiveGameData::Report report;
-    const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), layout, collector, report);
+    LiveGameData::Options options;
+    options.f32 = true; // the world's clock and the Blood Moon timer; never makes the scan fail
+    const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), layout, collector, report, options);
     std::istringstream details(report.details);
     for (std::string line; std::getline(details, line);)
         Log("LIVE: " + line);

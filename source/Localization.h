@@ -158,6 +158,12 @@ namespace Localization
         QuestsToTake,
         QuestsLater,
         CommonChests,
+        BloodMoon,
+        BloodMoonIn,
+        BloodMoonTonight,
+        MinutesOfPlay,
+        BloodMoonNotYet,
+        BloodMoonNote,
         Count
     };
 
