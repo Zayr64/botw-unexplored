@@ -207,6 +207,14 @@ namespace
               "5 Mighty Bananas and 5 Apples: attack level 3: " + Describe(data, r.best.result));
         Check(r.cheapest.itemCount > 0 && r.cheapest.result.vitality == 3 && r.cheapest.cost <= r.best.cost,
               "the cheapest level 3 costs no more than the best");
+        // The cheaper first (the default) against more hearts first: as strong, as long, no dearer, no more hearts.
+        const SearchResult hearts = FindBestForEffect(data, stock, 2, AttackUp, Ranking::HeartsThenPrice);
+        Check(hearts.found && hearts.best.result.vitality == r.best.result.vitality &&
+                  hearts.best.result.time == r.best.result.time && r.best.cost <= hearts.best.cost &&
+                  r.best.result.life <= hearts.best.result.life,
+              "price first: " + Describe(data, r.best.result) + " for " + std::to_string(r.best.cost) +
+                  "; hearts first: " + Describe(data, hearts.best.result) + " for " +
+                  std::to_string(hearts.best.cost));
         r = FindBestForEffect(data, stock, 2, Quietness);
         Check(!r.found, "no stealth dish from bananas and apples");
 

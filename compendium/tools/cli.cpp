@@ -4,6 +4,10 @@
 // Usage: compendium_cli <cook-data.txt> <game_data.sav> [--reveal] [--whole-pouch]
 //   --reveal       show what the hidden tiers are for (armor not owned, Ancient Oven, quests): spoilers
 //   --whole-pouch  search dishes with everything in the pouch, not only what is free after the reserve
+//   --hearts-first the best dish of an effect: more hearts before the cheaper, as up to 0.1.8
+//                  (Ranking::HeartsThenPrice; the app and the default: the cheaper first)
+//   --reserve owned|no-armor|all   what the reserve keeps before the dishes: the armor you have only (the app's X
+//                  off), all but the armor you do not have, or everything (the app's X on; the default)
 
 #include <cstdio>
 #include <cstring>
@@ -130,10 +134,22 @@ int main(int argc, char** argv)
     bool reveal = false;
     bool wholePouch = false;
     std::vector<std::string> cookOnly; // --cook "A,B,C": just cook these (English names) and stop
+    Ranking ranking = Ranking::PriceThenHearts;
+    uint8_t mask = AllTiers;
     for (int i = 3; i < argc; i++)
     {
         reveal = reveal || strcmp(argv[i], "--reveal") == 0;
         wholePouch = wholePouch || strcmp(argv[i], "--whole-pouch") == 0;
+        if (strcmp(argv[i], "--hearts-first") == 0)
+            ranking = Ranking::HeartsThenPrice;
+        if (strcmp(argv[i], "--reserve") == 0 && i + 1 < argc)
+        {
+            const char* which = argv[++i];
+            const uint8_t owned = (1u << OwnedReachable) | (1u << OwnedNextFairy);
+            mask = strcmp(which, "owned") == 0      ? owned
+                 : strcmp(which, "no-armor") == 0   ? static_cast<uint8_t>(owned | (1u << Crafted) | (1u << Quests))
+                                                    : AllTiers;
+        }
         if (strcmp(argv[i], "--cook") == 0 && i + 1 < argc)
             cookOnly.push_back(argv[++i]);
     }
@@ -252,7 +268,7 @@ int main(int argc, char** argv)
         const MaterialPlan& m = plan->materials[i];
         StockItem s;
         s.hash = m.item;
-        s.count = wholePouch ? m.have : m.Free(AllTiers);
+        s.count = wholePouch ? m.have : m.Free(mask);
         if (s.count > 0)
             stock.push_back(s);
     }
@@ -263,7 +279,7 @@ int main(int argc, char** argv)
     int evaluated = 0;
     for (Effect e : effects)
     {
-        const SearchResult r = FindBestForEffect(*cook, stock.data(), static_cast<int>(stock.size()), e);
+        const SearchResult r = FindBestForEffect(*cook, stock.data(), static_cast<int>(stock.size()), e, ranking);
         evaluated += r.evaluated;
         printf("%s:\n", EffectLabel(e));
         if (!r.found)

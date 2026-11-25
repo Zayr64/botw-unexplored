@@ -79,17 +79,26 @@ namespace Compendium
                 out.Add(picked[i]);
         }
 
-        // Higher is better. Compared field by field.
+        // Higher is better: the keys field by field, then hearts and the price in the order of the ranking.
         struct Score
         {
-            int32_t keys[3] = {};
+            int32_t keys[2] = {};
+            int32_t life = 0; // hearts that come on top of what the dish is for
         };
 
-        bool Better(const Score& a, int32_t costA, const Score& b, int32_t costB)
+        bool Better(const Score& a, int32_t costA, const Score& b, int32_t costB, Ranking ranking)
         {
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 2; i++)
                 if (a.keys[i] != b.keys[i])
                     return a.keys[i] > b.keys[i];
+            if (ranking == Ranking::PriceThenHearts)
+            {
+                if (costA != costB)
+                    return costA < costB;
+                return a.life > b.life;
+            }
+            if (a.life != b.life)
+                return a.life > b.life;
             return costA < costB;
         }
 
@@ -98,19 +107,15 @@ namespace Compendium
             Score s;
             if (goal == EffectNone)
             {
-                s.keys[0] = r.life;
+                s.keys[0] = r.life; // hearts are what this dish is for
                 return s;
             }
             s.keys[0] = r.vitality;
             if (goal == LifeMaxUp)
                 return s;
-            if (goal == GutsRecover || goal == ExGutsMaxUp)
-            {
-                s.keys[1] = r.life;
-                return s;
-            }
-            s.keys[1] = r.time;
-            s.keys[2] = r.life;
+            if (goal != GutsRecover && goal != ExGutsMaxUp)
+                s.keys[1] = r.time;
+            s.life = r.life;
             return s;
         }
 
@@ -165,7 +170,8 @@ namespace Compendium
         }
 
         // Every pot of the candidates, keeping the best and the cheapest as strong.
-        void Enumerate(const CookData& data, const Candidates& c, Effect goal, SearchResult& out)
+        void Enumerate(const CookData& data, const Candidates& c, Effect goal, SearchResult& out,
+                       Ranking ranking = Ranking::PriceThenHearts)
         {
             Score bestScore;
             ForEachPot(c, [&](const int* pick, int depth) {
@@ -174,7 +180,7 @@ namespace Compendium
                 if (!CookPot(data, c, pick, depth, goal, d))
                     return;
                 const Score s = ScoreOf(d.result, goal);
-                if (!out.found || Better(s, d.cost, bestScore, out.best.cost))
+                if (!out.found || Better(s, d.cost, bestScore, out.best.cost, ranking))
                 {
                     out.best = d;
                     bestScore = s;
@@ -196,7 +202,7 @@ namespace Compendium
                 if (s.keys[0] != target)
                     return;
                 if (have && (d.cost > out.cheapest.cost ||
-                             (d.cost == out.cheapest.cost && !Better(s, d.cost, cheapestScore, d.cost))))
+                             (d.cost == out.cheapest.cost && !Better(s, d.cost, cheapestScore, d.cost, ranking))))
                     return;
                 out.cheapest = d;
                 cheapestScore = s;
@@ -270,7 +276,8 @@ namespace Compendium
         }
     }
 
-    SearchResult FindBestForEffect(const CookData& data, const StockItem* stock, int stockCount, Effect effect)
+    SearchResult FindBestForEffect(const CookData& data, const StockItem* stock, int stockCount, Effect effect,
+                                   Ranking ranking)
     {
         SearchResult out;
         Candidates c;
@@ -281,7 +288,7 @@ namespace Compendium
         if (c.count == 0)
             return out;
         AddHelpers(c, data, stock, stockCount);
-        Enumerate(data, c, effect, out);
+        Enumerate(data, c, effect, out, ranking);
         return out;
     }
 

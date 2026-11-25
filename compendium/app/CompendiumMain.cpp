@@ -389,7 +389,8 @@ namespace
             switch (g.kind)
             {
             case GoalKind::Effect:
-                g.result = FindBestForEffect(*app.cook, stock.data(), n, g.effect);
+                // Among dishes as strong and as long, the cheaper wins: no costly food just for hearts.
+                g.result = FindBestForEffect(*app.cook, stock.data(), n, g.effect, Ranking::PriceThenHearts);
                 app.evaluated += g.result.evaluated;
                 break;
             case GoalKind::Hearts:

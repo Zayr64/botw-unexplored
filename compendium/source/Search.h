@@ -30,7 +30,7 @@ namespace Compendium
     struct SearchResult
     {
         bool found = false;
-        FoundDish best;     // strongest effect, then longest, then most hearts; the cheapest among equals
+        FoundDish best;     // strongest effect, then longest, then the cheapest (or the most hearts: Ranking)
         FoundDish cheapest; // the cheapest dish as strong as `best` (same level, yellow hearts or stamina)
         int evaluated = 0;  // combinations cooked
     };
@@ -43,8 +43,16 @@ namespace Compendium
         int evaluated = 0;
     };
 
+    // How the best dish of an effect is chosen among those as strong and as long.
+    enum class Ranking
+    {
+        PriceThenHearts, // the cheaper first, hearts only between equals: no costly food just for hearts (0.1.9 on)
+        HeartsThenPrice, // more hearts first, the price only between equals (0.1.0 to 0.1.8)
+    };
+
     // Dishes with `effect` (LifeMaxUp for yellow hearts, GutsRecover, ExGutsMaxUp, or a timed effect).
-    SearchResult FindBestForEffect(const CookData& data, const StockItem* stock, int stockCount, Effect effect);
+    SearchResult FindBestForEffect(const CookData& data, const StockItem* stock, int stockCount, Effect effect,
+                                   Ranking ranking = Ranking::PriceThenHearts);
 
     // The dish that restores the most hearts (not counting yellow-heart dishes, which restore all).
     SearchResult FindMostHearts(const CookData& data, const StockItem* stock, int stockCount);
