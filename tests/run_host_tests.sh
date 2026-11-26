@@ -52,6 +52,9 @@ fi
 /tmp/test_location_state
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_walls.cpp source/WallData.cpp -o /tmp/test_walls
 /tmp/test_walls
+# QUESTS_FILE: a quests.txt made by tools/gen_quests.py (from the game's files, never in the repository).
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_quest_map.cpp source/QuestMap.cpp source/ProgressData.cpp -o /tmp/test_quest_map
+/tmp/test_quest_map
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_progress.cpp source/Progress.cpp source/ProgressData.cpp source/ShrineFlags.cpp -o /tmp/test_progress
 /tmp/test_progress
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_regions.cpp source/Regions.cpp source/RegionData.cpp source/ShrineFlags.cpp -o /tmp/test_regions

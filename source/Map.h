@@ -16,6 +16,7 @@
 #include "Chests.h"
 #include "Data.h"
 #include "Walls.h"
+#include "QuestMap.h"
 
 template <typename T> class MapObject;
 
@@ -116,6 +117,10 @@ namespace Map
     extern MapObject<Data::WeaponChestIcon>* m_WeaponChests;     // one per entry of Data::WeaponChests
     extern MapObject<Data::MaterialChestIcon>* m_MaterialChests; // one per entry of Data::MaterialChests
     extern MapObject<Data::WallIcon>* m_Walls;                 // one per entry of Data::Walls
+    // One per entry of QuestMap::Entries() in each: the quests that can be taken now, and those that wait for
+    // something first (each quest shows in one of the two).
+    extern MapObject<Data::QuestIcon>* m_Quests;
+    extern MapObject<Data::QuestLaterIcon>* m_LaterQuests;
 
     extern MapLocation* m_Locations;
 

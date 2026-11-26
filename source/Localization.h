@@ -166,6 +166,12 @@ namespace Localization
         BloodMoonNote,
         HeroPath,
         HintScroll,
+        Quests,
+        Quest,
+        SideQuestTitle,
+        ShrineQuestTitle,
+        QuestNotTaken,
+        QuestNotYet,
         Count
     };
 

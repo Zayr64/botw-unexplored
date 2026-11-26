@@ -13,7 +13,8 @@ namespace
         {"romfs:/molduga.png", false, static_cast<int>(LegendCategories::ButtonTypes::Moldugas)},
         {"", false, ObjectModel::NoLegendButton},
         {"romfs:/chestarmor.png", false, ObjectModel::NoLegendButton},
-        {"romfs:/wall.png", false, static_cast<int>(LegendCategories::ButtonTypes::Walls)}
+        {"romfs:/wall.png", false, static_cast<int>(LegendCategories::ButtonTypes::Walls)},
+        {"romfs:/quest.png", false, static_cast<int>(LegendCategories::ButtonTypes::Quests)}
     }};
     static_assert(metadata.size() == static_cast<size_t>(Data::ObjectType::Count), "Object metadata must cover every type");
 }

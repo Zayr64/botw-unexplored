@@ -13,6 +13,7 @@
 #include "SavefileIO.h"
 #include "Localization.h"
 #include "ProgressPanel.h"
+#include "QuestMap.h"
 #include "Regions.h"
 #include "RegionsPanel.h"
 #include "Ui.h"
@@ -82,6 +83,7 @@ namespace
         case IconButton::MaterialChests: return Localization::Text::MaterialChests;
         case IconButton::Walls: return Localization::Text::Walls;
         case IconButton::HeroPath: return Localization::Text::HeroPath;
+        case IconButton::Quests: return Localization::Text::Quests;
         default:
             // Koroks to Moldugas, in the order of the categories
             return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
@@ -134,6 +136,7 @@ Legend::Legend()
     m_Buttons[0]->Click(this, true);
     m_Buttons[1]->Click(this, true);
     m_Buttons[IconButton::HeroPath]->Click(this, true);
+    m_Buttons[IconButton::Quests]->Click(this, true);
 
     // Set first highlighted button
     UpdateSelectedButton();
@@ -349,6 +352,7 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case MaterialChests: iconPath = Data::IconOf(Data::ChestGroup::Material); break;
     case Walls: iconPath = "romfs:/wall.png"; break;
     case HeroPath: iconPath = "romfs:/heropath.png"; break;
+    case Quests: iconPath = "romfs:/quest.png"; break;
     default: break;
     }
 
@@ -402,6 +406,12 @@ void IconButton::Count(int& found, int& total) const
         break;
     case Walls:
         for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Region, Map::m_Walls[i].m_Found);
+        break;
+    case Quests:
+        // Taken (or done) out of those of this game: the Expansion Pass ones only with it
+        for (size_t i = 0; i < QuestMap::Entries().size(); ++i)
+            if (!QuestMap::Entries()[i].dlc || SavefileIO::HasExpansionPass())
+                add(Map::m_Quests[i].m_Region, Map::m_Quests[i].m_Found);
         break;
     default:
         break;

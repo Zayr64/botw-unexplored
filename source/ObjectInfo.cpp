@@ -13,9 +13,10 @@ ObjectInfo::ObjectInfo()
 }
 
 void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const glm::vec2& mapPosition,
-                           const std::string& name, bool* found, const Data::Chest* chest)
+                           const std::string& name, bool* found, const Data::Chest* chest, const QuestMap::Entry* quest)
 {
     m_Chest = chest;
+    m_Quest = quest;
     m_Type = type;
     m_CompletionHash = completionHash;
     m_MapPosition = mapPosition;
@@ -53,8 +54,12 @@ void ObjectInfo::Render()
     const bool isShrine = m_Type == Data::ObjectType::Shrine || m_Type == Data::ObjectType::DLCShrine;
 
     Ui::PanelBackground();
-    // The title of a chest is its group, as in the legend
-    const std::string& title = m_Chest != nullptr
+    // The title of a chest is its group, as in the legend; that of a quest, its kind
+    const std::string questTitle = m_Quest == nullptr ? std::string()
+        : Localization::Get(m_Quest->shrine ? Text::ShrineQuestTitle : Text::SideQuestTitle) +
+              (m_Quest->dlc ? " (DLC)" : "");
+    const std::string& title = m_Quest != nullptr ? questTitle
+        : m_Chest != nullptr
         ? Localization::Get(static_cast<Text>(static_cast<int>(Text::ArmorChests) +
                                               static_cast<int>(Data::GroupOf(m_Chest->contents))))
         : Localization::GetObjectTypeName(m_Type);
@@ -67,7 +72,16 @@ void ObjectInfo::Render()
         top = Ui::Paragraph(top, name, 0.50f, Ui::Colors::Gold) - 6.0f;
 
     // What was done and what is left, one line each
-    if (found && Map::IsManuallyMarked(m_Type, m_CompletionHash))
+    if (m_Quest != nullptr)
+    {
+        // Not taken yet (the map only shows those); whether it can be taken now or waits for something first
+        const bool available = m_Quest->requiresHash == 0 || SavefileIO::IsProgressFlagSet(m_Quest->requiresHash);
+        top = available ? Ui::StatusRow(top, Localization::Get(Text::QuestNotTaken), Ui::Colors::Warn, false)
+                        : Ui::StatusRow(top, Localization::Get(Text::QuestNotYet), Ui::Colors::TextDim, false);
+        if (!m_Quest->location.empty())
+            top = Ui::Paragraph(top - 2.0f, m_Quest->location, 0.40f, Ui::Colors::Text);
+    }
+    else if (found && Map::IsManuallyMarked(m_Type, m_CompletionHash))
         top = Ui::StatusRow(top, Localization::Get(Text::MarkedByYou), Ui::Colors::Good);
     else if (isShrine)
     {
@@ -104,6 +118,9 @@ void ObjectInfo::Render()
     const std::string distance = Ui::DistanceText(m_MapPosition);
     if (!distance.empty())
         top = Ui::Paragraph(top - 2.0f, distance, 0.40f, Ui::Colors::TextDim);
+
+    if (m_Quest != nullptr && !m_Quest->description.empty())
+        top = Ui::Paragraph(top - 4.0f, m_Quest->description, 0.36f, Ui::Colors::TextDim);
 
     if (m_Chest != nullptr)
     {

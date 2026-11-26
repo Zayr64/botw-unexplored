@@ -157,6 +157,7 @@ namespace
         bool visible; // its category is on in the legend
         int korokIndex;
         const Data::Chest* chest; // for a chest
+        const QuestMap::Entry* quest; // for a quest
     };
 
     void CollectObjects(std::vector<MapEntry>& entries)
@@ -169,7 +170,8 @@ namespace
         // legendButton: the legend category, for a type that is not always in the same one (the special chests)
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
                              bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr,
-                             int legendButton = ObjectModel::NoLegendButton)
+                             int legendButton = ObjectModel::NoLegendButton, const QuestMap::Entry* quest = nullptr,
+                             int region = -2)
         {
             if (legendButton == ObjectModel::NoLegendButton)
                 legendButton = ObjectModel::GetMetadata(type).legendButtonIndex;
@@ -177,8 +179,8 @@ namespace
             if (type == Data::ObjectType::DLCShrine)
                 visible = visible && SavefileIO::DlcShrinesAppear();
             if (visible && Map::m_RegionFilter >= 0)
-                visible = Regions::Of(hash) == Map::m_RegionFilter;
-            entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex, chest});
+                visible = (region != -2 ? region : Regions::Of(hash)) == Map::m_RegionFilter;
+            entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex, chest, quest});
         };
 
         for (int i = 0; i < Data::KoroksCount; ++i)
@@ -208,6 +210,17 @@ namespace
         addChests(Map::m_MaterialChests, Data::MaterialChests, Data::MaterialChestsCount, IconButton::MaterialChests);
         for (int i = 0; i < Data::WallsCount; ++i)
             add(Data::ObjectType::BreakableWall, Data::Walls[i].hash, Map::m_Walls[i].m_Position, noName, &Map::m_Walls[i].m_Found);
+        // The quests, in whichever of the two lists shows each one
+        const std::vector<QuestMap::Entry>& quests = QuestMap::Entries();
+        for (size_t i = 0; i < quests.size(); ++i)
+        {
+            const bool now = !Map::m_Quests[i].m_Excluded;
+            if (!now && Map::m_LaterQuests[i].m_Excluded)
+                continue;
+            add(Data::ObjectType::Quest, quests[i].startHash, Map::m_Quests[i].m_Position, quests[i].name,
+                now ? &Map::m_Quests[i].m_Found : &Map::m_LaterQuests[i].m_Found, false, -1, nullptr,
+                static_cast<int>(IconButton::Quests), &quests[i], Map::m_Quests[i].m_Region);
+        }
     }
 
     // The object A would open at this map position: the nearest one shown, within 60 pixels. -1 for none.
@@ -242,7 +255,8 @@ namespace
             Map::m_KorokDialog->SetOpen(true);
             return;
         }
-        Map::m_ObjectInfo->SetObject(entry.type, entry.hash, entry.position, *entry.name, entry.found, entry.chest);
+        Map::m_ObjectInfo->SetObject(entry.type, entry.hash, entry.position, *entry.name, entry.found, entry.chest,
+                                     entry.quest);
         Map::m_ObjectInfo->SetOpen(true);
     }
 
@@ -369,7 +383,7 @@ namespace
                 add("A", Text::HintPhoto);
             const bool found = korokCard ? Map::m_Koroks[Map::m_KorokDialog->m_KorokIndex].m_Found
                                          : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
-            if (CanMarkByHand() && !found)
+            if (CanMarkByHand() && !found && !(objectCard && Map::m_ObjectInfo->m_Type == Data::ObjectType::Quest))
                 add("Y", Text::HintMarkFound);
             add("ZL ZR", Text::HintPreviousNext);
             add("B", Text::HintBack);
@@ -528,6 +542,19 @@ bool Map::Init()
     MapObject<Data::WallIcon>::Init("romfs:/wall.png", Data::WallsCount);
     MapObject<Data::WallIcon>::m_SizeFactor = 0.25f;
 
+    // Create the quests, from the SD card (none without the file). Their images are four times the size drawn.
+    if (QuestMap::Load("sdmc:/switch/botw-unexplored/quests.txt"))
+        Log("MAP: quests:", static_cast<int>(QuestMap::Entries().size()));
+    else
+        Log("MAP: no quests.txt, no quests on the map");
+    const int questSlots = std::max(1, static_cast<int>(QuestMap::Entries().size()));
+    m_Quests = new MapObject<Data::QuestIcon>[questSlots];
+    MapObject<Data::QuestIcon>::Init("romfs:/quest.png", questSlots);
+    MapObject<Data::QuestIcon>::m_SizeFactor = 0.25f;
+    m_LaterQuests = new MapObject<Data::QuestLaterIcon>[questSlots];
+    MapObject<Data::QuestLaterIcon>::Init("romfs:/questlater.png", questSlots);
+    MapObject<Data::QuestLaterIcon>::m_SizeFactor = 0.25f;
+
     // Create locations
     m_Locations = new MapLocation[Data::LocationsCount];
 
@@ -667,6 +694,35 @@ void Map::UpdateMapObjects(bool recenter)
     for (int i = 0; i < Data::WeaponChestsCount; i++) m_WeaponChests[i].m_Region = Regions::Of(Data::WeaponChests[i].hash);
     for (int i = 0; i < Data::MaterialChestsCount; i++) m_MaterialChests[i].m_Region = Regions::Of(Data::MaterialChests[i].hash);
     for (int i = 0; i < Data::WallsCount; i++) m_Walls[i].m_Region = Regions::Of(Data::Walls[i].hash);
+
+    // The quests not taken yet: those that can be taken now in one list, those that wait for something in the
+    // other; the Expansion Pass ones only with it. Taken or done counts as found.
+    const std::vector<QuestMap::Entry>& quests = QuestMap::Entries();
+    int questCounts[4] = {0, 0, 0, 0}; // now, later, taken, not in this game
+    for (size_t i = 0; i < quests.size(); ++i)
+    {
+        const QuestMap::Entry& quest = quests[i];
+        const bool taken = SavefileIO::IsProgressFlagSet(quest.startHash) || SavefileIO::IsProgressFlagSet(quest.finishHash);
+        const bool available = quest.requiresHash == 0 || SavefileIO::IsProgressFlagSet(quest.requiresHash);
+        const bool exists = !quest.dlc || SavefileIO::HasExpansionPass();
+        const glm::vec2 position = glm::vec2(quest.x, -quest.z) * MapScale;
+        const int region = QuestMap::RegionOf(quest.startHash);
+        m_Quests[i].m_Position = position;
+        m_Quests[i].m_Found = taken;
+        m_Quests[i].m_Excluded = !exists || !available;
+        m_Quests[i].m_Region = region;
+        m_LaterQuests[i].m_Position = position;
+        m_LaterQuests[i].m_Found = taken;
+        m_LaterQuests[i].m_Excluded = !exists || available;
+        m_LaterQuests[i].m_Region = region;
+        questCounts[!exists ? 3 : (taken ? 2 : (available ? 0 : 1))]++;
+    }
+    if (!quests.empty())
+    {
+        Log("MAP: quests to take now:", questCounts[0]);
+        Log("MAP: quests waiting for something first:", questCounts[1]);
+        Log("MAP: quests taken or done:", questCounts[2]);
+    }
 
     if (manualProgressChanged)
         ManualProgress::Flush();
@@ -969,6 +1025,12 @@ void Map::Update()
         if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
             for (int i = 0; i < Data::WallsCount; i++)
                 m_Walls[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Quests])
+            for (size_t i = 0; i < QuestMap::Entries().size(); i++)
+            {
+                m_Quests[i].Update(i == 0);
+                m_LaterQuests[i].Update(i == 0);
+            }
     }
 
     // The middle of what is on screen is to the left of the camera while the map is shifted.
@@ -1037,6 +1099,11 @@ void Map::Render()
            MapObject<Data::Molduga>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Walls])
             MapObject<Data::WallIcon>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Quests])
+        {
+            MapObject<Data::QuestLaterIcon>::Render();
+            MapObject<Data::QuestIcon>::Render();
+        }
         // The chests one keeps go over the others
         if (m_Legend->m_Show[IconButton::ButtonTypes::MaterialChests])
             MapObject<Data::MaterialChestIcon>::Render();
@@ -1151,6 +1218,10 @@ void Map::Destroy()
     m_MaterialChests = nullptr;
     delete[] m_Walls;
     m_Walls = nullptr;
+    delete[] m_Quests;
+    m_Quests = nullptr;
+    delete[] m_LaterQuests;
+    m_LaterQuests = nullptr;
     delete[] m_Locations;
     m_Locations = nullptr;
 
@@ -1204,7 +1275,8 @@ bool Map::OpenNearestObject(const glm::vec2& mapPosition)
 
 void Map::MarkSelectedObjectFound()
 {
-    if (!m_ObjectInfo->m_IsOpen || m_ObjectInfo->m_Found == nullptr || *m_ObjectInfo->m_Found || !CanMarkByHand())
+    if (!m_ObjectInfo->m_IsOpen || m_ObjectInfo->m_Found == nullptr || *m_ObjectInfo->m_Found || !CanMarkByHand() ||
+        m_ObjectInfo->m_Type == Data::ObjectType::Quest)
         return;
     *m_ObjectInfo->m_Found = true;
     if (ManualProgress::MarkFound(CurrentProgressContext(), m_ObjectInfo->m_Type, m_ObjectInfo->m_CompletionHash))
@@ -1430,6 +1502,8 @@ MapObject<Data::ArmorChestIcon>* Map::m_ArmorChests;
 MapObject<Data::WeaponChestIcon>* Map::m_WeaponChests;
 MapObject<Data::MaterialChestIcon>* Map::m_MaterialChests;
 MapObject<Data::WallIcon>* Map::m_Walls;
+MapObject<Data::QuestIcon>* Map::m_Quests;
+MapObject<Data::QuestLaterIcon>* Map::m_LaterQuests;
 MapLocation* Map::m_Locations;
 
 Legend* Map::m_Legend;
