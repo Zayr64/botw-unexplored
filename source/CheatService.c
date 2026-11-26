@@ -8,6 +8,7 @@ enum
     CheatCommand_GetCheatProcessMetadata = 65002,
     CheatCommand_ForceOpenCheatProcess = 65003,
     CheatCommand_ReadCheatProcessMemory = 65102,
+    CheatCommand_WriteCheatProcessMemory = 65103,
 };
 
 static Service g_cheatService;
@@ -73,6 +74,19 @@ uint32_t cheatServiceRead(uint64_t address, void* buffer, size_t size)
     } in = {address, size};
     return serviceDispatchIn(&g_cheatService, CheatCommand_ReadCheatProcessMemory, in,
         .buffer_attrs = { SfBufferAttr_Out | SfBufferAttr_HipcMapAlias },
+        .buffers = { { buffer, size } },
+    );
+}
+
+uint32_t cheatServiceWrite(uint64_t address, const void* buffer, size_t size)
+{
+    const struct
+    {
+        u64 address;
+        u64 size;
+    } in = {address, size};
+    return serviceDispatchIn(&g_cheatService, CheatCommand_WriteCheatProcessMemory, in,
+        .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcMapAlias },
         .buffers = { { buffer, size } },
     );
 }

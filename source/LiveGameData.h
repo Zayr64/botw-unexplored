@@ -4,7 +4,8 @@
 #include <cstdint>
 #include <string>
 
-// Progress flags of a running BotW, read straight from the game's memory. Nothing is ever written.
+// Progress flags of a running BotW, read straight from the game's memory. Nothing is written here; only MapMarks
+// (zayr32) writes, through Memory::Store.
 //
 // The game keeps every flag (the same ones game_data.sav stores) in ksys::gdt::Manager. A flag buffer
 // (a TriggerParam) has one pointer table per flag type; each entry points at a Flag<T> object that starts
@@ -22,6 +23,14 @@ namespace LiveGameData
     public:
         virtual ~Memory() {}
         virtual bool Read(uint64_t address, void* out, size_t size) = 0;
+        // Writes to the game's memory (MapMarks only). False where writing is not possible.
+        virtual bool Store(uint64_t address, const void* data, size_t size)
+        {
+            (void)address;
+            (void)data;
+            (void)size;
+            return false;
+        }
     };
 
     enum class FlagKind

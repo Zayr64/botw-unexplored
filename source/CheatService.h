@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// The few calls of Atmosphere's cheat service (dmnt:cht) needed to read the memory of the running game.
-// Nothing here writes to the game. Every function returns a libnx Result (0 = success) unless noted.
+// The few calls of Atmosphere's cheat service (dmnt:cht) needed to read the memory of the running game, and (zayr32,
+// for the pin on the game's map only) to write to it. Every function returns a libnx Result (0 = success) unless noted.
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -38,6 +38,7 @@ void cheatServiceClose(void);
 uint32_t cheatServiceAttach(void);
 uint32_t cheatServiceGetMetadata(CheatServiceMetadata* out);
 uint32_t cheatServiceRead(uint64_t address, void* buffer, size_t size);
+uint32_t cheatServiceWrite(uint64_t address, const void* buffer, size_t size);
 
 #ifdef __cplusplus
 }

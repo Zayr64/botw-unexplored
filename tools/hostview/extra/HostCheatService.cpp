@@ -79,8 +79,24 @@ namespace
         std::vector<FakeArray> arrays;
         const uint32_t pouchNames = Crc32("PorchItem"), pouchCounts = Crc32("PorchItem_Value1"),
                        pouchEquipped = Crc32("PorchItem_EquipFlag");
+        const uint32_t markIcons = Crc32("MapApp_MapIconNo"), markPositions = Crc32("MapApp_MapIconPos");
         for (const auto& entry : values)
         {
+            // The marks of the game's map (zayr32): 200 icons and 200 positions
+            if (entry.first == markIcons || entry.first == markPositions)
+            {
+                const bool icons = entry.first == markIcons;
+                FakeArray array = {icons ? LiveGameData::FlagKind::S32 : LiveGameData::FlagKind::Vector3f, entry.first, {}};
+                const size_t per = icons ? 1 : 3;
+                for (size_t i = 0; i + per <= entry.second.size(); i += per)
+                {
+                    std::vector<uint8_t> bytes(per * 4, 0);
+                    std::memcpy(bytes.data(), &entry.second[i], per * 4);
+                    array.values.push_back(bytes);
+                }
+                arrays.push_back(array);
+                continue;
+            }
             FakeFlag flag = {LiveGameData::FlagKind::Bool, entry.first, {}};
             const std::vector<uint32_t>& list = entry.second;
             if (entry.first == pouchNames || entry.first == pouchCounts || entry.first == pouchEquipped)
@@ -189,4 +205,10 @@ extern "C" uint32_t cheatServiceRead(uint64_t address, void* buffer, size_t size
 {
     FakeGame* game = Game();
     return game && game->memory.Read(address, buffer, size) ? 0 : 1;
+}
+
+extern "C" uint32_t cheatServiceWrite(uint64_t address, const void* buffer, size_t size)
+{
+    FakeGame* game = Game();
+    return game && game->memory.Store(address, buffer, size) ? 0 : 1;
 }

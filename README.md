@@ -31,6 +31,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - While the legend or a card is open the map slides to the right, so that the selected object stays in view, inside a ring.
 - Per-profile and per-mode manual progress (`Y`) for every supported object type, only while a save backup is shown. It never modifies the BotW save.
 - `ZR` / `ZL` step forward / back through the 5 nearest missing visible objects, opening the Korok hint or the card of each one.
+- **A pin on the game's own map (test, zayr32):** with the progress read live from BotW 1.6.0 (the app opened from the Album), `Y` on a card puts the first of the game's five pins that is not on its map where the object is, at Link's height. This is the only thing the app writes to the game: the two array flags where the game keeps its stamps and pins (`MapApp_MapIconNo`, `MapApp_MapIconPos`), in both of the game's copies of each flag (the one its getters read and the one the save is made from), read back after writing; nothing is written when anything looks different from what is expected, and not where the map already has a mark. Whether the game shows it at once and keeps it when it saves is what the test is for. `log.txt` lists the marks found and what was written (`PIN:`).
 - "You are here": a marker where Link is (right now when read from the game, otherwise the last save); the map opens there and `L` glides back to it. Inside a shrine the marker is on the shrine.
 - Shrine cards show whether the shrine is completed and how many of its chests are opened (`Chests 2/3`); a discovered shrine with something left stays on the map.
 - The shrines of the Champions' Ballad show only once that quest has begun, when they can exist in the world. Before that the legend counts 120 shrines.
@@ -65,7 +66,7 @@ The bar at the bottom of the screen always shows the buttons that do something.
 | Map | `+` | Exit |
 | Card | `B` | Back |
 | Card | `A` | Korok: the guide's photo full screen. Chest: the kind of content, then the item |
-| Card | `Y` | Mark as found, while a save backup is shown |
+| Card | `Y` | Mark as found, while a save backup is shown. With the progress read live from the game (test, zayr32): put a pin on the game's own map where the object is |
 | Panel | `L` / `R`, or touch a title | Switch between the tabs Legend, Progress, Regions and Collection (as in BotW Compendium) |
 | Legend | D-Pad, `A`, or touch | Select a category (left/right: the other column) and show or hide it |
 | Regions | D-Pad up/down, `A`, or touch | Show one region alone on the map, or the whole map again |

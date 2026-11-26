@@ -65,8 +65,23 @@ public:
     template <typename T>
     void Put(uint64_t address, T value) { Write(address, &value, sizeof(value)); }
 
+    // A write of the app (MapMarks): only to mapped memory, like the cheat service; `storeFails` makes the n-th fail.
+    bool Store(uint64_t address, const void* data, size_t size) override
+    {
+        ++storeCount;
+        if (storeFails > 0 && storeCount == storeFails)
+            return false;
+        for (uint64_t page = address / PageSize; page <= (address + size - 1) / PageSize; ++page)
+            if (pages.find(page) == pages.end())
+                return false;
+        Write(address, data, size);
+        return true;
+    }
+
     std::map<uint64_t, std::vector<uint8_t>> pages;
     int readCount = 0;
+    int storeCount = 0;
+    int storeFails = 0;
 };
 
 struct FakeFlag
@@ -202,26 +217,38 @@ public:
         }
     }
 
+    // Per array hash: its Flag<T> objects and the proxies that stand for them (FlagProxy: vtable, the flag, the value).
+    std::map<uint32_t, std::vector<uint64_t>> arrayFlags, arrayProxies;
+    static constexpr uint64_t ProxyValueOffset = 0x10;
+
     // The tables of array flags of the flag buffer: one table per kind present, each entry a PtrArray of the
-    // elements, whose objects lie one after the other. Call after Build. `vtableShift` as in Build.
+    // elements, whose objects lie one after the other; and the same tables in the proxy buffer, whose arrays hold
+    // proxies with their own copy of each value (decomp: TriggerParam::copyAllFlags). Call after Build.
+    // `vtableShift` as in Build.
     void BuildArrays(const LiveGameData::Layout& layout, const std::vector<FakeArray>& arrays, uint64_t vtableShift = 0)
     {
         const int kindCount = static_cast<int>(LiveGameData::FlagKind::Count);
         uint64_t objects = 0x3200000000ULL; // away from the objects of Build (0x23.. to 0x28..)
         uint64_t headers = 0x3100000000ULL;
+        uint64_t proxies = 0x3400000000ULL, proxyHeaders = 0x3300000000ULL;
         for (int kind = 0; kind < kindCount; ++kind)
         {
             const LiveGameData::Layout::Kind& info = layout.kinds[kind];
-            std::vector<uint64_t> entries;
+            std::vector<uint64_t> entries, proxyEntries;
             for (const FakeArray& array : arrays)
             {
                 if (static_cast<int>(array.kind) != kind)
                     continue;
-                const uint64_t elements = headers + 0x10;
+                const uint64_t elements = headers + 0x10, proxyElements = proxyHeaders + 0x10;
+                const size_t valueSize = std::min(FakeValueSize(array.kind), static_cast<size_t>(16));
                 memory.Map(headers, 0x10 + array.values.size() * 8);
                 memory.Put<int32_t>(headers, static_cast<int32_t>(array.values.size()));
                 memory.Put<int32_t>(headers + 4, static_cast<int32_t>(array.values.size()));
                 memory.Put<uint64_t>(headers + 8, elements);
+                memory.Map(proxyHeaders, 0x10 + array.values.size() * 8);
+                memory.Put<int32_t>(proxyHeaders, static_cast<int32_t>(array.values.size()));
+                memory.Put<int32_t>(proxyHeaders + 4, static_cast<int32_t>(array.values.size()));
+                memory.Put<uint64_t>(proxyHeaders + 8, proxyElements);
                 for (size_t i = 0; i < array.values.size(); ++i)
                 {
                     std::vector<uint8_t> object(info.size, 0);
@@ -232,20 +259,40 @@ public:
                                 std::min(array.values[i].size(), FakeValueSize(array.kind)));
                     memory.Write(objects, object.data(), object.size());
                     memory.Put<uint64_t>(elements + i * 8, objects);
+                    arrayFlags[array.hash].push_back(objects);
+
+                    std::vector<uint8_t> proxy(0x20, 0);
+                    const uint64_t proxyVtable = mainBase + 0x2BD0000;
+                    std::memcpy(proxy.data(), &proxyVtable, 8);
+                    std::memcpy(proxy.data() + 8, &objects, 8);
+                    std::memcpy(proxy.data() + ProxyValueOffset, array.values[i].data(),
+                                std::min(array.values[i].size(), valueSize));
+                    memory.Write(proxies, proxy.data(), proxy.size());
+                    memory.Put<uint64_t>(proxyElements + i * 8, proxies);
+                    arrayProxies[array.hash].push_back(proxies);
                     objects += info.size;
+                    proxies += proxy.size();
                 }
                 entries.push_back(headers);
+                proxyEntries.push_back(proxyHeaders);
                 headers += (0x10 + array.values.size() * 8 + 0xFFF) & ~0xFFFULL;
+                proxyHeaders += (0x10 + array.values.size() * 8 + 0xFFF) & ~0xFFFULL;
                 objects = (objects + 0x1FFF) & ~0xFFFULL; // a page between the arrays
+                proxies = (proxies + 0x1FFF) & ~0xFFFULL;
             }
-            const uint64_t table = 0x3000000000ULL + static_cast<uint64_t>(kind) * 0x10000000ULL;
-            const uint64_t header = flagBuffer + layout.arrayTablesOffset + static_cast<uint64_t>(info.table) * 16;
-            memory.Map(table, entries.size() * 8 + 8);
-            for (size_t i = 0; i < entries.size(); ++i)
-                memory.Put<uint64_t>(table + i * 8, entries[i]);
-            memory.Put<int32_t>(header, static_cast<int32_t>(entries.size()));
-            memory.Put<int32_t>(header + 4, static_cast<int32_t>(entries.size()));
-            memory.Put<uint64_t>(header + 8, table);
+            for (int which = 0; which < 2; ++which)
+            {
+                const std::vector<uint64_t>& list = which == 0 ? entries : proxyEntries;
+                const uint64_t table = (which == 0 ? 0x3000000000ULL : 0x3500000000ULL) + static_cast<uint64_t>(kind) * 0x10000000ULL;
+                const uint64_t header = (which == 0 ? flagBuffer : proxyBuffer) + layout.arrayTablesOffset +
+                                        static_cast<uint64_t>(info.table) * 16;
+                memory.Map(table, list.size() * 8 + 8);
+                for (size_t i = 0; i < list.size(); ++i)
+                    memory.Put<uint64_t>(table + i * 8, list[i]);
+                memory.Put<int32_t>(header, static_cast<int32_t>(list.size()));
+                memory.Put<int32_t>(header + 4, static_cast<int32_t>(list.size()));
+                memory.Put<uint64_t>(header + 8, table);
+            }
         }
     }
 

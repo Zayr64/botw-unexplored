@@ -26,6 +26,9 @@
 #include "Localization.h"
 #include "ShrineFlags.h"
 #include "ManualProgress.h"
+#include "GameMemory.h"
+#include "LiveGameData.h"
+#include "MapMarks.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
 #include "SwitchStyle.h"
@@ -113,6 +116,44 @@ namespace
     bool CanMarkByHand()
     {
         return !ProgressIsCurrent() && ManualProgress::CanPersist();
+    }
+
+    // zayr32 (test): with the progress read live from the game, Y on a card puts a pin on the game's own map
+    bool CanPinInGame()
+    {
+        return SavefileIO::LiveSynced;
+    }
+
+    bool SelectedObjectPosition(glm::vec2& position);
+
+    // The first pin not on the game's map, where the object of the open card is, at Link's height (the app knows no
+    // heights). Everything it saw and did goes to log.txt.
+    void PinInGame()
+    {
+        using Localization::Text;
+        glm::vec2 mapPosition;
+        if (!SelectedObjectPosition(mapPosition))
+            return;
+        std::string message;
+        if (GameMemory::Open(message) != GameMemory::Status::Ready)
+        {
+            Log("PIN: the game cannot be reached:", message);
+            Ui::Toast(Localization::Get(Text::ToastPinFailed) + ": " + message, true);
+            return;
+        }
+        const LiveGameData::Layout& layout = LiveGameData::Botw160();
+        float link[3] = {0.0f, 0.0f, 0.0f};
+        const bool hasLink = LiveGameData::ReadPlayerPosition(GameMemory::Reader(), GameMemory::MainBase(), layout, link);
+        const float position[3] = {mapPosition.x / 0.25f, hasLink ? link[1] : 0.0f, -mapPosition.y / 0.25f};
+        MapMarks::Result result;
+        const bool placed = MapMarks::Add(GameMemory::Reader(), GameMemory::MainBase(), layout, -1, position, result);
+        GameMemory::Close();
+        Log("PIN: Link's height " + std::string(hasLink ? "read" : "unknown") + "; " + result.details);
+        if (placed)
+            Ui::Toast(Localization::Get(Text::ToastPinPlaced) + " (" + std::to_string(result.icon) + ", slot " +
+                      std::to_string(result.slot) + ")");
+        else
+            Ui::Toast(Localization::Get(Text::ToastPinFailed) + ": " + result.error, true);
     }
 
     bool ResolveFound(Data::ObjectType type, uint32_t hash, bool foundInSave, bool& manualProgressChanged)
@@ -407,6 +448,8 @@ namespace
                                          : (Map::m_ObjectInfo->m_Found && *Map::m_ObjectInfo->m_Found);
             if (CanMarkByHand() && !found && !(objectCard && Map::m_ObjectInfo->m_Type == Data::ObjectType::Quest))
                 add("Y", Text::HintMarkFound);
+            else if (CanPinInGame())
+                add("Y", Text::HintPinInGame);
             add("ZL ZR", Text::HintPreviousNext);
             add("B", Text::HintBack);
             add("X", Text::HintLegend);
@@ -904,7 +947,10 @@ void Map::Update()
     }
 
     // zayr7: Y marks the open Korok hint or card as found; with neither open it toggles master mode
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_KorokDialog->m_IsOpen)
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && (m_KorokDialog->m_IsOpen || m_ObjectInfo->m_IsOpen) &&
+        CanPinInGame())
+        PinInGame();
+    else if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_Y) && m_KorokDialog->m_IsOpen)
     {
         if (CanMarkByHand() && m_KorokDialog->m_KorokIndex >= 0 && !m_Koroks[m_KorokDialog->m_KorokIndex].m_Found)
         {

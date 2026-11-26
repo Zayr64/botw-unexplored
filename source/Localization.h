@@ -182,6 +182,9 @@ namespace Localization
         ChestItemHad,
         HorseGodAwake,
         HorseGodAsleep,
+        HintPinInGame,
+        ToastPinPlaced,
+        ToastPinFailed,
         Count
     };
 

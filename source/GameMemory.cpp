@@ -20,6 +20,11 @@ namespace
         {
             return cheatServiceRead(address, out, size) == 0;
         }
+
+        bool Store(uint64_t address, const void* data, size_t size) override
+        {
+            return cheatServiceWrite(address, data, size) == 0;
+        }
     };
 
     CheatServiceReader s_Reader;

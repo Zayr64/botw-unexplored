@@ -5,7 +5,8 @@
 
 #include "LiveGameData.h"
 
-// Read-only access to the memory of BotW while it runs behind this app (the app opened from the Album).
+// Access to the memory of BotW while it runs behind this app (the app opened from the Album): read, and written only
+// for the pin on the game's map (MapMarks, zayr32).
 namespace GameMemory
 {
     enum class Status
