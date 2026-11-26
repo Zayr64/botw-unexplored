@@ -18,7 +18,9 @@
 #include <glm/mat4x4.hpp>
 
 #include "Graphics/Font.h"
+#ifndef BOTW_COMPANION
 #include "Graphics/InitGL.h"
+#endif
 #include "Graphics/ShapeBatch.h"
 #include "Log.h"
 #include "Measure.h"
@@ -26,6 +28,7 @@
 
 #include "Cook.h"
 #include "CookData.h"
+#include "CompendiumSection.h"
 #include "Icons.h"
 #include "Reserve.h"
 #include "Sale.h"
@@ -81,6 +84,12 @@ namespace
     Font* g_font = nullptr;
     ShapeBatch* g_shapes = nullptr;
     unsigned int g_frame = 0; // the pulse of the selection's frame
+    // BotW Companion: the section on the screen (0 the map, 1 to 4 the tabs); -1 in the BotW Compendium. On the map the
+    // header shows where the map's data comes from.
+    int g_section = -1;
+    std::string g_mapSource;
+    glm::vec3 g_mapDot(0.0f);
+    bool g_mapHasDot = false;
     glm::mat4 g_projection(1.0f);
     glm::mat4 g_identity(1.0f);
 
@@ -598,15 +607,22 @@ namespace
         Rect(0, HeaderH, ScreenW, 1, Hairline);
         // Each tab with the icon of the game's pause menu for it (on the SD, from the dump; without it, the title
         // alone): the pot of the dishes, the apple of the materials, a rupee, a skull.
-        const char* tabs[] = {"Dishes", "Reserve", "Sell", "EXP"};
-        const char* tabIcons[] = {"tab-dishes", "tab-reserve", "tab-sell", "tab-exp"};
+        const bool companion = g_section >= 0;
+        const char* compendiumTabs[] = {"Dishes", "Reserve", "Sell", "EXP"};
+        const char* compendiumIcons[] = {"tab-dishes", "tab-reserve", "tab-sell", "tab-exp"};
+        const char* companionTabs[] = {"Map", "Dishes", "Reserve", "Sell", "EXP"};
+        const char* companionIcons[] = {"tab-map", "tab-dishes", "tab-reserve", "tab-sell", "tab-exp"};
+        const char* const* tabs = companion ? companionTabs : compendiumTabs;
+        const char* const* tabIcons = companion ? companionIcons : compendiumIcons;
+        const int tabCount = companion ? 5 : 4;
+        const int activeTab = companion ? g_section : app.tab;
         const float tabScale = 0.46f, tabBaseline = 36.0f, icon = 30.0f, iconGap = 5.0f, pad = 12.0f, tabGap = 4.0f;
         const float cap = SwitchStyle::CapHeight(*g_font, tabScale);
         auto contentW = [&](int i) {
             return Width(tabs[i], tabScale) + (Icons::HasUi(tabIcons[i]) ? icon + iconGap : 0.0f);
         };
         float tabsW = 0.0f;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < tabCount; i++)
             tabsW += contentW(i) + 2 * pad + tabGap;
         // On the right the rupees, then where the data comes from; the long form when there is room, else the date.
         const std::string rupees = app.plan ? Number(app.plan->rupees) : std::string();
@@ -614,23 +630,35 @@ namespace
         glm::vec3 dot;
         bool hasDot = false;
         std::string source = SourceText(app, false, dot, hasDot);
-        // The title gets shorter when the zoom leaves no room for it.
-        std::string title = "BotW Compendium";
+        if (companion && g_section == 0)
+        {
+            source = g_mapSource;
+            dot = g_mapDot;
+            hasDot = g_mapHasDot;
+        }
+        // The title gets shorter when the zoom leaves no room for it; the companion has the sections in its place.
+        std::string title = companion ? std::string() : std::string("BotW Compendium");
         auto room = [&]() {
-            return ScreenW - (24 + Width(title, 0.62f) + 16 + tabsW + 12 + rupeesW + 16);
+            return ScreenW - (24 + (title.empty() ? 0.0f : Width(title, 0.62f) + 16) + tabsW + 12 + rupeesW + 16);
         };
-        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
+        if (!source.empty() && !title.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
             title = "Compendium";
-        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
+        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room() && !(companion && g_section == 0))
             source = SourceText(app, true, dot, hasDot);
         if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
             source.clear();
-        Text(title, 24, 38, 0.62f, Gold);
-        float x = 24 + Width(title, 0.62f) + 16;
-        for (int i = 0; i < 4; i++)
+        float x = 24;
+        if (!title.empty())
+        {
+            Text(title, 24, 38, 0.62f, Gold);
+            x += Width(title, 0.62f) + 16;
+        }
+        else
+            x = 12;
+        for (int i = 0; i < tabCount; i++)
         {
             const float w = contentW(i) + 2 * pad;
-            const bool active = i == app.tab;
+            const bool active = i == activeTab;
             const float left = x + pad, right = x + w - pad;
             if (active)
                 SwitchStyle::TabMark(*g_shapes, left, right, ScreenH - tabBaseline);
@@ -678,7 +706,7 @@ namespace
         std::vector<Hint> hints;
         if (!app.loading && app.error.empty())
         {
-            hints.push_back({"L R", "tab", 1});
+            hints.push_back({"L R", g_section >= 0 ? "section" : "tab", 1});
             hints.push_back({app.tab == 3 ? "Up/Down Left/Right" : "Up/Down", "move", 0});
             if (app.visible[app.tab] > 0 && RowCount(app) > app.visible[app.tab])
                 hints.push_back({"Left/Right", "page", 2});
@@ -1762,6 +1790,246 @@ namespace
     }
 }
 
+// The work of one frame, shared by main() (the BotW Compendium) and by the BotW Companion (CompendiumSection).
+namespace
+{
+    struct Runtime
+    {
+        App app;
+        bool ok = false;
+        int frame = 0; // frames drawn with a tab: the first says the save is being read
+        int heldFrames = 0;
+    };
+
+    std::unique_ptr<Runtime> s_run;
+    std::unique_ptr<Font> s_font;
+    std::unique_ptr<ShapeBatch> s_shapes;
+
+    void StartDrawing()
+    {
+        g_projection = glm::ortho(0.0f, ScreenW, 0.0f, ScreenH, -1.0f, 1.0f);
+        s_font.reset(new Font());
+        if (s_font->LoadSystem() != 1) // the console's own font: nothing in romfs
+            Log("Font failed to load");
+        s_font->m_ProjectionMatrix = &g_projection;
+        s_font->m_ViewMatrix = &g_identity;
+        g_font = s_font.get();
+        s_shapes.reset(new ShapeBatch());
+        g_shapes = s_shapes.get();
+        Icons::Init();
+        s_run.reset(new Runtime());
+    }
+
+    void StopDrawing()
+    {
+        Icons::Destroy();
+        s_run.reset();
+        s_shapes.reset();
+        g_shapes = nullptr;
+        if (s_font)
+            s_font->Destroy();
+        s_font.reset();
+        g_font = nullptr;
+    }
+
+    // The buttons of one frame on the tabs. `changeTabs`: L/R and ZL/ZR change the tab (the BotW Compendium; in the
+    // companion L and R change the section, outside).
+    void TabInput(Runtime& r, u64 down, u64 held, bool changeTabs)
+    {
+        App& app = r.app;
+        if (app.loading || !r.ok)
+            return;
+        if (changeTabs && (down & (HidNpadButton_R | HidNpadButton_ZR)))
+            app.tab = (app.tab + 1) % 4;
+        if (changeTabs && (down & (HidNpadButton_L | HidNpadButton_ZL)))
+            app.tab = (app.tab + 3) % 4;
+        // Up/Down on the d-pad or a stick, repeating while held; Left/Right a page at a time on the long lists.
+        const u64 vertical = HidNpadButton_AnyUp | HidNpadButton_AnyDown;
+        const u64 horizontal = HidNpadButton_AnyLeft | HidNpadButton_AnyRight;
+        int move = 0;
+        bool paged = false;
+        if (held & (vertical | horizontal))
+        {
+            r.heldFrames++;
+            const bool repeat = r.heldFrames > 18 && r.heldFrames % 4 == 0;
+            if ((down & HidNpadButton_AnyDown) || (repeat && (held & HidNpadButton_AnyDown)))
+                move = 1;
+            if ((down & HidNpadButton_AnyUp) || (repeat && (held & HidNpadButton_AnyUp)))
+                move = -1;
+            // Not while a stick is also pushed up or down: a diagonal is not a page.
+            if (!(held & vertical) && app.visible[app.tab] > 0)
+            {
+                const bool pageRepeat = r.heldFrames > 18 && r.heldFrames % 12 == 0;
+                const int page = std::max(1, app.visible[app.tab] - 1);
+                if ((down & HidNpadButton_AnyRight) || (pageRepeat && (held & HidNpadButton_AnyRight)))
+                    move = page;
+                if ((down & HidNpadButton_AnyLeft) || (pageRepeat && (held & HidNpadButton_AnyLeft)))
+                    move = -page;
+                paged = move != 0;
+            }
+            if (app.tab == 3 && app.gridColumns > 0)
+            {
+                move = 0;
+                paged = false;
+                if ((down & HidNpadButton_AnyDown) || (repeat && (held & HidNpadButton_AnyDown)))
+                    move = app.gridColumns;
+                if ((down & HidNpadButton_AnyUp) || (repeat && (held & HidNpadButton_AnyUp)))
+                    move = -app.gridColumns;
+                if ((down & HidNpadButton_AnyRight) || (repeat && (held & HidNpadButton_AnyRight)))
+                    move = 1;
+                if ((down & HidNpadButton_AnyLeft) || (repeat && (held & HidNpadButton_AnyLeft)))
+                    move = -1;
+            }
+        }
+        else
+            r.heldFrames = 0;
+        const int rows = RowCount(app);
+        if (move && rows > 0)
+        {
+            // A page moves the window with the cursor (the list keeps both inside when it draws).
+            if (paged)
+                app.scroll[app.tab] += move;
+            app.cursor[app.tab] = std::max(0, std::min(rows - 1, app.cursor[app.tab] + move));
+        }
+        // With room for one dish, A shows the other (the cheapest as strong, or the yellow-heart dish).
+        if ((down & HidNpadButton_A) && app.tab == 0)
+            app.dishPage = app.dishPage ? 0 : 1;
+        // X and Y change what counts as free: the dishes and the sale are computed again, after a frame that says so.
+        if ((down & HidNpadButton_X) && app.tab != 3)
+        {
+            app.countHidden = !app.countHidden;
+            app.computing = true;
+        }
+        if ((down & HidNpadButton_Y) && app.tab == 0)
+        {
+            app.wholePouch = !app.wholePouch;
+            app.computing = true;
+        }
+        if ((down & HidNpadButton_Y) && app.tab == 2 && app.prizedFree > 0)
+        {
+            app.sellPrized = !app.sellPrized;
+            app.computing = true;
+        }
+    }
+
+    // One frame drawn: the header, and with `content` the tab (or what is going on) and the footer. Shapes, icons and
+    // text all go into queues: the shapes are drawn first, then the icons, then the text.
+    void TabFrame(Runtime& r, bool content)
+    {
+        App& app = r.app;
+        g_font->BeginBatch();
+        Header(app);
+        if (content)
+        {
+            if (app.loading)
+                Message("Reading the save and cooking every combination...", TextDim);
+            else if (!r.ok)
+                Message(app.error, Warn);
+            else if (app.tab == 0)
+                DishesTab(app);
+            else if (app.tab == 1)
+                ReserveTab(app);
+            else if (app.tab == 2)
+                SellTab(app);
+            else
+                ExpTab(app);
+            // After the tab: the hints depend on how many rows its list shows.
+            Footer(app);
+        }
+        g_shapes->Render(g_projection);
+        Icons::Flush(g_projection, ScreenH);
+        g_font->RenderBatch();
+    }
+
+    // After the frame is on the screen: the save read (on the frame after the one that says so), or the dishes cooked
+    // again.
+    void AfterTabFrame(Runtime& r, bool content)
+    {
+        App& app = r.app;
+        if (content && app.loading && r.frame > 0)
+        {
+            r.ok = Load(app);
+            app.loading = false;
+            if (!r.ok)
+            {
+                if (app.error.empty())
+                    app.error = "The save could not be read";
+                Log("Load failed:", app.error);
+            }
+        }
+        else if (app.computing)
+        {
+            Compute(app);
+            app.computing = false;
+            Measure::Step("cooking again");
+        }
+        if (content)
+            r.frame++;
+        g_frame++;
+    }
+}
+
+#ifdef BOTW_COMPANION
+void CompendiumSection::Init()
+{
+    g_section = 0;
+    StartDrawing();
+    Measure::Step("Compendium: font and icons ready");
+}
+
+void CompendiumSection::Destroy()
+{
+    StopDrawing();
+}
+
+int CompendiumSection::Switch(int section, u64 down)
+{
+    if (down & HidNpadButton_R)
+        section = (section + 1) % Sections;
+    if (down & HidNpadButton_L)
+        section = (section + Sections - 1) % Sections;
+    return section;
+}
+
+void CompendiumSection::Frame(int section, u64 down, u64 held, const std::string& mapSource, const glm::vec3& mapDot,
+                              bool mapHasDot)
+{
+    g_section = section;
+    g_mapSource = mapSource;
+    g_mapDot = mapDot;
+    g_mapHasDot = mapHasDot;
+    Runtime& r = *s_run;
+    const bool content = section > 0;
+    if (content)
+    {
+        r.app.tab = section - 1;
+        TabInput(r, down, held, false);
+    }
+    TabFrame(r, content);
+}
+
+void CompendiumSection::AfterFrame(int section)
+{
+    AfterTabFrame(*s_run, section > 0);
+}
+
+void CompendiumSection::Reload(int section)
+{
+    // The tab and where the lists were stay; the rest is read and cooked again (the first frame says so).
+    Runtime& r = *s_run;
+    const int tab = r.app.tab;
+    r.app = App();
+    r.app.tab = tab;
+    r.ok = false;
+    r.frame = section > 0 ? 1 : 0;
+    Log("Compendium: read again");
+}
+
+float CompendiumSection::HeaderHeight()
+{
+    return (HeaderH + 1.0f) * Zoom;
+}
+#else
 int main()
 {
     LogInit();
@@ -1782,22 +2050,10 @@ int main()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    g_projection = glm::ortho(0.0f, ScreenW, 0.0f, ScreenH, -1.0f, 1.0f);
-    Font font;
-    if (font.LoadSystem() != 1) // the console's own font: nothing in romfs
-        Log("Font failed to load");
-    font.m_ProjectionMatrix = &g_projection;
-    font.m_ViewMatrix = &g_identity;
-    g_font = &font;
-    std::unique_ptr<ShapeBatch> shapes(new ShapeBatch());
-    g_shapes = shapes.get();
-    Icons::Init();
+    StartDrawing();
     Measure::Step("EGL, font and icons ready");
 
-    App app;
-    bool ok = false;
-    int frame = 0;
-    int heldFrames = 0;
+    Runtime& r = *s_run;
     while (appletMainLoop())
     {
         padUpdate(&pad);
@@ -1805,137 +2061,19 @@ int main()
         const u64 held = padGetButtons(&pad);
         if (down & HidNpadButton_Plus)
             break;
-
-        if (!app.loading && ok)
-        {
-            if (down & (HidNpadButton_R | HidNpadButton_ZR))
-                app.tab = (app.tab + 1) % 4;
-            if (down & (HidNpadButton_L | HidNpadButton_ZL))
-                app.tab = (app.tab + 3) % 4;
-            // Up/Down on the d-pad or a stick, repeating while held; Left/Right a page at a time on the long lists.
-            const u64 vertical = HidNpadButton_AnyUp | HidNpadButton_AnyDown;
-            const u64 horizontal = HidNpadButton_AnyLeft | HidNpadButton_AnyRight;
-            int move = 0;
-            bool paged = false;
-            if (held & (vertical | horizontal))
-            {
-                heldFrames++;
-                const bool repeat = heldFrames > 18 && heldFrames % 4 == 0;
-                if ((down & HidNpadButton_AnyDown) || (repeat && (held & HidNpadButton_AnyDown)))
-                    move = 1;
-                if ((down & HidNpadButton_AnyUp) || (repeat && (held & HidNpadButton_AnyUp)))
-                    move = -1;
-                // Not while a stick is also pushed up or down: a diagonal is not a page.
-                if (!(held & vertical) && app.visible[app.tab] > 0)
-                {
-                    const bool pageRepeat = heldFrames > 18 && heldFrames % 12 == 0;
-                    const int page = std::max(1, app.visible[app.tab] - 1);
-                    if ((down & HidNpadButton_AnyRight) || (pageRepeat && (held & HidNpadButton_AnyRight)))
-                        move = page;
-                    if ((down & HidNpadButton_AnyLeft) || (pageRepeat && (held & HidNpadButton_AnyLeft)))
-                        move = -page;
-                    paged = move != 0;
-                }
-                if (app.tab == 3 && app.gridColumns > 0)
-                {
-                    move = 0;
-                    paged = false;
-                    if ((down & HidNpadButton_AnyDown) || (repeat && (held & HidNpadButton_AnyDown)))
-                        move = app.gridColumns;
-                    if ((down & HidNpadButton_AnyUp) || (repeat && (held & HidNpadButton_AnyUp)))
-                        move = -app.gridColumns;
-                    if ((down & HidNpadButton_AnyRight) || (repeat && (held & HidNpadButton_AnyRight)))
-                        move = 1;
-                    if ((down & HidNpadButton_AnyLeft) || (repeat && (held & HidNpadButton_AnyLeft)))
-                        move = -1;
-                }
-            }
-            else
-                heldFrames = 0;
-            const int rows = RowCount(app);
-            if (move && rows > 0)
-            {
-                // A page moves the window with the cursor (the list keeps both inside when it draws).
-                if (paged)
-                    app.scroll[app.tab] += move;
-                app.cursor[app.tab] = std::max(0, std::min(rows - 1, app.cursor[app.tab] + move));
-            }
-            // With room for one dish, A shows the other (the cheapest as strong, or the yellow-heart dish).
-            if ((down & HidNpadButton_A) && app.tab == 0)
-                app.dishPage = app.dishPage ? 0 : 1;
-            // X and Y change what counts as free: the dishes and the sale are computed again, after a frame that
-            // says so.
-            if ((down & HidNpadButton_X) && app.tab != 3)
-            {
-                app.countHidden = !app.countHidden;
-                app.computing = true;
-            }
-            if ((down & HidNpadButton_Y) && app.tab == 0)
-            {
-                app.wholePouch = !app.wholePouch;
-                app.computing = true;
-            }
-            if ((down & HidNpadButton_Y) && app.tab == 2 && app.prizedFree > 0)
-            {
-                app.sellPrized = !app.sellPrized;
-                app.computing = true;
-            }
-        }
-
-        // Shapes, icons and text all go into queues: the shapes are drawn first, then the icons, then the text.
+        TabInput(r, down, held, true);
         glClearColor(Background.r, Background.g, Background.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        font.BeginBatch();
-        Header(app);
-        if (app.loading)
-            Message("Reading the save and cooking every combination...", TextDim);
-        else if (!ok)
-            Message(app.error, Warn);
-        else
-        {
-            if (app.tab == 0)
-                DishesTab(app);
-            else if (app.tab == 1)
-                ReserveTab(app);
-            else if (app.tab == 2)
-                SellTab(app);
-            else
-                ExpTab(app);
-        }
-        // After the tab: the hints depend on how many rows its list shows.
-        Footer(app);
-        g_shapes->Render(g_projection);
-        Icons::Flush(g_projection, ScreenH);
-        font.RenderBatch();
+        TabFrame(r, true);
         eglSwapBuffers(s_display, s_surface);
-
-        if (app.loading && frame > 0)
-        {
-            ok = Load(app);
-            app.loading = false;
-            if (!ok)
-            {
-                if (app.error.empty())
-                    app.error = "The save could not be read";
-                Log("Load failed:", app.error);
-            }
-        }
-        else if (app.computing)
-        {
-            Compute(app);
-            app.computing = false;
-            Measure::Step("cooking again");
-        }
-        frame++;
-        g_frame++;
+        AfterTabFrame(r, true);
     }
 
     Measure::Step("exit");
     Log("SHUTDOWN");
-    Icons::Destroy();
-    shapes.reset();
-    font.Destroy();
+    StopDrawing();
     deinitEgl();
     appletUnlockExit();
     return 0;
 }
+#endif

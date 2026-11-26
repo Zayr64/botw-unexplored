@@ -29,8 +29,10 @@ namespace Ui
     // Edges of the virtual screen, origin at the centre (the screen's edges divided by the zoom).
     float Left();
     float Right();
+    // The top of the panels: the screen's, less what the BotW Companion's header takes (SetTopInset).
     float Top();
     float Bottom();
+    void SetTopInset(float screenPixels);
     // The projection of the virtual screen, for the matrices of the font and of the images of the interface.
     glm::mat4* Projection();
     // A point of the real screen (pixels, origin at the centre, y up) on the virtual one: for touches.

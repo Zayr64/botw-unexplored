@@ -8,3 +8,10 @@ saves
 script
 __pycache__/
 *.pyc
+
+# BotW Companion's build
+companion/build/
+companion/*.nro
+companion/*.nacp
+companion/*.elf
+companion/*.map

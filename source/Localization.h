@@ -124,6 +124,7 @@ namespace Localization
         ChestItemHad,
         HorseGodAwake,
         HorseGodAsleep,
+        HintSection,
         Count
     };
 

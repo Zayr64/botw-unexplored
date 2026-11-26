@@ -17,6 +17,10 @@ mkdir -p "$OUT/obj"
 FLAGS=(-std=gnu++17 -O1 -g -w -D__SWITCH__ -I"$HERE/shim" -I"$REPO/include" -I"$REPO/source" -I"$REPO/tests")
 # HOSTVIEW_CXXFLAGS: more compiler flags (-D...), to look at a variant
 FLAGS+=(${HOSTVIEW_CXXFLAGS:-})
+# HOSTVIEW_COMPANION=1: the BotW Companion (the map and the Compendium in one app)
+if [[ "${HOSTVIEW_COMPANION:-0}" == 1 ]]; then
+    FLAGS+=(-DBOTW_COMPANION -ffp-contract=off -I"$REPO/compendium/source" -I"$REPO/compendium/app")
+fi
 if [[ -n "${HOSTVIEW_SYSROOT:-}" ]]; then
     FLAGS+=(-I"$HOSTVIEW_SYSROOT/usr/include" -I"$HOSTVIEW_SYSROOT/usr/include/freetype2")
 else
@@ -33,13 +37,19 @@ for f in "$REPO"/source/*.cpp "$REPO"/source/Graphics/*.cpp "$HERE"/extra/*.cpp;
     [[ "$(basename "$f")" == "FreeMemory.cpp" ]] && continue # host.cpp has its own
     SRCS+=("$f")
 done
+if [[ "${HOSTVIEW_COMPANION:-0}" == 1 ]]; then
+    for f in "$REPO"/compendium/source/*.cpp "$REPO"/compendium/app/*.cpp; do
+        [[ "$(basename "$f")" == "CompendiumLog.cpp" ]] && continue # the map's log is the companion's
+        SRCS+=("$f")
+    done
+fi
 
 # A header changed since the last build: compile everything again.
 STAMP="$OUT/stamp"
 REBUILD=0
 if [[ ! -e "$STAMP" ]]; then
     REBUILD=1
-elif [[ -n "$(find "$REPO/source" "$REPO/tests" "$HERE/shim" \( -name '*.h' -o -name '*.hpp' \) -newer "$STAMP" | head -1)" ]]; then
+elif [[ -n "$(find "$REPO/source" "$REPO/tests" "$HERE/shim" "$REPO/compendium" \( -name '*.h' -o -name '*.hpp' \) -newer "$STAMP" | head -1)" ]]; then
     REBUILD=1
 fi
 

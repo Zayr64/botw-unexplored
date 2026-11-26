@@ -33,6 +33,11 @@ APPDIR="$RUN/sdmc:/switch/botw-unexplored"
 mkdir -p "$APPDIR"
 ln -s "$REPO/romfs" "$RUN/romfs:"
 if [[ -n "${HOSTVIEW_SD_DIR:-}" ]]; then cp -r "$HOSTVIEW_SD_DIR"/. "$APPDIR/"; fi
+# The BotW Companion also reads the Compendium's folder (cook-data.txt, icons/)
+if [[ -n "${HOSTVIEW_COMPENDIUM_DIR:-}" ]]; then
+    mkdir -p "$RUN/sdmc:/switch/botw-compendium"
+    cp -r "$HOSTVIEW_COMPENDIUM_DIR"/. "$RUN/sdmc:/switch/botw-compendium/"
+fi
 case "$MODE" in
     closed)
         ln -s "$SAVE" "$RUN/save:" ;;
@@ -55,4 +60,5 @@ if ! HOSTVIEW_SCRIPT="$SCRIPT" HOSTVIEW_OUT="$OUTDIR" LIBGL_ALWAYS_SOFTWARE=1 "$
     echo "the app exited with an error"; tail -20 "$LOG"; exit 1
 fi
 cp "$APPDIR/log.txt" "$OUTDIR/log-${TAG:-$MODE}.txt" 2>/dev/null || true
+cp "$RUN/sdmc:/switch/botw-companion/log.txt" "$OUTDIR/log-companion-${TAG:-$MODE}.txt" 2>/dev/null || true
 echo "screenshots: $(grep -c 'hostview: wrote' "$LOG" || true)   working folder: $RUN"

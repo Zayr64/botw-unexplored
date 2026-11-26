@@ -413,16 +413,27 @@ namespace
                                                                 : Localization::GetObjectTypeName(entry.type);
                 add("A", Text::HintOpen);
             }
+#ifdef BOTW_COMPANION
+            else
+                add("A", Text::HintAtAim);
+            add("ZL ZR", Text::HintNearest);
+            if (HasPlayerPosition())
+                add("Y", Text::HintLink);
+#else
             add("ZL ZR", Text::HintNearest);
             add("R", Text::HintAtAim);
             if (HasPlayerPosition())
                 add("L", Text::HintLink);
             if (SavefileIO::MasterModeFileExists)
                 add("Y", Map::m_LoadMasterMode ? Text::HintNormalMode : Text::HintMasterMode);
+#endif
             add("X", Text::HintLegend);
         }
         if (SavefileIO::GameIsRunning)
             add("-", Text::HintSync);
+#ifdef BOTW_COMPANION
+        add("L R", Text::HintSection);
+#endif
         add("+", Text::HintExit);
     }
 
@@ -434,7 +445,9 @@ namespace
             glm::vec3 dotColor;
             bool hasDot = false;
             const std::string source = Map::SourceText(dotColor, hasDot);
+#ifndef BOTW_COMPANION
             Ui::Chip(source, Ui::Right() - 16.0f, Ui::Top() - 16.0f, true, hasDot ? &dotColor : nullptr);
+#endif
             if (!LeftPanelOpen())
             {
                 Ui::Chip(Localization::Get(Localization::Text::MapCompletion) + " " +
@@ -842,13 +855,15 @@ void Map::Update()
         m_HasTargetCameraPosition = false;
     }
 
-    // L glides to Link and keeps the zoom
+    // L glides to Link and keeps the zoom (in the BotW Companion L and R change the section: Y does it, below)
+#ifndef BOTW_COMPANION
     if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
     {
         m_TargetCameraPosition = PlayerMapPosition();
         m_HasTargetCameraPosition = true;
         m_CursorFollowsTarget = true;
     }
+#endif
 
     const bool modalDialogOpen = ModalDialogOpen();
 
@@ -880,6 +895,15 @@ void Map::Update()
         MarkSelectedObjectFound();
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_Y))
     {
+#ifdef BOTW_COMPANION
+        // The companion: Y glides to Link (L changes the section). The Master Mode waits for a place in the legend.
+        if (HasPlayerPosition())
+        {
+            m_TargetCameraPosition = PlayerMapPosition();
+            m_HasTargetCameraPosition = true;
+            m_CursorFollowsTarget = true;
+        }
+#else
         if (SavefileIO::MostRecentMasterModeFile != -1)
         {
             const bool requestedMode = !m_LoadMasterMode;
@@ -889,6 +913,7 @@ void Map::Update()
                 UpdateMapObjects();
             }
         }
+#endif
     }
 
     // "-" reads the progress again (the running game's, when the app was opened from the Album)
@@ -946,7 +971,13 @@ void Map::Update()
             m_CursorFollowsTarget = false;
         }
         if ((buttonsPressed & HidNpadButton_A) && SavefileIO::LoadedSavefile && !OpenNearestObject(m_CameraPosition))
+        {
+#ifdef BOTW_COMPANION
+            FocusNearestToCenter(); // nothing under the aim: the missing one nearest to it (R before the companion)
+#else
             Ui::Toast(Localization::Get(Localization::Text::ToastNothingHere), true);
+#endif
+        }
     }
     else
         s_DpadHeldFrames = 0;
@@ -955,8 +986,10 @@ void Map::Update()
         FocusMissing(1);
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZL))
         FocusMissing(-1);
+#ifndef BOTW_COMPANION
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_R))
         FocusNearestToCenter();
+#endif
 
     if (!imageViewerWasOpen && m_HasTargetCameraPosition)
     {

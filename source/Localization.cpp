@@ -120,6 +120,7 @@ namespace
         "You already have it: not opened", // ChestItemHad
         "The horse god is awake", // HorseGodAwake
         "The horse god sleeps", // HorseGodAsleep
+        "Section", // HintSection
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

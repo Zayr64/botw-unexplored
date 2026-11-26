@@ -43,6 +43,7 @@ namespace
 
     ShapeBatch* s_Shapes = nullptr;
     glm::mat4 s_Projection(1.0f);
+    float s_TopInset = 0.0f; // screen pixels
     unsigned int s_Frame = 0;
     std::string s_Toast;
     bool s_ToastWarning = false;
@@ -130,7 +131,7 @@ void Ui::Init()
 {
     if (!s_Shapes)
         s_Shapes = new ShapeBatch();
-    s_Projection = glm::ortho(Left(), Right(), Bottom(), Top(), -1.0f, 1.0f);
+    s_Projection = glm::ortho(Left(), Right(), Bottom(), Map::m_ScreenTop / Zoom, -1.0f, 1.0f);
 }
 
 float Ui::Left()
@@ -145,7 +146,12 @@ float Ui::Right()
 
 float Ui::Top()
 {
-    return Map::m_ScreenTop / Zoom;
+    return (Map::m_ScreenTop - s_TopInset) / Zoom;
+}
+
+void Ui::SetTopInset(float screenPixels)
+{
+    s_TopInset = screenPixels;
 }
 
 float Ui::Bottom()

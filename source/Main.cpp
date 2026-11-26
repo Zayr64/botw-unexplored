@@ -23,6 +23,10 @@
 #include "Localization.h"
 #include "Log.h"
 #include "Measure.h"
+#ifdef BOTW_COMPANION
+#include "CompendiumSection.h"
+#include "ImageViewer.h"
+#endif
 #include "MapObject.hpp"
 #include "Settings.h"
 #include "ManualProgress.h"
@@ -244,6 +248,10 @@ int main()
     PadState pad;
     padInitializeDefault(&pad);
 
+#ifdef BOTW_COMPANION
+    // The panels of the map start under the header of the sections (the legend lays its cells out when it is made).
+    Ui::SetTopInset(CompendiumSection::HeaderHeight());
+#endif
     if (!Map::Init())
     {
         Log("START: map initialization failed");
@@ -253,6 +261,11 @@ int main()
     }
     Map::m_Pad = &pad;
     Measure::Step("map, icons and font");
+#ifdef BOTW_COMPANION
+    // The single app (26/11): the map is the first section, the Compendium's tabs the others. Their header is on top.
+    CompendiumSection::Init();
+    int section = 0;
+#endif
 
     // Load settings if they exist. Legacy settings are immediately rewritten in the versioned format.
     std::ifstream settingsFile("sdmc:/switch/botw-unexplored/settings.txt");
@@ -310,11 +323,38 @@ int main()
         glClearColor(0.035f, 0.05f, 0.06f, 1.0f); // dark slate around the map
         glClear(GL_COLOR_BUFFER_BIT);
 
+#ifdef BOTW_COMPANION
+        // The photo full screen and the dialogs about the save stay over everything, without sections.
+        const bool fullScreen = Map::m_ImageViewer->IsOpen() || Map::m_NoSavefileDialog->m_IsOpen ||
+                                Map::m_GameRunningDialog->m_IsOpen;
+        if (!fullScreen)
+            section = CompendiumSection::Switch(section, buttonsDown);
+        // "-" reads everything again: on the map the map does it, and the tabs read when they are shown next.
+        if (!fullScreen && (buttonsDown & HidNpadButton_Minus))
+        {
+            CompendiumSection::Reload(section);
+            if (section != 0)
+                Map::Sync();
+        }
+        if (section == 0 || fullScreen)
+        {
+            Map::Update();
+            Map::Render();
+        }
+        if (!fullScreen)
+        {
+            glm::vec3 mapDot(0.0f);
+            bool mapHasDot = false;
+            const std::string mapSource = SavefileIO::LoadedSavefile ? Map::SourceText(mapDot, mapHasDot) : std::string();
+            CompendiumSection::Frame(section, buttonsDown, padGetButtons(&pad), mapSource, mapDot, mapHasDot);
+        }
+#else
         // Update
         Map::Update();
 
         // // Render
         Map::Render();
+#endif
 
         if (hasDoneFirstDraw && !hasLoadedSave)
         {
@@ -338,6 +378,9 @@ int main()
         }
 
         eglSwapBuffers(s_display, s_surface);
+#ifdef BOTW_COMPANION
+        CompendiumSection::AfterFrame(section);
+#endif
 
 #ifdef BOTW_DEBUG_GL
         GLenum err;
@@ -350,6 +393,9 @@ int main()
 
     Measure::Step("exit");
     Log("Exiting...");
+#ifdef BOTW_COMPANION
+    CompendiumSection::Destroy();
+#endif
 
     cleanUp();
 
