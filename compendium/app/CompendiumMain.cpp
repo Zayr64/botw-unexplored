@@ -248,14 +248,12 @@ namespace
     struct MaterialRow
     {
         int index;        // in ReservePlan::materials
-        std::string name; // "" while hidden
-        int reveal = 0;   // 0 nothing shown, 1 what the hidden part is for, 2 the name too
+        std::string name; // every material by name, found or not (no more spoiler protection: 26/11)
     };
 
     struct LevelRow
     {
-        int index;      // in LevelData::flags
-        int reveal = 0; // for an enemy not defeated yet: 1 shows its name
+        int index; // in LevelData::flags
     };
 
     struct App
@@ -276,7 +274,7 @@ namespace
         std::unique_ptr<LevelData> level;   // null when cook-data.txt has no level tables
         std::unique_ptr<LevelPlan> levelPlan;
         std::vector<LevelRow> levelRows;
-        bool countHidden = true; // the tiers for armor not owned, the Ancient Oven and quests
+        bool countHidden = true; // the other needs: the tiers for armor not owned, the Ancient Oven and quests
         bool wholePouch = false; // dishes from everything in the pouch, not only what is free
         bool sellPrized = false; // the sale also cooks the critters of yellow hearts and extra stamina
         int prizedFree = 0;      // how many of those critters are free
@@ -347,6 +345,12 @@ namespace
         if (label[0])
             return label;
         return a ? a->name : "?";
+    }
+
+    // An enemy whose counter is at its limit: more kills add no points.
+    bool LevelRowDone(const LevelData& d, const LevelPlan& p, int index)
+    {
+        return d.flags[index].max > 0 && p.flags[index].kills >= d.flags[index].max;
     }
 
     // The actor name, for the item's icon; "" when unknown.
@@ -502,17 +506,19 @@ namespace
                 app.levelPlan.reset(new LevelPlan());
                 PlanLevel(*app.level, app.save, *app.levelPlan);
                 for (int i = 0; i < app.level->flagCount; i++)
-                    app.levelRows.push_back({i, 0});
-                // Defeated enemies first, by the points they brought; then the others, by their points.
+                    app.levelRows.push_back({i});
+                // By the points each enemy gives, the fewest first (Ganon last); the enemies whose counter is full
+                // (they add nothing more) after all the others, in the same order (the user's order, 26/11).
                 const LevelPlan& lp = *app.levelPlan;
                 const LevelData& ld = *app.level;
                 std::stable_sort(app.levelRows.begin(), app.levelRows.end(), [&](const LevelRow& a, const LevelRow& b) {
-                    const bool da = lp.flags[a.index].kills > 0, db = lp.flags[b.index].kills > 0;
-                    if (da != db)
-                        return da;
-                    if (da)
-                        return lp.flags[a.index].total > lp.flags[b.index].total;
-                    return ld.flags[a.index].point < ld.flags[b.index].point;
+                    const bool fa = LevelRowDone(ld, lp, a.index), fb = LevelRowDone(ld, lp, b.index);
+                    if (fa != fb)
+                        return fb;
+                    if (ld.flags[a.index].point != ld.flags[b.index].point)
+                        return ld.flags[a.index].point < ld.flags[b.index].point;
+                    return std::strcmp(NameOf(app, Crc32(ld.flags[a.index].actor)),
+                                       NameOf(app, Crc32(ld.flags[b.index].actor))) < 0;
                 });
                 Log("Level points:", static_cast<int>(lp.points));
             }
@@ -536,7 +542,7 @@ namespace
             {"Full heal", "heal your hearts", EffectNone, GoalKind::Hearts, {}, {}, {}},
         };
 
-        // Reserve rows: named materials alphabetically, then the ones not found yet.
+        // Reserve rows: every material by name, alphabetically.
         for (int i = 0; i < app.plan->materialCount; i++)
         {
             const MaterialPlan& m = app.plan->materials[i];
@@ -544,15 +550,11 @@ namespace
                 continue;
             MaterialRow row;
             row.index = i;
-            if (m.everObtained)
-                row.name = NameOf(app, m.item);
+            row.name = NameOf(app, m.item);
             app.rows.push_back(row);
         }
-        std::stable_sort(app.rows.begin(), app.rows.end(), [](const MaterialRow& a, const MaterialRow& b) {
-            if (a.name.empty() != b.name.empty())
-                return !a.name.empty();
-            return a.name < b.name;
-        });
+        std::stable_sort(app.rows.begin(), app.rows.end(),
+                         [](const MaterialRow& a, const MaterialRow& b) { return a.name < b.name; });
 
         Compute(app);
         Log("Computed dishes, combinations:", app.evaluated);
@@ -597,20 +599,10 @@ namespace
         }
     }
 
+    // What a material is kept for beyond the armor the player has: armor not owned, the Ancient Oven, side quests.
     int32_t HiddenNeed(const MaterialPlan& m)
     {
         return m.need[ArmorNotOwned] + m.need[Crafted] + m.need[Quests];
-    }
-
-    // What A shows next on a Reserve row: 1 what the hidden part is for, 2 the name of a material not found yet,
-    // 0 nothing more.
-    int NextReveal(const App& app, const MaterialRow& row)
-    {
-        if (row.reveal == 0 && HiddenNeed(app.plan->materials[row.index]) > 0)
-            return 1;
-        if (row.name.empty() && row.reveal < 2)
-            return 2;
-        return 0;
     }
 
     struct Hint
@@ -632,12 +624,6 @@ namespace
             hints.push_back({"Up/Down", "move", 0});
             if (app.visible[app.tab] > 0 && RowCount(app) > app.visible[app.tab])
                 hints.push_back({"Left/Right", "page", 2});
-            if (app.tab == 1 && !app.rows.empty())
-            {
-                const int next = NextReveal(app, app.rows[app.cursor[1]]);
-                if (next)
-                    hints.push_back({"A", next == 1 ? "what for" : "name", 3});
-            }
             if (app.tab == 0)
             {
                 const std::string other = DishToggleHint(app);
@@ -648,7 +634,7 @@ namespace
             if (app.tab == 2 && app.prizedFree > 0)
                 hints.push_back({"Y", app.sellPrized ? "valuable critters: sold" : "valuable critters: kept", 3});
             if (app.tab != 3)
-                hints.push_back({"X", app.countHidden ? "hidden needs: on" : "hidden needs: off", 3});
+                hints.push_back({"X", app.countHidden ? "other needs: on" : "other needs: off", 3});
         }
         hints.push_back({"+", "exit", 2});
         return hints;
@@ -1028,7 +1014,7 @@ namespace
         }
         const std::string nothing = app.wholePouch ? "Nothing in the pouch makes this."
                                                    : "Nothing free makes this. Y searches the whole pouch, X stops "
-                                                     "counting hidden needs.";
+                                                     "counting the other needs.";
         const std::vector<ShownDish> shown = ShownDishes(app, g);
         if (shown.empty())
             Text(nothing, x, y + 50, 0.42f, TextColor, ALIGN_LEFT, width);
@@ -1060,7 +1046,7 @@ namespace
         y += 28;
         Icons::Ui("rupee", 26, y - 19, 24);
         const std::string hiddenPart =
-            app.countHidden ? ", " + Number(hidden) + " hidden" : std::string(", hidden not counted");
+            app.countHidden ? ", " + Number(hidden) + " for the rest" : std::string(", the rest not counted");
         const std::string have = "   (you have " + Number(p.rupees) + ")";
         Text(Pick("To keep: " + Number(own) + " for your armor and the fountains" + hiddenPart + have,
                   "To keep: " + Number(own) + " for your armor" + hiddenPart + have, 0.38f, ScreenW - 84),
@@ -1070,7 +1056,7 @@ namespace
         const int rows = static_cast<int>(app.rows.size());
         int& cursor = app.cursor[1];
         int& scroll = app.scroll[1];
-        // Number columns from the right, the shortage after the last. Have, Your armor, Hidden and Free while the
+        // Number columns from the right, the shortage after the last. Have, Your armor, Other and Free while the
         // names keep 300 px; with a big zoom one Keep column for both needs, and the split goes under the list.
         const float shortW = Width("short 222 +222", SmallText) + 24;
         const float step = std::max(Width("Your armor", SmallText), 100.0f) + 40;
@@ -1086,7 +1072,7 @@ namespace
         if (split)
         {
             Text("Your armor", colOwn, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-            Text("Hidden", colHidden, y + 21, SmallText, TextDim, ALIGN_RIGHT);
+            Text("Other", colHidden, y + 21, SmallText, TextDim, ALIGN_RIGHT);
         }
         else
             Text("Keep", colKeep, y + 21, SmallText, TextDim, ALIGN_RIGHT);
@@ -1101,8 +1087,8 @@ namespace
             return;
         }
 
-        // The line under the list: what the selected row's hidden part is for (said when A asks), and with one Keep
-        // column, how it splits.
+        // The line under the list: what the selected material's other needs are for, and with one Keep column,
+        // how it splits.
         cursor = std::max(0, std::min(cursor, rows - 1));
         std::vector<std::string> detail;
         {
@@ -1110,9 +1096,7 @@ namespace
             const MaterialPlan& m = p.materials[row.index];
             std::string line;
             if (HiddenNeed(m) == 0)
-                line = "Nothing hidden: all for the armor you have";
-            else if (row.reveal == 0)
-                line = "A: what the hidden part is for";
+                line = "All for the armor you have";
             else
             {
                 // Only the kinds this material is needed for.
@@ -1125,13 +1109,11 @@ namespace
                              {Quests, " for side quests"}};
                 for (const auto& k : kinds)
                     if (m.need[k.tier] > 0)
-                        line += (line.empty() ? "Hidden: " : ", ") + Number(m.need[k.tier]) + k.what;
+                        line += (line.empty() ? "Other: " : ", ") + Number(m.need[k.tier]) + k.what;
             }
-            if (NextReveal(app, row) == 2)
-                line += "   (A: the name)";
             if (!split)
                 line = "Your armor " + Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]) +
-                       (HiddenNeed(m) ? ", hidden " + Number(HiddenNeed(m)) : std::string()) + ".   " + line;
+                       (HiddenNeed(m) ? ", other " + Number(HiddenNeed(m)) : std::string()) + ".   " + line;
             detail = Wrap(line, 0.38f, ScreenW - 56);
             if (detail.size() > 2)
                 detail.resize(2);
@@ -1152,11 +1134,8 @@ namespace
                 Rect(0, ry, ScreenW, rowH, RowOn);
             else if (i % 2)
                 Rect(0, ry, ScreenW, rowH, RowAlt);
-            const bool named = !row.name.empty() || row.reveal >= 2;
-            const std::string name = !row.name.empty() ? row.name : (row.reveal >= 2 ? NameOf(app, m.item) : "Not found yet");
-            if (named)
-                Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
-            Text(Fit(name, 0.38f, nameW), 56, ry + 21, 0.38f, named ? TextColor : TextDim);
+            Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
+            Text(Fit(row.name, 0.38f, nameW), 56, ry + 21, 0.38f, TextColor);
             Text(Number(m.have), colHave, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
             const int32_t h = HiddenNeed(m);
             if (split)
@@ -1173,7 +1152,7 @@ namespace
             Text(Number(free), colFree, ry + 21, 0.38f, free > 0 ? Good : TextDim, ALIGN_RIGHT);
             if (shortBy > 0)
             {
-                // What is missing for the armor in the pouch in orange; what only the hidden needs miss, in grey.
+                // What is missing for the armor in the pouch in orange; what only the other needs miss, in grey.
                 const int32_t ownNeed = m.need[OwnedReachable] + m.need[OwnedNextFairy];
                 const int32_t ownShort = std::min(shortBy, std::max(0, ownNeed - m.have));
                 float sx = colFree + 24;
@@ -1465,18 +1444,18 @@ namespace
                 Rect(0, ry, ScreenW, lineH, RowOn);
             else if (i % 2)
                 Rect(0, ry, ScreenW, lineH, RowAlt);
-            // Every enemy by name and picture, defeated or not (chosen on 25/11, as for the ranks above); the ones
-            // not defeated yet in grey.
+            // Every enemy by name and picture. One whose counter is full adds nothing more: the whole row in grey,
+            // done (these come last).
+            const bool done = LevelRowDone(d, p, row.index);
             const char* label = NameOf(app, Crc32(f.actor));
             Icons::Enemy(f.actor, 24, ry + 1, 28);
-            Text(Fit(label, 0.38f, colDefeated - 60 - 110), 60, ry + 21, 0.38f, fs.kills > 0 ? TextColor : TextDim);
+            Text(Fit(label, 0.38f, colDefeated - 60 - 110), 60, ry + 21, 0.38f, done ? TextDim : TextColor);
             // Each counter stops at its limit (10 for most enemies): further kills add nothing.
             const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());
-            Text(defeated, colDefeated, ry + 21, 0.38f,
-                 fs.kills == 0 ? TextDim : (f.max > 0 && fs.kills >= f.max ? Good : TextColor), ALIGN_RIGHT);
+            Text(defeated, colDefeated, ry + 21, 0.38f, done ? TextDim : TextColor, ALIGN_RIGHT);
             snprintf(buf, sizeof(buf), "%g", f.point);
             Text(buf, colEach, ry + 21, 0.38f, TextDim, ALIGN_RIGHT);
-            Text(Number(static_cast<int32_t>(fs.total)), colPoints, ry + 21, 0.38f, fs.kills ? Gold : TextDim,
+            Text(Number(static_cast<int32_t>(fs.total)), colPoints, ry + 21, 0.38f, done ? TextDim : (fs.kills ? Gold : TextDim),
                  ALIGN_RIGHT);
         }
         ScrollBar(y, visible * lineH, rows, visible, scroll);
@@ -1585,13 +1564,6 @@ int main()
             // With room for one dish, A shows the other (the cheapest as strong, or the yellow-heart dish).
             if ((down & HidNpadButton_A) && app.tab == 0)
                 app.dishPage = app.dishPage ? 0 : 1;
-            if ((down & HidNpadButton_A) && app.tab == 1 && !app.rows.empty())
-            {
-                MaterialRow& row = app.rows[app.cursor[1]];
-                const int next = NextReveal(app, row);
-                if (next)
-                    row.reveal = next;
-            }
             // X and Y change what counts as free: the dishes and the sale are computed again, after a frame that
             // says so.
             if ((down & HidNpadButton_X) && app.tab != 3)
