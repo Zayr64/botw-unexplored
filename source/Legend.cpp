@@ -412,10 +412,15 @@ void IconButton::Count(int& found, int& total) const
         for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Region, Map::m_Walls[i].m_Found);
         break;
     case Quests:
-        // Taken (or done) out of those of this game: the Expansion Pass ones only with it
+        // Done out of the side and shrine quests of this game (the Expansion Pass ones only with it); those in
+        // progress are on the map until done (zayr27; until zayr26 taken counted as found)
         for (size_t i = 0; i < QuestMap::Entries().size(); ++i)
-            if (!QuestMap::Entries()[i].dlc || SavefileIO::HasExpansionPass())
-                add(Map::m_Quests[i].m_Region, Map::m_Quests[i].m_Found);
+        {
+            const QuestMap::Entry& quest = QuestMap::Entries()[i];
+            if (!quest.main && (!quest.dlc || SavefileIO::HasExpansionPass()))
+                add(Map::m_Quests[i].m_Region,
+                    QuestMap::IsDone(quest, [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); }));
+        }
         break;
     default:
         break;

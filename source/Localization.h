@@ -172,6 +172,10 @@ namespace Localization
         ShrineQuestTitle,
         QuestNotTaken,
         QuestNotYet,
+        MainQuestTitle,
+        QuestInProgress,
+        QuestMarkerHere,
+        QuestNoMarker,
         Count
     };
 

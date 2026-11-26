@@ -224,6 +224,15 @@ namespace
                 now ? &Map::m_Quests[i].m_Found : &Map::m_LaterQuests[i].m_Found, false, -1, nullptr,
                 static_cast<int>(IconButton::Quests), &quests[i], Map::m_Quests[i].m_Region);
         }
+        // The quests in progress: each marker of the current step
+        for (size_t i = 0; i < quests.size(); ++i)
+            for (int k = 0; k < QuestMap::MaxMarkers; ++k)
+            {
+                MapObject<Data::QuestActiveIcon>& active = Map::m_ActiveQuests[i * QuestMap::MaxMarkers + k];
+                if (!active.m_Excluded)
+                    add(Data::ObjectType::Quest, quests[i].startHash, active.m_Position, quests[i].name, &active.m_Found,
+                        false, -1, nullptr, static_cast<int>(IconButton::Quests), &quests[i], active.m_Region);
+            }
     }
 
     // The object A would open at this map position: the nearest one shown, within 60 pixels. -1 for none.
@@ -557,6 +566,9 @@ bool Map::Init()
     m_LaterQuests = new MapObject<Data::QuestLaterIcon>[questSlots];
     MapObject<Data::QuestLaterIcon>::Init("romfs:/questlater.png", questSlots);
     MapObject<Data::QuestLaterIcon>::m_SizeFactor = 0.25f;
+    m_ActiveQuests = new MapObject<Data::QuestActiveIcon>[questSlots * QuestMap::MaxMarkers];
+    MapObject<Data::QuestActiveIcon>::Init("romfs:/questactive.png", questSlots * QuestMap::MaxMarkers);
+    MapObject<Data::QuestActiveIcon>::m_SizeFactor = 0.25f;
 
     // Create the locations (from zayr13 to zayr24 only counted, not drawn). Their image is four times the size drawn.
     m_Locations = new MapObject<Data::LocationIcon>[Data::LocationsCount];
@@ -703,9 +715,12 @@ void Map::UpdateMapObjects(bool recenter)
     for (int i = 0; i < Data::LocationsCount; i++) m_Locations[i].m_Region = Regions::Of(Data::Locations[i].hash);
 
     // The quests not taken yet: those that can be taken now in one list, those that wait for something in the
-    // other; the Expansion Pass ones only with it. Taken or done counts as found.
+    // other; the Expansion Pass ones only with it. Taken or done counts as found. The main quests only show while in
+    // progress, where their step leads, like the other quests in progress.
     const std::vector<QuestMap::Entry>& quests = QuestMap::Entries();
+    const auto isSet = [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); };
     int questCounts[4] = {0, 0, 0, 0}; // now, later, taken, not in this game
+    int activeCount = 0, activeMarked = 0;
     for (size_t i = 0; i < quests.size(); ++i)
     {
         const QuestMap::Entry& quest = quests[i];
@@ -716,19 +731,44 @@ void Map::UpdateMapObjects(bool recenter)
         const int region = QuestMap::RegionOf(quest.startHash);
         m_Quests[i].m_Position = position;
         m_Quests[i].m_Found = taken;
-        m_Quests[i].m_Excluded = !exists || !available;
+        m_Quests[i].m_Excluded = !exists || !available || quest.main;
         m_Quests[i].m_Region = region;
         m_LaterQuests[i].m_Position = position;
         m_LaterQuests[i].m_Found = taken;
-        m_LaterQuests[i].m_Excluded = !exists || available;
+        m_LaterQuests[i].m_Excluded = !exists || available || quest.main;
         m_LaterQuests[i].m_Region = region;
-        questCounts[!exists ? 3 : (taken ? 2 : (available ? 0 : 1))]++;
+        if (!quest.main)
+            questCounts[!exists ? 3 : (taken ? 2 : (available ? 0 : 1))]++;
+
+        // In progress: a marker for each of the game's markers of the current step still on, or one where the quest
+        // was taken when the step has none
+        const int step = exists ? QuestMap::CurrentStep(quest, isSet) : -1;
+        std::vector<QuestMap::Marker> markers = QuestMap::ActiveMarkers(quest, step, isSet);
+        if (step >= 0)
+        {
+            ++activeCount;
+            activeMarked += !markers.empty();
+            if (markers.empty())
+                markers.push_back({quest.x, quest.z, 0});
+        }
+        for (int k = 0; k < QuestMap::MaxMarkers; ++k)
+        {
+            MapObject<Data::QuestActiveIcon>& active = m_ActiveQuests[i * QuestMap::MaxMarkers + k];
+            const bool used = k < static_cast<int>(markers.size());
+            active.m_Excluded = !used;
+            active.m_Found = false;
+            active.m_Region = region;
+            if (used)
+                active.m_Position = glm::vec2(markers[k].x, -markers[k].z) * MapScale;
+        }
     }
     if (!quests.empty())
     {
         Log("MAP: quests to take now:", questCounts[0]);
         Log("MAP: quests waiting for something first:", questCounts[1]);
         Log("MAP: quests taken or done:", questCounts[2]);
+        Log("MAP: quests in progress (main ones too):", activeCount);
+        Log("MAP: quests in progress with the game's marker on their step:", activeMarked);
     }
 
     if (manualProgressChanged)
@@ -1041,6 +1081,9 @@ void Map::Update()
                 m_Quests[i].Update(i == 0);
                 m_LaterQuests[i].Update(i == 0);
             }
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Quests])
+            for (size_t i = 0; i < QuestMap::Entries().size() * QuestMap::MaxMarkers; i++)
+                m_ActiveQuests[i].Update(i == 0);
     }
 
     // The middle of what is on screen is to the left of the camera while the map is shifted.
@@ -1116,6 +1159,7 @@ void Map::Render()
         {
             MapObject<Data::QuestLaterIcon>::Render();
             MapObject<Data::QuestIcon>::Render();
+            MapObject<Data::QuestActiveIcon>::Render();
         }
         // The chests one keeps go over the others
         if (m_Legend->m_Show[IconButton::ButtonTypes::MaterialChests])
@@ -1235,6 +1279,8 @@ void Map::Destroy()
     m_Quests = nullptr;
     delete[] m_LaterQuests;
     m_LaterQuests = nullptr;
+    delete[] m_ActiveQuests;
+    m_ActiveQuests = nullptr;
     delete[] m_Locations;
     m_Locations = nullptr;
 
@@ -1517,6 +1563,7 @@ MapObject<Data::MaterialChestIcon>* Map::m_MaterialChests;
 MapObject<Data::WallIcon>* Map::m_Walls;
 MapObject<Data::QuestIcon>* Map::m_Quests;
 MapObject<Data::QuestLaterIcon>* Map::m_LaterQuests;
+MapObject<Data::QuestActiveIcon>* Map::m_ActiveQuests;
 MapObject<Data::LocationIcon>* Map::m_Locations;
 
 Legend* Map::m_Legend;

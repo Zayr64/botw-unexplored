@@ -37,7 +37,9 @@ namespace
         "Blood Moon", "in about", "tonight, in", "min of play", "not yet",
         "Only play time in the world counts, not menus or cutscenes.",
         "Hero's Path", "Scroll",
-        "Quests", "Quest", "Side quest", "Shrine quest", "Not taken yet", "Not available yet: something else first"
+        "Quests", "Quest", "Side quest", "Shrine quest", "Not taken yet", "Not available yet: something else first",
+        "Main quest", "In progress", "Where the game's marker for this step points",
+        "No marker in the game for this step: where the quest was taken"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

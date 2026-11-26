@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Makes quests.txt for BotW Unexplored: where each side and shrine quest is taken, with its name and description.
+"""Makes quests.txt for BotW Unexplored: where each quest is taken, with its name and description, and its steps.
 
     python3 tools/gen_quests.py <romfs> [<dlc romfs>] > quests.txt
 
@@ -7,10 +7,14 @@ The data comes from the game's own files (a dump of version 1.6.0), so the outpu
 (sdmc:/switch/botw-unexplored/quests.txt) and never into this repository. No dependencies: the formats are read by
 tools/nxfmt.py.
 
-- The quests: Pack/TitleBG.pack -> Quest/QuestProduct.sbquestpack. Type Mini is a side quest, Sub a shrine quest
-  (main quests are left out: the story leads to them). The flags: <name>_Activated when the quest is taken (the
-  NextFlag of its first step, Ready), the NextFlag of its last step when it is done, and QuestDependencyFlag when
-  something has to happen before it can be taken.
+- The quests: Pack/TitleBG.pack -> Quest/QuestProduct.sbquestpack. Type Mini is a side quest, Sub a shrine quest,
+  Main a main quest (the app shows a main quest only while it is in progress: the story leads to them). The flags:
+  <name>_Activated when the quest is taken (the NextFlag of its first step, Ready), the NextFlag of its last step
+  when it is done, and QuestDependencyFlag when something has to happen before it can be taken.
+- The steps (version 2): each step's NextFlag is set when the quest reaches it, so the step a quest is at is the last
+  one whose flag is set. For each step but the last: that flag, whether the step already ends the quest (a "Finish"
+  before the last step, as in two minigames), where the game's marker points (IndicatorLocations and the Location of
+  IndicatorActors, each with the flag that turns it off) and the quest log's text for it (QL_<name>_<MessageName>).
 - Where: the giver (Orderer) as placed in the map units of the world (the static ones in Pack/TitleBG.pack, the
   dynamic ones in Map/MainField; those of the DLC replace the base ones of the same area). A giver placed more than
   once: the placement nearest the quest's location. No giver on the map: the location's marker (objects whose
@@ -18,9 +22,11 @@ tools/nxfmt.py.
 - Names: Message/Msg_USen.product.ssarc in Pack/Bootup_USen.pack: QuestMsg/QL_<name>.msbt (<name>_Name and the
   first description) and StaticMsg/LocationMarker.msbt for the location.
 
-Each line: kind (side or shrine), dlc (0/1), the CRC32 of the start, end and dependency flags (0 for none), x, z,
-name, location, description; tab separated, after a first line "# BOTW_UNEXPLORED_QUESTS 1". A note on how each
-position was found goes to stderr.
+Each quest line: kind (side, shrine or main), dlc (0/1), the CRC32 of the start, end and dependency flags (0 for
+none), x, z, name, location, description; tab separated, after a first line "# BOTW_UNEXPLORED_QUESTS 2". After it,
+one line per step but the last: "step", the CRC32 of its flag, 1 if it ends the quest, its markers ("x,z,<CRC32 of
+the flag that turns it off>" separated by ";", or empty) and its text. A note on how each position was found goes to
+stderr.
 """
 import math
 import pathlib
@@ -30,7 +36,8 @@ import zlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import nxfmt  # noqa: E402
 
-KINDS = {"Mini": "side", "Sub": "shrine"}
+KINDS = {"Mini": "side", "Sub": "shrine", "Main": "main"}
+MAX_MARKERS = 4  # the most a step has (QuestMap::MaxMarkers in the app)
 
 
 def crc(flag):
@@ -83,7 +90,8 @@ def main():
             if message:
                 markers.setdefault(message, []).append((x, z))
 
-    out = ["# BOTW_UNEXPLORED_QUESTS 1"]
+    out = ["# BOTW_UNEXPLORED_QUESTS 2"]
+    step_count = marked = 0
     how = {"giver": 0, "giver nearest the location": 0, "location": 0, "step marker": 0, "none": 0}
     for q in quests:
         kind = KINDS.get(q.get("Type"))
@@ -124,8 +132,22 @@ def main():
         out.append("\t".join([kind, "1" if q.get("AocVersion") else "0", str(crc(start)), str(crc(finish)),
                               str(crc(requires)), "%.2f" % where[0], "%.2f" % where[1], clean(title_text),
                               clean(places.get(location, "")), clean(desc)]))
+        for i, step in enumerate(steps[:-1]):
+            points = []
+            for marker in (step.get("IndicatorLocations") or []) + (step.get("IndicatorActors") or []):
+                spot = marker.get("Location")
+                if spot:
+                    points.append("%.2f,%.2f,%d" % (spot["X"], spot["Z"], crc(marker.get("OffFlag") or "")))
+            points = points[:MAX_MARKERS]
+            ends = i > 0 and step.get("Name") in ("Finish", "Finished")
+            text = texts.get("QL_%s_%s" % (name, step.get("MessageName") or ""), "")
+            out.append("\t".join(["step", str(crc(step.get("NextFlag", ""))), "1" if ends else "0", ";".join(points),
+                                  clean(text)]))
+            step_count += 1
+            marked += bool(points)
     sys.stdout.buffer.write(("\n".join(out) + "\n").encode("utf-8"))  # UTF-8 whatever the console uses
     print("positions:", how, file=sys.stderr)
+    print("steps:", step_count, "with the game's marker:", marked, file=sys.stderr)
 
 
 if __name__ == "__main__":

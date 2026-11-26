@@ -25,8 +25,11 @@ void ObjectInfo::SetObject(Data::ObjectType type, uint32_t completionHash, const
 
     delete m_Icon;
     m_Icon = nullptr;
-    // A chest shows the icon of its group
+    // A chest shows the icon of its group; a quest in progress, the icon of those
+    const bool questActive = quest != nullptr &&
+        QuestMap::CurrentStep(*quest, [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); }) >= 0;
     const char* iconPath = chest != nullptr ? Data::IconOf(Data::GroupOf(chest->contents))
+                           : questActive    ? "romfs:/questactive.png"
                                             : ObjectModel::GetMetadata(type).iconPath;
     if (iconPath[0] != '\0')
     {
@@ -56,8 +59,11 @@ void ObjectInfo::Render()
     Ui::PanelBackground();
     // The title of a chest is its group, as in the legend; that of a quest, its kind
     const std::string questTitle = m_Quest == nullptr ? std::string()
-        : Localization::Get(m_Quest->shrine ? Text::ShrineQuestTitle : Text::SideQuestTitle) +
+        : Localization::Get(m_Quest->main ? Text::MainQuestTitle
+                            : m_Quest->shrine ? Text::ShrineQuestTitle : Text::SideQuestTitle) +
               (m_Quest->dlc ? " (DLC)" : "");
+    const auto isSet = [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); };
+    const int questStep = m_Quest != nullptr ? QuestMap::CurrentStep(*m_Quest, isSet) : -1;
     const std::string& title = m_Quest != nullptr ? questTitle
         : m_Chest != nullptr
         ? Localization::Get(static_cast<Text>(static_cast<int>(Text::ArmorChests) +
@@ -72,7 +78,21 @@ void ObjectInfo::Render()
         top = Ui::Paragraph(top, name, 0.50f, Ui::Colors::Gold) - 6.0f;
 
     // What was done and what is left, one line each
-    if (m_Quest != nullptr)
+    if (m_Quest != nullptr && questStep >= 0)
+    {
+        // In progress: the quest log's text for the step it is at, and whether the map shows the game's own marker
+        // for it or, with none, where the quest was taken
+        top = Ui::StatusRow(top, Localization::Get(Text::QuestInProgress), Ui::Colors::Warn, false);
+        const std::string& stepText = m_Quest->steps[questStep].text;
+        if (!stepText.empty())
+            top = Ui::Paragraph(top - 2.0f, stepText, 0.40f, Ui::Colors::Text);
+        const bool marked = !QuestMap::ActiveMarkers(*m_Quest, questStep, isSet).empty();
+        top = Ui::Paragraph(top - 2.0f, Localization::Get(marked ? Text::QuestMarkerHere : Text::QuestNoMarker), 0.36f,
+                            Ui::Colors::TextDim);
+        if (!m_Quest->location.empty())
+            top = Ui::Paragraph(top - 2.0f, m_Quest->location, 0.40f, Ui::Colors::Text);
+    }
+    else if (m_Quest != nullptr)
     {
         // Not taken yet (the map only shows those); whether it can be taken now or waits for something first
         const bool available = m_Quest->requiresHash == 0 || SavefileIO::IsProgressFlagSet(m_Quest->requiresHash);
@@ -122,7 +142,7 @@ void ObjectInfo::Render()
     if (!distance.empty())
         top = Ui::Paragraph(top - 2.0f, distance, 0.40f, Ui::Colors::TextDim);
 
-    if (m_Quest != nullptr && !m_Quest->description.empty())
+    if (m_Quest != nullptr && questStep < 0 && !m_Quest->description.empty())
         top = Ui::Paragraph(top - 4.0f, m_Quest->description, 0.36f, Ui::Colors::TextDim);
 
     if (m_Chest != nullptr)

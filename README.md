@@ -9,7 +9,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Koroks, shrines, DLC shrines, Hinoxes, Taluses, and Moldugas.
 - **Locations**: the named places of the map not visited yet (the third part of the map completion, with the Korok seeds and the shrines), as magenta pins, in a category on by default. The card tells the place's name; the names are not drawn on the map.
 - **Breakable walls**: the 140 walls of the world map that a bomb opens, as one more category that starts switched off. The card only says whether the wall was broken.
-- **Quests**: where each side and shrine quest not taken yet is given (where its giver stands), as an orange speech bubble; those that wait for something else to happen first show in grey. The card tells the kind of quest, its name and place, whether it can be taken now and the game's own description. Quests already taken are in the game's log and leave the map. The data is `sdmc:/switch/botw-unexplored/quests.txt`, made from the game's files (see "Quests on the map"); without it there are no quests on the map.
+- **Quests**: where each side and shrine quest not taken yet is given (where its giver stands), as an orange speech bubble; those that wait for something else to happen first show in grey. The card tells the kind of quest, its name and place, whether it can be taken now and the game's own description. A quest in progress (main ones too) shows as a green speech bubble with an ellipsis where its current step leads, as the game's own marker for that step does (each marker of the step, up to four, until each is turned off), or where it was taken when the step has no marker; its card has the quest log's text for that step. The legend counts the side and shrine quests done. The data is `sdmc:/switch/botw-unexplored/quests.txt`, made from the game's files (see "Quests on the map"); without it there are no quests on the map.
 - **Treasure chests** of the world map that are still closed and hold something rare, in three categories that start switched off, each drawn as the symbol of its tab in the game's inventory instead of a chest (a purple tunic, a red sword, a gold gem): `Armor & key items` (armor, key items and horse gear: what is kept for good), `Rare weapons` (weapons, bows and shields found in at most two chests of the whole map) and `Rare materials` (the same for materials). A chest card shows what the chest holds (the item and how many) under the name of its group, whether it is opened and how far it is. The other chests, with arrows, gems, rupees and gear found in many chests, are not on the map: the Progress tab counts them. Chests of the Expansion Pass show once the save has a sign of it (one of them opened, the Champions' Ballad or a Master Mode save); chests that only exist in Master Mode show only there. Chests inside shrines and Divine Beasts are not on the map (a shrine card tells when one is left).
 - **Hero's Path**: where Link has walked, from the save's `tracker/trackblockNN.sav` files, as a mint line over the
   map and under the icons, one width on the screen at every zoom; split where Link warped, died or went into a shrine.
@@ -120,7 +120,10 @@ python3 tools/gen_quests.py <romfs> [<dlc romfs>] > quests.txt
 
 Copy it to `sdmc:/switch/botw-unexplored/quests.txt`. It holds where each quest is taken (its giver as placed in the
 world's map units; failing that, its place or the first marker of its steps), the flags that tell whether it was
-taken, is done or can be taken yet, and its English name, place and description. It comes from the game's files, so
+taken, is done or can be taken yet, and its English name, place and description. Since version 2 (zayr27) it also
+holds the main quests and the steps of every quest: the flag each step sets when the quest reaches it (the step a
+quest is at is the last one set), where the game's marker for the step points, and the quest log's text for it.
+Releases before zayr27 read only version 1 files. It comes from the game's files, so
 it is not distributed with the app. `tools/nxfmt.py` reads the formats (Yaz0, SARC, BYML, MSBT) with no
 dependencies.
 
@@ -167,7 +170,8 @@ bash tests/run_host_tests.sh
 ```
 
 They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map and its BC1 files (`DDS_FILE` adds a real one), the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, the Blood Moon estimate, the size of the icons at each zoom, the reader of
-quests.txt (`QUESTS_FILE` adds a real one), and the reading of the Hero's Path files (`HERO_PATH_DIR` adds the tracker folder of a real save). GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
+quests.txt and the step a quest is at (`QUESTS_FILE` adds a real one, `QUESTS_SAVE` a save to count its quests in
+progress), and the reading of the Hero's Path files (`HERO_PATH_DIR` adds the tracker folder of a real save). GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits
 

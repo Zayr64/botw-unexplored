@@ -120,6 +120,9 @@ namespace Map
     // something first (each quest shows in one of the two).
     extern MapObject<Data::QuestIcon>* m_Quests;
     extern MapObject<Data::QuestLaterIcon>* m_LaterQuests;
+    // QuestMap::MaxMarkers per entry of QuestMap::Entries(): where each quest in progress leads now (the markers of
+    // its current step in the game, or where it was taken).
+    extern MapObject<Data::QuestActiveIcon>* m_ActiveQuests;
 
     extern MapObject<Data::LocationIcon>* m_Locations; // one per entry of Data::Locations
 

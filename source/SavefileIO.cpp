@@ -17,6 +17,7 @@
 #include "LocationState.h"
 #include "Log.h"
 #include "Progress.h"
+#include "QuestMap.h"
 #include "SaveLoadDecision.h"
 #include "SaveParser.h"
 #include "ShrineChests.h"
@@ -741,6 +742,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     const std::vector<uint32_t>& shrineChestFlags = GetShrineChestFlags();
     const std::array<uint32_t, 3>& balladFlags = GetBalladStartedFlags();
     const std::vector<uint32_t>& progressFlags = Progress::TrackedFlags();
+    const std::vector<uint32_t>& questFlags = QuestMap::Flags(); // the steps and markers of quests.txt too
     for (const SaveParser::Record& record : bufferState.records)
     {
         const uint32_t hashValue = record.hash;
@@ -761,7 +763,8 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
                 parsedState.doneLocationStates.push_back(state->locationHash);
             if (std::find(balladFlags.begin(), balladFlags.end(), hashValue) != balladFlags.end())
                 parsedState.balladStarted = true;
-            if (std::binary_search(progressFlags.begin(), progressFlags.end(), hashValue))
+            if (std::binary_search(progressFlags.begin(), progressFlags.end(), hashValue) ||
+                std::binary_search(questFlags.begin(), questFlags.end(), hashValue))
                 parsedState.progressFlags.push_back(hashValue);
         }
 
