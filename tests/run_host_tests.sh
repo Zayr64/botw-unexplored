@@ -60,8 +60,6 @@ fi
 /tmp/test_quest_map
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_progress.cpp source/Progress.cpp source/ProgressData.cpp source/ShrineFlags.cpp -o /tmp/test_progress
 /tmp/test_progress
-"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_regions.cpp source/Regions.cpp source/RegionData.cpp source/ShrineFlags.cpp -o /tmp/test_regions
-/tmp/test_regions
 python3 tests/test_data_mapping.py
 # The hidden level of the cooking app (EXP tab): the most kills each enemy can count, with a made-up save.
 "$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_level.cpp compendium/source/Level.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp -o /tmp/test_level

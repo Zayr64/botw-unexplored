@@ -21,7 +21,7 @@ namespace Data
         uint32_t requiresHash; // CRC32 of the flag that has to be set before it can be taken; 0 for none
         uint8_t kind;          // QuestKind
         uint8_t dlc;           // 1 for the quests of the Expansion Pass
-        int8_t region;         // where it is taken (Regions.h), for the shrine and side quests of the base game; else -1
+        int8_t region;         // where it is taken (the fifteen of tools/gen_regions.py), for the shrine and side quests of the base game; else -1
     };
 
     extern const Quest Quests[];
