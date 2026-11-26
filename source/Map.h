@@ -126,10 +126,11 @@ namespace Map
     extern MapObject<Data::QuestActiveIcon>* m_ActiveQuests;
 
     extern MapObject<Data::LocationIcon>* m_Locations; // one per entry of Data::Locations
-    // The 15 towers and the 4 Great Fairy fountains (not the spring of the horse god), in the order of
-    // LocationState::Table(); found once activated or awakened.
+    // The 15 towers, and the 4 Great Fairy fountains with the spring of the horse god (asked for by the user,
+    // zayr29: it sleeps and wakes the same way), in the order of LocationState::Table(); found once activated or
+    // awakened.
     constexpr int TowerCount = 15;
-    constexpr int FairyCount = 4;
+    constexpr int FairyCount = 5;
     extern MapObject<Data::TowerIcon>* m_Towers;
     extern MapObject<Data::FairyIcon>* m_Fairies;
     extern const Data::Location* m_TowerLocations[TowerCount];

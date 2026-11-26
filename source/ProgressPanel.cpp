@@ -177,15 +177,15 @@ namespace
         return counter;
     }
 
-    // The four fountains; the spring of the horse god has a flag of the same family and is not one of them.
+    // The four fountains and the spring of the horse god, which sleeps and wakes the same way (until zayr28 it was
+    // left out: it is not a Great Fairy; the user asked for it, as on the map).
     Counter GreatFairies()
     {
-        static const uint32_t spring = ShrineFlags::Crc32("Location_MaronSpring");
         Counter counter;
         const LocationState::Entry* table = LocationState::Table();
         for (int i = 0; i < LocationState::Count; ++i)
         {
-            if (table[i].kind != LocationState::Kind::GreatFairy || table[i].locationHash == spring)
+            if (table[i].kind != LocationState::Kind::GreatFairy)
                 continue;
             ++counter.total;
             counter.done += SavefileIO::IsLocationStateDone(table[i].locationHash) ? 1 : 0;

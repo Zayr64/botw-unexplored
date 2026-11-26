@@ -183,6 +183,8 @@ namespace Localization
         FairyAwake,
         FairyAsleep,
         ChestItemHad,
+        HorseGodAwake,
+        HorseGodAsleep,
         Count
     };
 

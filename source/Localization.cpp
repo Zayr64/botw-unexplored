@@ -41,7 +41,7 @@ namespace
         "Main quest", "In progress", "Where the game's marker for this step points",
         "No marker in the game for this step: where the quest was taken",
         "Tower", "Great Fairy Fountain", "Activated", "Not activated", "The fairy is awake", "The fairy sleeps",
-        "You already have it: not opened"
+        "You already have it: not opened", "The horse god is awake", "The horse god sleeps"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

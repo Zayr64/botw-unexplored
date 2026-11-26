@@ -594,7 +594,6 @@ bool Map::Init()
     MapObject<Data::FairyIcon>::m_SizeFactor = 0.25f;
     {
         int towers = 0, fairies = 0;
-        const uint32_t spring = ShrineFlags::Crc32("Location_MaronSpring"); // the horse god's: not a Great Fairy
         for (int i = 0; i < LocationState::Count; ++i)
         {
             const LocationState::Entry& entry = LocationState::Table()[i];
@@ -604,7 +603,7 @@ bool Map::Init()
                     location = &Data::Locations[j];
             if (entry.kind == LocationState::Kind::Tower && towers < TowerCount)
                 m_TowerLocations[towers++] = location;
-            else if (entry.kind == LocationState::Kind::GreatFairy && entry.locationHash != spring && fairies < FairyCount)
+            else if (entry.kind == LocationState::Kind::GreatFairy && fairies < FairyCount)
                 m_FairyLocations[fairies++] = location;
         }
     }
