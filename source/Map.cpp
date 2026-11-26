@@ -28,6 +28,7 @@
 #include "ManualProgress.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
+#include "SwitchStyle.h"
 #include "Ui.h"
 
 #include "SavefileIO.h"
@@ -395,7 +396,7 @@ namespace
                 add("A", RegionsPanel::HighlightIsWholeMap() ? Text::WholeMap : Text::HintShowRegion);
             else if (ProgressPanel::Scrolls(Map::m_Legend->m_Tab == Legend::TabCollection))
                 add("Up/Down", Text::HintScroll);
-            add("< >", Text::HintTab);
+            add("L R", Text::HintTab);
             add("B", Text::HintClose);
         }
         else if (korokCard || objectCard)
@@ -880,8 +881,8 @@ void Map::Update()
         m_HasTargetCameraPosition = false;
     }
 
-    // L glides to Link and keeps the zoom
-    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
+    // L glides to Link and keeps the zoom (zayr31: with the legend open, L and R change its tab)
+    if (!imageViewerWasOpen && !m_Legend->m_IsOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
     {
         m_TargetCameraPosition = PlayerMapPosition();
         m_HasTargetCameraPosition = true;
@@ -993,7 +994,7 @@ void Map::Update()
         FocusMissing(1);
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZL))
         FocusMissing(-1);
-    else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_R))
+    else if (!imageViewerWasOpen && !modalDialogOpen && !m_Legend->m_IsOpen && (buttonsPressed & HidNpadButton_R))
         FocusNearestToCenter();
 
     if (!imageViewerWasOpen && m_HasTargetCameraPosition)
@@ -1525,36 +1526,17 @@ void Map::Sync()
         Ui::Toast(Localization::Get(Text::ToastNoChange));
 }
 
+// zayr31: in the words and the date of BotW Compendium (SwitchStyle). The date was the local time of the save's
+// seconds ("24 Nov 13:11" for a save of 16:11 on a console three hours behind UTC): the game writes its local time as
+// if it were UTC, so it is read as UTC.
 std::string Map::SourceText(glm::vec3& dotColor, bool& hasDot)
 {
-    using Localization::Text;
     hasDot = false;
     if (!SavefileIO::LoadedSavefile)
         return std::string();
-
-    if (SavefileIO::LiveSynced)
-    {
-        hasDot = true;
-        dotColor = Ui::Colors::Good;
-        return Localization::Get(Text::LiveFromGame);
-    }
-
-    std::string text = Localization::Get(SavefileIO::GameIsRunning ? Text::SaveBackup : Text::SaveLabel);
-    if (SavefileIO::GameIsRunning)
-    {
-        hasDot = true;
-        dotColor = Ui::Colors::Warn;
-    }
-    const time_t saveTime = static_cast<time_t>(SavefileIO::CurrentState.saveTime);
-    if (saveTime != 0)
-    {
-        char when[32] = "";
-        if (const struct tm* local = std::localtime(&saveTime))
-            std::strftime(when, sizeof(when), "%d %b %H:%M", local);
-        if (when[0] != '\0')
-            text += std::string(" - ") + when;
-    }
-    return text;
+    const SwitchStyle::Source source = SavefileIO::LiveSynced ? SwitchStyle::Source::Live
+                                     : SavefileIO::GameIsRunning ? SwitchStyle::Source::Copy : SwitchStyle::Source::Save;
+    return SwitchStyle::SourceText(source, SavefileIO::CurrentState.saveTime, false, dotColor, hasDot);
 }
 
 std::string Map::NearestRankText()

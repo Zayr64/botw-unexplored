@@ -15,6 +15,7 @@
 #include "QuestMap.h"
 #include "Regions.h"
 #include "RegionsPanel.h"
+#include "SwitchStyle.h"
 #include "Ui.h"
 
 namespace
@@ -104,10 +105,7 @@ namespace
     // zayr30: the cells as the Switch's own menus draw them. Neutral tiles, darker when the category is off; the one
     // selected in a pulsing cyan frame, a gap away, as on the HOME menu; whether the category shows, by a toggle as in
     // System Settings (chosen by the user over a check as when picking in the Album, and over the blue cells of zayr28).
-    const glm::vec4 SwitchTileOn = {0.24f, 0.25f, 0.27f, 1.0f};
-    const glm::vec4 SwitchTileOff = {0.15f, 0.155f, 0.165f, 1.0f};
-    const glm::vec3 SwitchCyan = {0.10f, 0.80f, 0.98f};
-    const glm::vec4 SwitchTrackOff = {0.36f, 0.37f, 0.39f, 1.0f};
+    // zayr31: those pieces are in SwitchStyle, which BotW Compendium uses too.
 
 
     Localization::Text LabelOf(IconButton::ButtonTypes type)
@@ -192,10 +190,10 @@ void Legend::Update()
 {
     const u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
 
-    // Left and right change the tab
-    if (buttonsPressed & HidNpadButton_Right)
+    // zayr31: L and R change the tab, as in BotW Compendium (Left and Right up to zayr30)
+    if (buttonsPressed & HidNpadButton_R)
         m_Tab = (m_Tab + 1) % TabCount;
-    if (buttonsPressed & HidNpadButton_Left)
+    if (buttonsPressed & HidNpadButton_L)
         m_Tab = (m_Tab + TabCount - 1) % TabCount;
 
     HidTouchScreenState state={0};
@@ -270,6 +268,17 @@ void Legend::Update()
         m_HighlightedButton = (m_HighlightedButton + count - 1) % count;
         UpdateSelectedButton();
     }
+    // Left and right go to the same row of the other column
+    if ((buttonsPressed & HidNpadButton_Right) && m_HighlightedButton < RowsPerColumn)
+    {
+        m_HighlightedButton += RowsPerColumn;
+        UpdateSelectedButton();
+    }
+    if ((buttonsPressed & HidNpadButton_Left) && m_HighlightedButton >= RowsPerColumn)
+    {
+        m_HighlightedButton -= RowsPerColumn;
+        UpdateSelectedButton();
+    }
     if (buttonsPressed & HidNpadButton_A)
     {
         // Bounds check
@@ -299,17 +308,16 @@ void Legend::Render()
 
     Ui::PanelBackground();
 
-    // The tabs: the one in use in gold, with a line under it
+    // The tabs, the one in use marked as in BotW Compendium (SwitchStyle)
     float edges[TabCount][2];
     TabEdges(edges);
     for (int tab = 0; tab < TabCount; ++tab)
     {
         const bool active = tab == m_Tab;
-        Ui::Text(Localization::Get(tabTitles[tab]), glm::vec2(edges[tab][0], top - TabsBaseline), TabScale,
-                 active ? Ui::Colors::Gold : Ui::Colors::TextDim);
         if (active)
-            Ui::Shapes().AddRect(edges[tab][0], top - TabsBaseline - 10.0f, edges[tab][1], top - TabsBaseline - 8.0f,
-                                 glm::vec4(Ui::Colors::Gold, 1.0f));
+            SwitchStyle::TabMark(Ui::Shapes(), edges[tab][0], edges[tab][1], top - TabsBaseline);
+        Ui::Text(Localization::Get(tabTitles[tab]), glm::vec2(edges[tab][0], top - TabsBaseline), TabScale,
+                 SwitchStyle::TabTitleColor(active));
     }
 
     // What the game calls map completion: Koroks, shrines and locations.
@@ -500,28 +508,17 @@ void IconButton::DrawShapes()
     if (m_Compact)
     {
         if (m_IsSelected)
-        {
-            const float pulse = 0.80f + 0.20f * std::sin(static_cast<float>(Ui::Frame()) * 0.10f);
-            shapes.AddRoundedRect(left - 6.0f, bottom - 6.0f, right + 6.0f, top + 6.0f, RowRadius + 6.0f,
-                                  glm::vec4(SwitchCyan * pulse, 1.0f));
-            shapes.AddRoundedRect(left - 3.0f, bottom - 3.0f, right + 3.0f, top + 3.0f, RowRadius + 3.0f,
-                                  glm::vec4(glm::vec3(Ui::Colors::Panel), 1.0f)); // the gap
-        }
-        shapes.AddRoundedRect(left, bottom, right, top, RowRadius, m_IsToggled ? SwitchTileOn : SwitchTileOff);
-        {
-            // A toggle of System Settings: cyan with the knob right when on, grey with it left when off
-            const float w = 30.0f, h = 16.0f, r = right - 9.0f, t = top - 10.0f;
-            shapes.AddRoundedRect(r - w, t - h, r, t, h * 0.5f, m_IsToggled ? glm::vec4(SwitchCyan, 1.0f) : SwitchTrackOff);
-            shapes.AddCircle(glm::vec2(m_IsToggled ? r - h * 0.5f : r - w + h * 0.5f, t - h * 0.5f), h * 0.5f - 2.5f,
-                             glm::vec4(1.0f));
-        }
+            SwitchStyle::SelectionFrame(shapes, left, bottom, right, top, RowRadius, Ui::Frame(),
+                                        glm::vec3(Ui::Colors::Panel));
+        shapes.AddRoundedRect(left, bottom, right, top, RowRadius, m_IsToggled ? SwitchStyle::TileOn : SwitchStyle::TileOff);
+        SwitchStyle::Toggle(shapes, right - 9.0f, top - 10.0f, m_IsToggled);
         if (m_Type == HeroPath)
             return;
         int switchFound = 0, switchTotal = 0;
         Count(switchFound, switchTotal);
         Ui::ProgressBar(left + 10.0f, bottom + 6.0f, m_Width - 20.0f, 3.0f,
                         switchTotal > 0 ? static_cast<float>(switchFound) / static_cast<float>(switchTotal) : 0.0f,
-                        m_IsToggled ? SwitchCyan : Ui::Colors::TextDim);
+                        m_IsToggled ? SwitchStyle::Cyan : Ui::Colors::TextDim);
         return;
     }
 

@@ -21,6 +21,7 @@
 #include "Graphics/InitGL.h"
 #include "Graphics/ShapeBatch.h"
 #include "Log.h"
+#include "SwitchStyle.h"
 
 #include "Cook.h"
 #include "CookData.h"
@@ -51,18 +52,21 @@ namespace
     // on the screen).
     const float SmallText = 0.36f;
 
+    // 0.1.15: the colours BotW Unexplored uses too (SwitchStyle); here the bars are opaque, there is no map under them.
     const glm::vec4 Background(0.035f, 0.05f, 0.06f, 1.0f);
     const glm::vec4 PanelColor(0.055f, 0.08f, 0.095f, 1.0f);
-    const glm::vec4 BarColor(0.03f, 0.045f, 0.055f, 1.0f);
-    const glm::vec4 Hairline(1.0f, 1.0f, 1.0f, 0.10f);
-    const glm::vec4 RowOn(0.17f, 0.36f, 0.48f, 0.92f);
+    const glm::vec4 BarColor(SwitchStyle::BarRgb, 1.0f);
+    const glm::vec4 Hairline(SwitchStyle::Hairline);
     const glm::vec4 RowAlt(1.0f, 1.0f, 1.0f, 0.03f);
-    const glm::vec3 TextColor(1.0f, 1.0f, 1.0f);
-    const glm::vec3 TextDim(0.70f, 0.75f, 0.78f);
-    const glm::vec3 Accent(0.38f, 0.82f, 0.96f);
-    const glm::vec3 Gold(0.86f, 0.73f, 0.40f);
-    const glm::vec3 Good(0.47f, 0.86f, 0.56f);
-    const glm::vec3 Warn(0.99f, 0.76f, 0.33f);
+    const glm::vec4 ChipColor(1.0f, 1.0f, 1.0f, 0.07f); // a chip on the bar
+    const glm::vec3 TextColor(SwitchStyle::TextColor);
+    const glm::vec3 TextDim(SwitchStyle::TextDim);
+    const glm::vec3 Accent(SwitchStyle::Accent);
+    const glm::vec3 Gold(SwitchStyle::Gold);
+    const glm::vec3 Good(SwitchStyle::Good);
+    const glm::vec3 Warn(SwitchStyle::Warn);
+    // The buttons' symbols in the footer, as in BotW Unexplored's (the caps it drew up to 0.1.14 without the font)
+    const glm::vec3 CapColor(0.93f, 0.95f, 0.96f);
     // The effect icons come coloured from gen_icons.py (the colours of the game's icons below Link's hearts) and are
     // drawn as they are. The heart is a grey shape tinted here: red, or the yellow of extra hearts (#F0E000). The
     // clock and the time: the green of a dish's card in the pause menu (#21DA4F, Layout/Common.sblarc).
@@ -75,6 +79,7 @@ namespace
 
     Font* g_font = nullptr;
     ShapeBatch* g_shapes = nullptr;
+    unsigned int g_frame = 0; // the pulse of the selection's frame
     glm::mat4 g_projection(1.0f);
     glm::mat4 g_identity(1.0f);
 
@@ -100,6 +105,18 @@ namespace
     float Width(const std::string& s, float scale)
     {
         return g_font->MeasureText(s, scale);
+    }
+
+    // The selected row of a list, as in BotW Unexplored: the Switch's pulsing cyan frame, here inside the row (the
+    // rows touch each other), and a light fill. `behind`: the colour under the row.
+    void SelectedRow(float x, float top, float w, float h, float r, const glm::vec4& behind)
+    {
+        const float inset = 4.0f;
+        const float left = x + inset, right = x + w - inset;
+        const float bottom = ScreenH - top - h + inset, upper = ScreenH - top - inset;
+        const float radius = std::max(2.0f, r - inset);
+        SwitchStyle::SelectionFrame(*g_shapes, left, bottom, right, upper, radius, g_frame, glm::vec3(behind), inset, 2.0f);
+        g_shapes->AddRoundedRect(left, bottom, right, upper, radius, SwitchStyle::RowSelected);
     }
 
     // Cuts a text to a width, with "..." at the end.
@@ -182,19 +199,6 @@ namespace
     {
         char buf[16];
         snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(units) / perWheel);
-        return buf;
-    }
-
-    std::string SaveDate(uint32_t t)
-    {
-        if (t == 0)
-            return "";
-        // The game writes its local time as if it were UTC.
-        const time_t tt = static_cast<time_t>(t);
-        struct tm parts;
-        gmtime_r(&tt, &parts);
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%02d/%02d %02d:%02d", parts.tm_mday, parts.tm_mon + 1, parts.tm_hour, parts.tm_min);
         return buf;
     }
 
@@ -565,37 +569,80 @@ namespace
 
     int RowCount(const App& app);
 
+    // Where the numbers come from, in BotW Unexplored's words (SwitchStyle): with BotW open the save cannot be read,
+    // so a copy is shown, or the game's memory.
+    std::string SourceText(const App& app, bool brief, glm::vec3& dot, bool& hasDot)
+    {
+        hasDot = false;
+        if (app.loaded.kind == SaveSource::Kind::None)
+            return std::string();
+        const SwitchStyle::Source source = app.loaded.kind == SaveSource::Kind::Live ? SwitchStyle::Source::Live
+                                         : app.loaded.kind == SaveSource::Kind::Game ? SwitchStyle::Source::Save
+                                                                                     : SwitchStyle::Source::Copy;
+        return SwitchStyle::SourceText(source, app.loaded.saveTime, brief, dot, hasDot);
+    }
+
     void Header(const App& app)
     {
         Rect(0, 0, ScreenW, HeaderH, BarColor);
         Rect(0, HeaderH, ScreenW, 1, Hairline);
+        // Each tab with the icon of the game's pause menu for it (on the SD, from the dump; without it, the title
+        // alone): the pot of the dishes, the apple of the materials, a rupee, a skull.
         const char* tabs[] = {"Dishes", "Reserve", "Sell", "EXP"};
+        const char* tabIcons[] = {"tab-dishes", "tab-reserve", "tab-sell", "tab-exp"};
+        const float tabScale = 0.46f, tabBaseline = 36.0f, icon = 30.0f, iconGap = 5.0f, pad = 12.0f, tabGap = 4.0f;
+        const float cap = SwitchStyle::CapHeight(*g_font, tabScale);
+        auto contentW = [&](int i) {
+            return Width(tabs[i], tabScale) + (Icons::HasUi(tabIcons[i]) ? icon + iconGap : 0.0f);
+        };
         float tabsW = 0.0f;
         for (int i = 0; i < 4; i++)
-            tabsW += Width(tabs[i], 0.46f) + 36 + 8;
+            tabsW += contentW(i) + 2 * pad + tabGap;
+        // On the right the rupees, then where the data comes from; the long form when there is room, else the date.
         const std::string rupees = app.plan ? Number(app.plan->rupees) : std::string();
         const float rupeesW = app.plan ? Width(rupees, 0.46f) + 40 : 0.0f;
+        glm::vec3 dot;
+        bool hasDot = false;
+        std::string source = SourceText(app, false, dot, hasDot);
         // The title gets shorter when the zoom leaves no room for it.
         std::string title = "BotW Compendium";
-        if (24 + Width(title, 0.62f) + 28 + tabsW + rupeesW + 24 > ScreenW)
+        auto room = [&]() {
+            return ScreenW - (24 + Width(title, 0.62f) + 16 + tabsW + 12 + rupeesW + 16);
+        };
+        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
             title = "Compendium";
+        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
+            source = SourceText(app, true, dot, hasDot);
+        if (!source.empty() && SwitchStyle::ChipWidth(*g_font, source, hasDot) + 16 > room())
+            source.clear();
         Text(title, 24, 38, 0.62f, Gold);
-        float x = 24 + Width(title, 0.62f) + 28;
+        float x = 24 + Width(title, 0.62f) + 16;
         for (int i = 0; i < 4; i++)
         {
-            const float w = Width(tabs[i], 0.46f) + 36;
-            if (i == app.tab)
-                RoundRect(x, 10, w, 36, 10, RowOn);
-            Text(tabs[i], x + w / 2, 36, 0.46f, i == app.tab ? TextColor : TextDim, ALIGN_CENTER);
-            x += w + 8;
+            const float w = contentW(i) + 2 * pad;
+            const bool active = i == app.tab;
+            const float left = x + pad, right = x + w - pad;
+            if (active)
+                SwitchStyle::TabMark(*g_shapes, left, right, ScreenH - tabBaseline);
+            float tx = left;
+            if (Icons::HasUi(tabIcons[i]))
+            {
+                const glm::vec3 c = SwitchStyle::TabTitleColor(active);
+                Icons::Ui(tabIcons[i], tx, tabBaseline - cap * 0.5f - icon * 0.5f, icon, glm::vec4(c, 1.0f));
+                tx += icon + iconGap;
+            }
+            Text(tabs[i], tx, tabBaseline, tabScale, SwitchStyle::TabTitleColor(active));
+            x += w + tabGap;
         }
+        float right = ScreenW - 16;
+        if (!source.empty())
+            right -= SwitchStyle::Chip(*g_shapes, *g_font, source, right, ScreenH - (HeaderH - SwitchStyle::ChipHeight) / 2,
+                                       true, ChipColor, hasDot ? &dot : nullptr) + 16;
         if (app.plan)
         {
             const float w = Width(rupees, 0.46f);
-            Text(rupees, ScreenW - 24, 37, 0.46f, TextColor, ALIGN_RIGHT);
-            Icons::Ui("rupee", ScreenW - 24 - w - 40, 12, 30);
-            if (app.computing)
-                Text("Cooking again...", ScreenW - 24 - w - 64, 37, SmallText, Accent, ALIGN_RIGHT);
+            Text(rupees, right, 37, 0.46f, TextColor, ALIGN_RIGHT);
+            Icons::Ui("rupee", right - w - 40, 12, 30);
         }
     }
 
@@ -607,9 +654,10 @@ namespace
 
     struct Hint
     {
-        std::string key;
+        std::string keys; // the buttons, by SwitchStyle's names, with spaces between
         std::string label;
-        int keep; // when the footer has no room for every hint, the lowest go first
+        int keep;        // when the footer has no room for every hint, the lowest go first
+        int toggle = -1; // a toggle after the label: 1 on, 0 off (as on a cell of BotW Unexplored's legend)
     };
 
     std::string DishToggleHint(const App& app);
@@ -620,7 +668,7 @@ namespace
         std::vector<Hint> hints;
         if (!app.loading && app.error.empty())
         {
-            hints.push_back({"L/R", "tab", 1});
+            hints.push_back({"L R", "tab", 1});
             hints.push_back({"Up/Down", "move", 0});
             if (app.visible[app.tab] > 0 && RowCount(app) > app.visible[app.tab])
                 hints.push_back({"Left/Right", "page", 2});
@@ -634,23 +682,74 @@ namespace
             if (app.tab == 2 && app.prizedFree > 0)
                 hints.push_back({"Y", app.sellPrized ? "valuable critters: sold" : "valuable critters: kept", 3});
             if (app.tab != 3)
-                hints.push_back({"X", app.countHidden ? "other needs: on" : "other needs: off", 3});
+                hints.push_back({"X", "other needs", 3, app.countHidden ? 1 : 0});
         }
         hints.push_back({"+", "exit", 2});
         return hints;
     }
 
-    // The hints on the right of the footer: each button on a key cap, what it does in grey. Returns where they start.
+    // The buttons of a hint, by name.
+    std::vector<std::string> Keys(const std::string& keys)
+    {
+        std::vector<std::string> names;
+        size_t start = 0;
+        while (start < keys.size())
+        {
+            size_t end = keys.find(' ', start);
+            if (end == std::string::npos)
+                end = keys.size();
+            if (end > start)
+                names.push_back(keys.substr(start, end - start));
+            start = end + 1;
+        }
+        return names;
+    }
+
+    // 0.1.15: a button as the Switch draws it (its symbol in the console's Nintendo Extension font, as in BotW
+    // Unexplored); without that font, its name on a key cap as up to 0.1.14. Returns its width; draws it when `draw`.
+    float Key(const std::string& name, float x, bool draw)
+    {
+        const float scale = SmallText;
+        const float centerY = FooterH * 0.5f; // from the bottom
+        const std::string glyphs = SwitchStyle::ButtonGlyphs(*g_font, name);
+        if (!glyphs.empty())
+        {
+            static const float glyphScale = SwitchStyle::GlyphScale(*g_font, 23.0f);
+            const float w = Width(glyphs, glyphScale);
+            if (draw)
+                g_font->AddTextToBatch(glyphs, glm::vec2(x, SwitchStyle::GlyphBaseline(*g_font, glyphScale, centerY)),
+                                       glyphScale, CapColor);
+            return w;
+        }
+        const float pad = 8.0f;
+        const float w = Width(name, scale) + 2 * pad;
+        if (draw)
+        {
+            RoundRect(x, ScreenH - FooterH + 10, w, FooterH - 20, 7, glm::vec4(1.0f, 1.0f, 1.0f, 0.16f));
+            Text(name, x + pad, ScreenH - 16, scale, TextColor);
+        }
+        return w;
+    }
+
+    // The hints on the right of the footer, as in BotW Unexplored: the buttons, what they do. Returns where they start.
     float DrawHints(std::vector<Hint> hints)
     {
         const float scale = SmallText;
-        const float pad = 8.0f;
-        const float keyGap = 8.0f;
-        const float gap = 20.0f;
+        const float keyGap = 7.0f;
+        const float gap = 18.0f;
+        auto keysW = [&](const Hint& h) {
+            float w = 0.0f;
+            for (const std::string& k : Keys(h.keys))
+                w += Key(k, 0.0f, false) + 3.0f;
+            return w - 3.0f;
+        };
+        auto hintW = [&](const Hint& h) {
+            return keysW(h) + keyGap + Width(h.label, scale) + (h.toggle >= 0 ? 8.0f + SwitchStyle::ToggleWidth : 0.0f);
+        };
         auto total = [&]() {
             float w = -gap;
             for (const Hint& h : hints)
-                w += Width(h.key, scale) + 2 * pad + keyGap + Width(h.label, scale) + gap;
+                w += hintW(h) + gap;
             return w;
         };
         // With a big zoom not every hint fits: moving and tabs go first, they are learned on the first day.
@@ -663,15 +762,22 @@ namespace
             hints.erase(hints.begin() + drop);
         }
         const float start = ScreenW - 24 - total();
-        const float baseline = ScreenH - 16;
+        const float baseline = ScreenH - FooterH * 0.5f + SwitchStyle::CapHeight(*g_font, scale) * 0.5f;
         float x = start;
         for (const Hint& h : hints)
         {
-            const float w = Width(h.key, scale);
-            RoundRect(x, ScreenH - FooterH + 10, w + 2 * pad, FooterH - 20, 7, glm::vec4(1.0f, 1.0f, 1.0f, 0.16f));
-            Text(h.key, x + pad, baseline, scale, TextColor);
-            x += w + 2 * pad + keyGap;
-            x = Text(h.label, x, baseline, scale, TextDim) + gap;
+            for (const std::string& k : Keys(h.keys))
+                x += Key(k, x, true) + 3.0f;
+            x += keyGap - 3.0f;
+            x = Text(h.label, x, baseline, scale, TextColor);
+            if (h.toggle >= 0)
+            {
+                x += 8.0f;
+                SwitchStyle::Toggle(*g_shapes, x + SwitchStyle::ToggleWidth, (FooterH + SwitchStyle::ToggleHeight) * 0.5f,
+                                    h.toggle == 1);
+                x += SwitchStyle::ToggleWidth;
+            }
+            x += gap;
         }
         return start;
     }
@@ -681,43 +787,11 @@ namespace
         Rect(0, ScreenH - FooterH, ScreenW, FooterH, BarColor);
         Rect(0, ScreenH - FooterH, ScreenW, 1, Hairline);
         const float hintsStart = DrawHints(Hints(app));
-        // Where the numbers come from. With BotW open the save cannot be read: say that it is a copy, and from when.
-        // The long form when it fits beside the hints, else the short one.
-        std::string source, brief;
-        glm::vec3 color = TextDim;
-        if (app.loaded.kind != SaveSource::Kind::None)
-        {
-            const std::string date = SaveDate(app.loaded.saveTime);
-            if (app.loaded.kind == SaveSource::Kind::Game)
-            {
-                source = "Save read from the game" + (date.empty() ? std::string() : ", " + date);
-                brief = date.empty() ? std::string("Save from the game") : "Save of " + date;
-            }
-            else if (app.loaded.kind == SaveSource::Kind::Live)
-            {
-                // BotW is open and was read as it is now: pouch, rupees, hearts and stamina of this moment.
-                source = "Live from the game";
-                brief = "Live";
-                color = Good;
-            }
-            else
-            {
-                source = app.loaded.kind == SaveSource::Kind::UnexploredCopy ? "BotW is open: BotW Unexplored's copy"
-                                                                              : "BotW is open: copy of the save";
-                brief = "BotW is open: copy";
-                if (!date.empty())
-                {
-                    source += " of " + date;
-                    brief += " of " + date;
-                }
-                color = Warn;
-            }
-        }
-        // The long form, else the short one, else nothing (a cut date says nothing).
-        const float room = hintsStart - 24 - 28;
-        const std::string& shown = Width(source, SmallText) <= room ? source : brief;
-        if (Width(shown, SmallText) <= room)
-            Text(shown, 24, ScreenH - 16, SmallText, color);
+        // 0.1.15: where the numbers come from went to the top right, as in BotW Unexplored; here, while X or Y have
+        // the dishes cooked again, that it is being done.
+        const float baseline = ScreenH - FooterH * 0.5f + SwitchStyle::CapHeight(*g_font, SmallText) * 0.5f;
+        if (app.computing && Width("Cooking again...", SmallText) <= hintsStart - 24 - 28)
+            Text("Cooking again...", 24, baseline, SmallText, Accent);
     }
 
     // The result of a dish on one line, with the game's icons: effect, hearts. Returns the x after it.
@@ -984,7 +1058,7 @@ namespace
             const Goal& g = app.goals[i];
             const float y = top + i * rowH;
             if (static_cast<int>(i) == app.cursor[0])
-                RoundRect(12, y, listW - 24, rowH - 4, 8, RowOn);
+                SelectedRow(12, y, listW - 24, rowH - 4, 8, PanelColor);
             Icons::Ui(g.kind == GoalKind::Hearts ? "heart" : (g.effect == LifeMaxUp ? "heart" : EffectIcon(g.effect)), 18,
                       y + (rowH - 4 - icon) / 2, icon, EffectTint(g.kind == GoalKind::Hearts ? EffectNone : g.effect));
             const float baseline = y + (rowH - 4) / 2 + 7;
@@ -1131,7 +1205,7 @@ namespace
             const MaterialPlan& m = p.materials[row.index];
             const float ry = y + (i - scroll) * rowH;
             if (i == cursor)
-                Rect(0, ry, ScreenW, rowH, RowOn);
+                SelectedRow(8, ry, ScreenW - 22, rowH, 6, Background);
             else if (i % 2)
                 Rect(0, ry, ScreenW, rowH, RowAlt);
             Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
@@ -1317,7 +1391,7 @@ namespace
             const float ry = y + (i - scroll) * rowH;
             const float baseline = ry + 24;
             if (i == cursor)
-                Rect(0, ry, ScreenW, rowH, RowOn);
+                SelectedRow(8, ry, ScreenW - 22, rowH, 6, Background);
             else if (i % 2)
                 Rect(0, ry, ScreenW, rowH, RowAlt);
             if (l.count)
@@ -1441,7 +1515,7 @@ namespace
             const LevelFlagState& fs = p.flags[row.index];
             const float ry = y + (i - scroll) * lineH;
             if (i == cursor)
-                Rect(0, ry, ScreenW, lineH, RowOn);
+                SelectedRow(8, ry, ScreenW - 22, lineH, 6, Background);
             else if (i % 2)
                 Rect(0, ry, ScreenW, lineH, RowAlt);
             // Every enemy by name and picture. One whose counter is full adds nothing more: the whole row in grey,
@@ -1627,6 +1701,7 @@ int main()
             app.computing = false;
         }
         frame++;
+        g_frame++;
     }
 
     Log("SHUTDOWN");

@@ -15,6 +15,8 @@ LIBDIR="${HOSTVIEW_LIBDIR:-/usr/lib/x86_64-linux-gnu}"
 mkdir -p "$OUT/obj"
 
 FLAGS=(-std=gnu++17 -O1 -g -w -D__SWITCH__ -I"$HERE/shim" -I"$REPO/include" -I"$REPO/source" -I"$REPO/tests")
+# HOSTVIEW_CXXFLAGS: more compiler flags (-D...), to look at a variant
+FLAGS+=(${HOSTVIEW_CXXFLAGS:-})
 if [[ -n "${HOSTVIEW_SYSROOT:-}" ]]; then
     FLAGS+=(-I"$HOSTVIEW_SYSROOT/usr/include" -I"$HOSTVIEW_SYSROOT/usr/include/freetype2")
 else

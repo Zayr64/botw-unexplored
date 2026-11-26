@@ -17,11 +17,11 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
   Its legend row (on by default) tells how far that is. The game keeps the newest part in memory, where the app does
   not read it: with the game open the line is the one of the last time the app ran with it closed (a copy of the files
   is kept in `saves/<profile>/tracker/`).
-- **Live progress while playing**: with BotW 1.6.0 running behind the app (opened from the Album), the game's own flags are read from its memory every time the app opens, and again with `-`. Nothing is written to the game. The chip at the top right tells where the progress comes from: `Live from the game`, `Save backup` (the memory could not be read; the reason shows for a few seconds and goes to `log.txt`) or `Save`.
+- **Live progress while playing**: with BotW 1.6.0 running behind the app (opened from the Album), the game's own flags are read from its memory every time the app opens, and again with `-`. Nothing is written to the game. The chip at the top right tells where the progress comes from: `Live from the game`, `Save copy · 24/11 16:11` (the memory could not be read; the reason shows for a few seconds and goes to `log.txt`) or `Save · 24/11 16:11`, with the date the game keeps (its local time). BotW Compendium shows the same chip, in the same words.
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
 - A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
 - Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
-- The legend, in two columns of seven (an icon and count over the category's name, and a toggle as in the Switch's System Settings: the selected cell in a cyan frame, as on the HOME menu), shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The locations visited are also a number in the Progress tab.
+- The legend, in two columns of seven (an icon and count over the category's name, and a toggle as in the Switch's System Settings: the selected cell in a cyan frame, as on the HOME menu; the same pieces, colours and buttons as BotW Compendium, from `source/SwitchStyle`), shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The locations visited are also a number in the Progress tab.
 - The left panel has four tabs, all in numbers only:
   - **Progress** counts what the map does not show: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the common chests of the world map, memories recalled (out of the pictures the album has so far), locations visited, and when the next Blood Moon comes, in minutes of play (from the world's clock and the Blood Moon timer, by the rule of the game's `TimeMgr` in the zeldaret/botw decomp).
   - **Regions** lists the fifteen regions of the map with what is found of each (Korok seeds and shrines) and shows one alone on the map: only its objects are drawn, counted in the legend and picked by `ZL`/`ZR`/`R`. Each row also tells how many shrine and side quests are taken in that region and are not in the log yet: `3 quests` can be taken now; with none of those, `2 later` wait for something else to happen first. A region is named once its tower is activated; until then it is an "Unknown region".
@@ -56,8 +56,8 @@ The bar at the bottom of the screen always shows the buttons that do something.
 | Map | Right-stick Y | Zoom |
 | Map | `A` or touch | Open the object under the aim (its name shows at the bottom left) |
 | Map | `ZR` / `ZL` | Next / previous of the 5 nearest missing visible objects (from Link when his position is known), with its hint or card open. Starts again from the nearest when the list changes |
-| Map | `R` | Open the missing visible object nearest to the aim, gliding to it |
-| Map | `L` | Center on Link, keeping the zoom |
+| Map | `R` | Open the missing visible object nearest to the aim, gliding to it (with the legend closed) |
+| Map | `L` | Center on Link, keeping the zoom (with the legend closed) |
 | Map | Left-stick click | Reset the zoom and center on Link |
 | Map | `X` | Open or close the legend |
 | Map | `Y` | Switch Normal Mode / Master Mode when available |
@@ -66,8 +66,8 @@ The bar at the bottom of the screen always shows the buttons that do something.
 | Card | `B` | Back |
 | Card | `A` | Korok: the guide's photo full screen. Chest: the kind of content, then the item |
 | Card | `Y` | Mark as found, while a save backup is shown |
-| Panel | D-Pad left/right, or touch a title | Switch between the tabs Legend, Progress and Regions |
-| Legend | D-Pad up/down, `A`, or touch | Select/toggle a category |
+| Panel | `L` / `R`, or touch a title | Switch between the tabs Legend, Progress, Regions and Collection (as in BotW Compendium) |
+| Legend | D-Pad, `A`, or touch | Select a category (left/right: the other column) and show or hide it |
 | Regions | D-Pad up/down, `A`, or touch | Show one region alone on the map, or the whole map again |
 
 ## High-resolution map (optional)

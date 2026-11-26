@@ -13,23 +13,25 @@
 #include "Localization.h"
 #include "Map.h"
 #include "SavefileIO.h"
+#include "SwitchStyle.h"
 
 namespace Ui
 {
+    // zayr31: the colours BotW Compendium uses too (SwitchStyle); the panel and the bars let the map show through.
     namespace Colors
     {
         const glm::vec4 Panel(0.045f, 0.065f, 0.08f, 0.90f);
-        const glm::vec4 Bar(0.03f, 0.045f, 0.055f, 0.84f);
-        const glm::vec4 Hairline(1.0f, 1.0f, 1.0f, 0.10f);
-        const glm::vec4 RowOn(0.17f, 0.36f, 0.48f, 0.92f);
+        const glm::vec4 Bar(SwitchStyle::BarRgb, 0.84f);
+        const glm::vec4 Hairline(SwitchStyle::Hairline);
+        const glm::vec4 RowOn(SwitchStyle::RowOn);
         const glm::vec4 RowOff(1.0f, 1.0f, 1.0f, 0.07f);
         const glm::vec4 Track(1.0f, 1.0f, 1.0f, 0.16f);
-        const glm::vec3 Text(1.0f, 1.0f, 1.0f);
-        const glm::vec3 TextDim(0.70f, 0.75f, 0.78f);
-        const glm::vec3 Accent(0.38f, 0.82f, 0.96f);
-        const glm::vec3 Gold(0.86f, 0.73f, 0.40f);
-        const glm::vec3 Good(0.47f, 0.86f, 0.56f);
-        const glm::vec3 Warn(0.99f, 0.76f, 0.33f);
+        const glm::vec3 Text(SwitchStyle::TextColor);
+        const glm::vec3 TextDim(SwitchStyle::TextDim);
+        const glm::vec3 Accent(SwitchStyle::Accent);
+        const glm::vec3 Gold(SwitchStyle::Gold);
+        const glm::vec3 Good(SwitchStyle::Good);
+        const glm::vec3 Warn(SwitchStyle::Warn);
     }
 }
 
@@ -63,39 +65,19 @@ namespace
         return names;
     }
 
-    // The Switch's own symbol of a button (filled, as the HOME menu's bar draws them) in the Nintendo Extension font,
-    // as UTF-8; "" for a name it has none for, or without that font (the caps below are drawn then).
+    // The Switch's own symbol of a button (SwitchStyle); "" without the Nintendo Extension font (the caps below are
+    // drawn then).
     std::string ButtonGlyphs(const std::string& button)
     {
-        static const struct { const char* name; uint32_t first, second; } symbols[] = {
-            {"A", 0xE0E0, 0}, {"B", 0xE0E1, 0}, {"X", 0xE0E2, 0}, {"Y", 0xE0E3, 0}, {"L", 0xE0E4, 0}, {"R", 0xE0E5, 0},
-            {"ZL", 0xE0E6, 0}, {"ZR", 0xE0E7, 0}, {"+", 0xE0EF, 0}, {"-", 0xE0F0, 0}, {"<", 0xE0ED, 0},
-            {">", 0xE0EE, 0}, {"Up/Down", 0xE0EB, 0xE0EC}
-        };
-        const auto utf8 = [](uint32_t cp) {
-            return std::string{static_cast<char>(0xE0 | (cp >> 12)), static_cast<char>(0x80 | ((cp >> 6) & 0x3F)),
-                               static_cast<char>(0x80 | (cp & 0x3F))};
-        };
-        for (const auto& symbol : symbols)
-        {
-            if (button != symbol.name)
-                continue;
-            if (!Map::m_Font.HasGlyph(symbol.first) || (symbol.second && !Map::m_Font.HasGlyph(symbol.second)))
-                return std::string();
-            return utf8(symbol.first) + (symbol.second ? utf8(symbol.second) : std::string());
-        }
-        return std::string();
+        return SwitchStyle::ButtonGlyphs(Map::m_Font, button);
     }
 
-    // The scale that draws the symbols as tall as the caps (24): measured on the A once.
+    // The scale that draws the symbols as tall as the caps (25): measured on the A once.
     float GlyphScale()
     {
         static float scale = 0.0f;
         if (scale == 0.0f)
-        {
-            const glm::vec2 extent = Map::m_Font.GlyphTopBottom(0xE0E0, 1.0f);
-            scale = extent.x - extent.y > 0.0f ? 25.0f / (extent.x - extent.y) : 0.5f;
-        }
+            scale = SwitchStyle::GlyphScale(Map::m_Font, 25.0f);
         return scale;
     }
 
@@ -119,8 +101,8 @@ namespace
         {
             // The symbol centred on the bar's middle, in the colour the caps had
             const float scale = GlyphScale();
-            const glm::vec2 extent = Map::m_Font.GlyphTopBottom(0xE0E0, scale);
-            Ui::Text(glyphs, glm::vec2(x, centerY - (extent.x + extent.y) * 0.5f), scale, glm::vec3(CapColor));
+            Ui::Text(glyphs, glm::vec2(x, SwitchStyle::GlyphBaseline(Map::m_Font, scale, centerY)), scale,
+                     glm::vec3(CapColor));
             return;
         }
         if (button.size() == 1)
@@ -308,18 +290,7 @@ void Ui::Footer(const std::vector<Hint>& allHints, const std::string& allContext
 
 float Ui::Chip(const std::string& text, float x, float top, bool anchorRight, const glm::vec3* dotColor)
 {
-    constexpr float Height = 30.0f;
-    constexpr float Scale = 0.34f;
-    const float dotSpace = dotColor ? 16.0f : 0.0f;
-    const float width = TextWidth(text, Scale) + 28.0f + dotSpace;
-    const float left = anchorRight ? x - width : x;
-    const float centerY = top - Height * 0.5f;
-
-    Shapes().AddRoundedRect(left, top - Height, left + width, top, Height * 0.5f, Colors::Bar);
-    if (dotColor)
-        Shapes().AddCircle(glm::vec2(left + 18.0f, centerY), 5.0f, WithAlpha(*dotColor, 1.0f));
-    Text(text, glm::vec2(left + 14.0f + dotSpace, centerY - CapHeightPerScale * Scale * 0.5f), Scale, Colors::Text);
-    return width;
+    return SwitchStyle::Chip(Shapes(), Map::m_Font, text, x, top, anchorRight, Colors::Bar, dotColor);
 }
 
 void Ui::Toast(const std::string& text, bool warning)

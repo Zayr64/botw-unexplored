@@ -122,6 +122,11 @@ namespace Icons
         Queue(std::string(Folder) + "ui/" + name + ".png", x, top, size, tint);
     }
 
+    bool HasUi(const std::string& name)
+    {
+        return s_ready && Get(std::string(Folder) + "ui/" + name + ".png") != nullptr;
+    }
+
     void Enemy(const std::string& actor, float x, float top, float size)
     {
         // The model render (png, from Zelda Wiki) when there is one, else the Compendium photo (jpg, from the game).

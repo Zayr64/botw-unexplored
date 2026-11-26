@@ -14,6 +14,7 @@
 #include "Progress.h"
 #include "Regions.h"
 #include "SavefileIO.h"
+#include "SwitchStyle.h"
 #include "Ui.h"
 
 namespace
@@ -146,12 +147,14 @@ void RegionsPanel::Render(float top)
         const bool shown = region == Map::m_RegionFilter; // the one the map shows (the whole map included)
         const bool highlighted = i == s_Highlighted;
 
+        // zayr31: the highlighted row in the Switch's pulsing cyan frame, as the legend's cells and BotW Compendium's
+        // rows; inside the row, which is only 3 from the next.
         if (highlighted)
         {
-            shapes.AddRoundedRect(left - 2.0f, rowBottom - 2.0f, right + 2.0f, rowTop + 2.0f, RowRadius + 2.0f,
-                                  glm::vec4(Ui::Colors::Accent, 1.0f));
-            shapes.AddRoundedRect(left, rowBottom, right, rowTop, RowRadius,
-                                  shown ? glm::vec4(0.17f, 0.36f, 0.48f, 1.0f) : glm::vec4(0.10f, 0.13f, 0.15f, 1.0f));
+            SwitchStyle::SelectionFrame(shapes, left + 4.0f, rowBottom + 4.0f, right - 4.0f, rowTop - 4.0f, RowRadius - 4.0f,
+                                        Ui::Frame(), glm::vec3(Ui::Colors::Panel), 4.0f, 2.0f);
+            shapes.AddRoundedRect(left + 4.0f, rowBottom + 4.0f, right - 4.0f, rowTop - 4.0f, RowRadius - 4.0f,
+                                  shown ? Ui::Colors::RowOn : SwitchStyle::RowSelected);
         }
         else
             shapes.AddRoundedRect(left, rowBottom, right, rowTop, RowRadius, shown ? Ui::Colors::RowOn : Ui::Colors::RowOff);

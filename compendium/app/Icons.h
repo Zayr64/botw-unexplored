@@ -21,6 +21,8 @@ namespace Icons
     // Queue an icon `size` pixels wide at x, top (screen pixels from the top left), multiplied by `tint`.
     void Item(const std::string& actor, float x, float top, float size, const glm::vec4& tint = glm::vec4(1.0f));
     void Ui(const std::string& name, float x, float top, float size, const glm::vec4& tint = glm::vec4(1.0f));
+    // Whether ui/<name>.png is on the SD (to make room for it).
+    bool HasUi(const std::string& name);
     // The enemy's picture from the Hyrule Compendium (enemies/<actor>.jpg).
     void Enemy(const std::string& actor, float x, float top, float size);
 
