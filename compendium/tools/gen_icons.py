@@ -122,9 +122,13 @@ def armor_icons(cook_data):
             chain.append(armors[current][0])
         candidates = []
         for c in chain:
-            candidates.append(c)
-            if c.endswith("_B"):
-                candidates.append(c[:-2])
+            for n in ([c, c[:-2]] if c.endswith("_B") else [c]):
+                candidates.append(n)
+                # The Gerudo jewelry's icon is under another name, its itemUseIconActorName in ActorInfo:
+                # Armor_028_Head (Opal Earrings) is shown as Obj_Head_028.
+                parts = n.split("_")
+                if len(parts) == 3 and parts[0] == "Armor" and parts[1].isdigit():
+                    candidates.append("Obj_%s_%s" % (parts[2], parts[1]))
         result[name] = candidates
     return result
 
