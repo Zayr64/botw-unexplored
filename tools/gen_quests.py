@@ -38,6 +38,9 @@ import nxfmt  # noqa: E402
 
 KINDS = {"Mini": "side", "Sub": "shrine", "Main": "main"}
 MAX_MARKERS = 4  # the most a step has (QuestMap::MaxMarkers in the app)
+# Quests left out: "Destroy Ganon" is never marked done, not even once the game is beaten (the game goes back to the
+# save from before the last battle), so it would stay on the map as in progress for good (seen by the user, 26/11).
+LEFT_OUT = {"GanonQuest"}
 
 
 def crc(flag):
@@ -96,7 +99,7 @@ def main():
     for q in quests:
         kind = KINDS.get(q.get("Type"))
         steps = q.get("Steps") or []
-        if not kind or not steps or not (q.get("Orderer") or q.get("Location")):
+        if not kind or not steps or not (q.get("Orderer") or q.get("Location")) or q.get("Name") in LEFT_OUT:
             continue
         name = q["Name"]
         start = steps[0].get("NextFlag", "")

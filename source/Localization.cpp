@@ -39,7 +39,8 @@ namespace
         "Hero's Path", "Scroll",
         "Quests", "Quest", "Side quest", "Shrine quest", "Not taken yet", "Not available yet: something else first",
         "Main quest", "In progress", "Where the game's marker for this step points",
-        "No marker in the game for this step: where the quest was taken"
+        "No marker in the game for this step: where the quest was taken",
+        "Tower", "Great Fairy Fountain", "Activated", "Not activated", "The fairy is awake", "The fairy sleeps"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");
@@ -55,7 +56,7 @@ const std::string& Localization::GetObjectTypeName(Data::ObjectType objectType)
     const std::array<Text, static_cast<size_t>(Data::ObjectType::Count)> names = {{
         Text::Korok, Text::Shrine, Text::DLCShrine, Text::Location,
         Text::Hinox, Text::StoneTalus, Text::Molduga, Text::TreasureChest, Text::SpecialChest,
-        Text::BreakableWall, Text::Quest
+        Text::BreakableWall, Text::Quest, Text::Tower, Text::GreatFairy
     }};
     static_assert(names.size() == static_cast<size_t>(Data::ObjectType::Count), "Singular names must match ObjectType");
     const int index = static_cast<int>(objectType);

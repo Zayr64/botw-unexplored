@@ -17,6 +17,8 @@ namespace LegendCategories
         MaterialChests,
         Walls,
         Quests,   // where the side and shrine quests not taken yet are given (QuestMap.h)
+        Towers,       // the towers not activated yet (LocationState.h)
+        GreatFairies, // the fountains whose Great Fairy still sleeps
         HeroPath, // not objects: the line of where Link has walked (HeroPath.h)
         Count
     };

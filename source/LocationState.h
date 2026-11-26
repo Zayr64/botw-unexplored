@@ -30,3 +30,10 @@ namespace LocationState
     // The entry whose state flag this is, or nullptr.
     const Entry* ForFlag(uint32_t flagHash);
 }
+
+namespace Data
+{
+    // Tags of the map objects drawn for the towers and the Great Fairy fountains.
+    struct TowerIcon {};
+    struct FairyIcon {};
+}

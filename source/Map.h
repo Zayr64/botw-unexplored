@@ -16,6 +16,7 @@
 #include "Chests.h"
 #include "Data.h"
 #include "Walls.h"
+#include "LocationState.h"
 #include "QuestMap.h"
 
 template <typename T> class MapObject;
@@ -125,6 +126,14 @@ namespace Map
     extern MapObject<Data::QuestActiveIcon>* m_ActiveQuests;
 
     extern MapObject<Data::LocationIcon>* m_Locations; // one per entry of Data::Locations
+    // The 15 towers and the 4 Great Fairy fountains (not the spring of the horse god), in the order of
+    // LocationState::Table(); found once activated or awakened.
+    constexpr int TowerCount = 15;
+    constexpr int FairyCount = 4;
+    extern MapObject<Data::TowerIcon>* m_Towers;
+    extern MapObject<Data::FairyIcon>* m_Fairies;
+    extern const Data::Location* m_TowerLocations[TowerCount];
+    extern const Data::Location* m_FairyLocations[FairyCount];
 
     extern Legend* m_Legend;
     extern KorokDialog* m_KorokDialog;

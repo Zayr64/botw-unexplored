@@ -7,6 +7,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 ## Features
 
 - Koroks, shrines, DLC shrines, Hinoxes, Taluses, and Moldugas.
+- **Towers and Great Fairies**: the towers not activated yet and the fountains whose Great Fairy still sleeps, each in a category on by default, with the place's name and its state on the card.
 - **Locations**: the named places of the map not visited yet (the third part of the map completion, with the Korok seeds and the shrines), as magenta pins, in a category on by default. The card tells the place's name; the names are not drawn on the map.
 - **Breakable walls**: the 140 walls of the world map that a bomb opens, as one more category that starts switched off. The card only says whether the wall was broken.
 - **Quests**: where each side and shrine quest not taken yet is given (where its giver stands), as an orange speech bubble; those that wait for something else to happen first show in grey. The card tells the kind of quest, its name and place, whether it can be taken now and the game's own description. A quest in progress (main ones too) shows as a green speech bubble with an ellipsis where its current step leads, as the game's own marker for that step does (each marker of the step, up to four, until each is turned off), or where it was taken when the step has no marker; its card has the quest log's text for that step. The legend counts the side and shrine quests done. The data is `sdmc:/switch/botw-unexplored/quests.txt`, made from the game's files (see "Quests on the map"); without it there are no quests on the map.
@@ -20,7 +21,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
 - A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
 - Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
-- The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The locations visited are also a number in the Progress tab.
+- The legend, in two columns of seven (an icon and count over the category's name), shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The locations visited are also a number in the Progress tab.
 - The left panel has four tabs, all in numbers only:
   - **Progress** counts what the map does not show: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the common chests of the world map, memories recalled (out of the pictures the album has so far), locations visited, and when the next Blood Moon comes, in minutes of play (from the world's clock and the Blood Moon timer, by the rule of the game's `TimeMgr` in the zeldaret/botw decomp).
   - **Regions** lists the fifteen regions of the map with what is found of each (Korok seeds and shrines) and shows one alone on the map: only its objects are drawn, counted in the legend and picked by `ZL`/`ZR`/`R`. Each row also tells how many shrine and side quests are taken in that region and are not in the log yet: `3 quests` can be taken now; with none of those, `2 later` wait for something else to happen first. A region is named once its tower is activated; until then it is an "Unknown region".
@@ -131,7 +132,8 @@ dependencies.
 
 A PNG in `sdmc:/switch/botw-unexplored/icons/` with the name of an image at the top of romfs (for example
 `shrine.png` or `hinox.png`) replaces it. It is drawn at the size of the built-in image, so it can be larger as long
-as the aspect ratio is the same. These files are not distributed with the app. All images now use mipmaps, so they
+as the aspect ratio is the same (`tower.png` and `fairy.png`, for one, can hold the game's own map icon of the
+towers and its Fairy). These files are not distributed with the app. All images now use mipmaps, so they
 stay clean when drawn smaller than their size.
 
 ## Saved data

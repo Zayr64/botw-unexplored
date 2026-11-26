@@ -24,6 +24,7 @@
 #include "RegionsPanel.h"
 #include "ProgressPanel.h"
 #include "Localization.h"
+#include "ShrineFlags.h"
 #include "ManualProgress.h"
 #include "Navigation.h"
 #include "ModeChangeDecision.h"
@@ -200,6 +201,14 @@ namespace
         for (int i = 0; i < Data::LocationsCount; ++i)
             add(Data::ObjectType::Location, Data::Locations[i].hash, Map::m_Locations[i].m_Position,
                 Data::Locations[i].displayName, &Map::m_Locations[i].m_Found);
+        for (int i = 0; i < Map::TowerCount; ++i)
+            if (Map::m_TowerLocations[i])
+                add(Data::ObjectType::Tower, Map::m_TowerLocations[i]->hash, Map::m_Towers[i].m_Position,
+                    Map::m_TowerLocations[i]->displayName, &Map::m_Towers[i].m_Found);
+        for (int i = 0; i < Map::FairyCount; ++i)
+            if (Map::m_FairyLocations[i])
+                add(Data::ObjectType::GreatFairy, Map::m_FairyLocations[i]->hash, Map::m_Fairies[i].m_Position,
+                    Map::m_FairyLocations[i]->displayName, &Map::m_Fairies[i].m_Found);
         // The special chests, each group in its legend category; only those that exist in this game (mode and DLC)
         const auto addChests = [&](auto* objects, const Data::Chest* chests, int count, IconButton::ButtonTypes category)
         {
@@ -575,6 +584,31 @@ bool Map::Init()
     MapObject<Data::LocationIcon>::Init("romfs:/location.png", Data::LocationsCount);
     MapObject<Data::LocationIcon>::m_SizeFactor = 0.25f;
 
+    // Create the towers and the Great Fairy fountains (zayr10 drew them through the location names; from zayr13 to
+    // zayr27 they were only counted in Progress), where their locations are
+    m_Towers = new MapObject<Data::TowerIcon>[TowerCount];
+    MapObject<Data::TowerIcon>::Init("romfs:/tower.png", TowerCount);
+    MapObject<Data::TowerIcon>::m_SizeFactor = 0.25f;
+    m_Fairies = new MapObject<Data::FairyIcon>[FairyCount];
+    MapObject<Data::FairyIcon>::Init("romfs:/fairy.png", FairyCount);
+    MapObject<Data::FairyIcon>::m_SizeFactor = 0.25f;
+    {
+        int towers = 0, fairies = 0;
+        const uint32_t spring = ShrineFlags::Crc32("Location_MaronSpring"); // the horse god's: not a Great Fairy
+        for (int i = 0; i < LocationState::Count; ++i)
+        {
+            const LocationState::Entry& entry = LocationState::Table()[i];
+            const Data::Location* location = nullptr;
+            for (int j = 0; j < Data::LocationsCount && !location; ++j)
+                if (Data::Locations[j].hash == entry.locationHash)
+                    location = &Data::Locations[j];
+            if (entry.kind == LocationState::Kind::Tower && towers < TowerCount)
+                m_TowerLocations[towers++] = location;
+            else if (entry.kind == LocationState::Kind::GreatFairy && entry.locationHash != spring && fairies < FairyCount)
+                m_FairyLocations[fairies++] = location;
+        }
+    }
+
     UpdateMapObjects();
     Log("MAP: initialization complete");
     return true;
@@ -713,6 +747,22 @@ void Map::UpdateMapObjects(bool recenter)
     for (int i = 0; i < Data::MaterialChestsCount; i++) m_MaterialChests[i].m_Region = Regions::Of(Data::MaterialChests[i].hash);
     for (int i = 0; i < Data::WallsCount; i++) m_Walls[i].m_Region = Regions::Of(Data::Walls[i].hash);
     for (int i = 0; i < Data::LocationsCount; i++) m_Locations[i].m_Region = Regions::Of(Data::Locations[i].hash);
+
+    // Towers and Great Fairy fountains: where their locations are, found once activated or awakened
+    const auto placeState = [&](auto& object, const Data::Location* location, Data::ObjectType type)
+    {
+        object.m_Excluded = location == nullptr;
+        if (!location)
+            return;
+        object.m_Position = glm::vec2(location->x, -location->y) * MapScale;
+        object.m_Found = ResolveFound(type, location->hash, SavefileIO::IsLocationStateDone(location->hash),
+                                      manualProgressChanged);
+        object.m_Region = Regions::Of(location->hash);
+    };
+    for (int i = 0; i < TowerCount; i++)
+        placeState(m_Towers[i], m_TowerLocations[i], Data::ObjectType::Tower);
+    for (int i = 0; i < FairyCount; i++)
+        placeState(m_Fairies[i], m_FairyLocations[i], Data::ObjectType::GreatFairy);
 
     // The quests not taken yet: those that can be taken now in one list, those that wait for something in the
     // other; the Expansion Pass ones only with it. Taken or done counts as found. The main quests only show while in
@@ -1062,6 +1112,12 @@ void Map::Update()
         if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
             for (int i = 0; i < Data::LocationsCount; i++)
                 m_Locations[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Towers])
+            for (int i = 0; i < TowerCount; i++)
+                m_Towers[i].Update(i == 0);
+        if (m_Legend->m_Show[IconButton::ButtonTypes::GreatFairies])
+            for (int i = 0; i < FairyCount; i++)
+                m_Fairies[i].Update(i == 0);
         // The chests start switched off: their meshes are only built while they show.
         if (m_Legend->m_Show[IconButton::ButtonTypes::ArmorChests])
             for (int i = 0; i < Data::ArmorChestsCount; i++)
@@ -1143,6 +1199,11 @@ void Map::Render()
         // The locations under everything else: a place's name matters less than what is in it
         if (m_Legend->m_Show[IconButton::ButtonTypes::Locations])
             MapObject<Data::LocationIcon>::Render();
+        // Towers and fountains over the location pins of the same places
+        if (m_Legend->m_Show[IconButton::ButtonTypes::Towers])
+            MapObject<Data::TowerIcon>::Render();
+        if (m_Legend->m_Show[IconButton::ButtonTypes::GreatFairies])
+            MapObject<Data::FairyIcon>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Shrines])
             MapObject<Data::Shrine>::Render();
         if (m_Legend->m_Show[IconButton::ButtonTypes::Shrines] && SavefileIO::DlcShrinesAppear())
@@ -1281,6 +1342,10 @@ void Map::Destroy()
     m_LaterQuests = nullptr;
     delete[] m_ActiveQuests;
     m_ActiveQuests = nullptr;
+    delete[] m_Towers;
+    m_Towers = nullptr;
+    delete[] m_Fairies;
+    m_Fairies = nullptr;
     delete[] m_Locations;
     m_Locations = nullptr;
 
@@ -1564,6 +1629,10 @@ MapObject<Data::WallIcon>* Map::m_Walls;
 MapObject<Data::QuestIcon>* Map::m_Quests;
 MapObject<Data::QuestLaterIcon>* Map::m_LaterQuests;
 MapObject<Data::QuestActiveIcon>* Map::m_ActiveQuests;
+MapObject<Data::TowerIcon>* Map::m_Towers;
+MapObject<Data::FairyIcon>* Map::m_Fairies;
+const Data::Location* Map::m_TowerLocations[Map::TowerCount];
+const Data::Location* Map::m_FairyLocations[Map::FairyCount];
 MapObject<Data::LocationIcon>* Map::m_Locations;
 
 Legend* Map::m_Legend;

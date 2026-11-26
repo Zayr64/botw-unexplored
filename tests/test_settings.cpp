@@ -39,6 +39,8 @@ int main()
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Quests) == 13, "");
     // The locations came back as icons in a new entry, not in their old one (5), which older files may have on
     static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Locations) == 14, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::Towers) == 15, "");
+    static_assert(SettingsIO::CategoryIndex(LegendCategories::ButtonTypes::GreatFairies) == 16, "");
 
     // A release from before the chests reads header, version, 4 values, 7 entries, showMode and language, and
     // stops: the file starts with exactly those lines, and the chests come after them.
@@ -50,13 +52,14 @@ int main()
         while (std::getline(written, line))
             lines.push_back(line);
     }
-    assert(lines.size() == 23);
+    assert(lines.size() == 25);
     assert(lines[0] == "BOTW_UNEXPLORED_SETTINGS" && lines[1] == "2" && lines[5] == "0");
     assert(lines[6 + 3] == "1" && lines[13] == "2" && lines[14] == "1");
     assert(lines[15] == "0" && lines[16] == "1" && lines[17] == "0" && lines[18] == "0" && lines[19] == "0");
     assert(lines[20] == "1"); // the Hero's Path, on unless switched off
     assert(lines[21] == "1"); // the quests, on unless switched off
     assert(lines[22] == "1"); // the locations, on unless switched off
+    assert(lines[23] == "1" && lines[24] == "1"); // the towers and the fountains, the same
 
     // The file of a release before the Hero's Path (zayr19 and before) ends one line earlier: the entry keeps the value
     // it had (on by default).

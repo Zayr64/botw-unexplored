@@ -20,10 +20,12 @@ namespace SettingsIO
     //   12    the Hero's Path
     //   13    the quests
     //   14    the locations not visited yet, as icons
+    //   15    the towers not activated yet
+    //   16    the fountains whose Great Fairy sleeps
     // Entries 5 to 7 are still read and written, so that those files stay valid, and ignored by the app, like
     // showMode. The entries from 7 on go at the end of the file, past where a release without them stops
     // reading: the version is the same and each release reads the file of the other.
-    constexpr size_t CategoryCount = 15;
+    constexpr size_t CategoryCount = 17;
     constexpr size_t RetiredEntries = 3;
     constexpr size_t BaseCategoryCount = 7;
     constexpr size_t SpecialChestsEntry = 8;
@@ -34,7 +36,7 @@ namespace SettingsIO
     // Where the legend category with this index is kept in Settings::visible.
     constexpr size_t CategoryIndex(size_t legendCategory)
     {
-        constexpr size_t entries[LegendCategories::ButtonCount] = {0, 1, 2, 3, 4, 14, 8, 10, 11, 9, 13, 12};
+        constexpr size_t entries[LegendCategories::ButtonCount] = {0, 1, 2, 3, 4, 14, 8, 10, 11, 9, 13, 15, 16, 12};
         return entries[legendCategory];
     }
 
@@ -45,7 +47,7 @@ namespace SettingsIO
         float zoom = 0.25f;
         bool legendOpen = true;
         std::array<bool, CategoryCount> visible = {{true, true, false, false, false, false, false, false, false, false,
-                                                    false, false, true, true, true}};
+                                                    false, false, true, true, true, true, true}};
         int showMode = 0;  // Kept in the file format for older releases; the app shows only what is missing.
         int language = -1; // Kept in the file format for older releases; the app is English only.
     };

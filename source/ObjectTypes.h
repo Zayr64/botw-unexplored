@@ -15,6 +15,8 @@ namespace Data
         SpecialChest, // one with armor, a key item, or a weapon or material found in very few chests
         BreakableWall, // a wall of the world map that a bomb breaks open
         Quest,         // where a side or shrine quest is taken (QuestMap.h)
+        Tower,         // a tower not activated yet (LocationState.h)
+        GreatFairy,    // a fountain whose Great Fairy sleeps
         Count
     };
 }

@@ -24,11 +24,13 @@ public:
     static constexpr ButtonTypes MaterialChests = ButtonTypes::MaterialChests;
     static constexpr ButtonTypes Walls = ButtonTypes::Walls;
     static constexpr ButtonTypes Quests = ButtonTypes::Quests;
+    static constexpr ButtonTypes Towers = ButtonTypes::Towers;
+    static constexpr ButtonTypes GreatFairies = ButtonTypes::GreatFairies;
     static constexpr ButtonTypes HeroPath = ButtonTypes::HeroPath;
 
 public:
     // Position is the top-left corner
-    IconButton(ButtonTypes type, glm::vec2 position, float width, float height);
+    IconButton(ButtonTypes type, glm::vec2 position, float width, float height, bool compact = false);
 
     void DrawShapes();
     void DrawIcon();
@@ -47,6 +49,7 @@ public:
     bool m_IsToggled = false;
 
     ButtonTypes m_Type = ButtonTypes::Koroks;
+    bool m_Compact = false; // a cell of the narrow two-column legend: icon and count, the name under them
 
     glm::vec2 m_Position;
     float m_Width = 0.0f;
@@ -84,7 +87,7 @@ public:
 
     int m_PrevTouchCount = 0;
 
-    int m_HighlightedButton = 0;
+    int m_HighlightedButton = 0; // a place in the order of the columns (Legend.cpp), not a category
     int m_Tab = TabLegend;
 
     bool m_IsOpen = true;

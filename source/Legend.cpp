@@ -26,14 +26,39 @@ namespace
         float tabs, completion, bar, source, rowsTop, rowHeight, rowGap;
     };
 
+    // zayr28: the categories in two columns of seven in the panel's width, in this order (the first column what the map completion and
+    // the world's places ask for, the second the enemies and the loot). Up and down go through them in this order.
+    constexpr int Columns = 2;
+    constexpr int RowsPerColumn = 7;
+    const IconButton::ButtonTypes DisplayOrder[] = {
+        IconButton::Koroks, IconButton::Shrines, IconButton::Locations, IconButton::Towers, IconButton::GreatFairies,
+        IconButton::Quests, IconButton::HeroPath,
+        IconButton::Hinoxes, IconButton::Taluses, IconButton::Moldugas, IconButton::ArmorChests,
+        IconButton::WeaponChests, IconButton::MaterialChests, IconButton::Walls
+    };
+    static_assert(sizeof(DisplayOrder) / sizeof(DisplayOrder[0]) == LegendCategories::ButtonCount,
+                  "Every legend category has a place in the columns");
+    static_assert(Columns * RowsPerColumn == LegendCategories::ButtonCount, "Two full columns");
+    // Each a cell: icon and count on top, the name under them (chosen by the user over a panel twice as wide with
+    // rows as before, 26/11)
+    constexpr float ColumnGap = 12.0f;
+
+    int DisplayIndexOf(int type)
+    {
+        for (int i = 0; i < static_cast<int>(LegendCategories::ButtonCount); ++i)
+            if (static_cast<int>(DisplayOrder[i]) == type)
+                return i;
+        return 0;
+    }
+
     PanelLayout Layout()
     {
         const float height = Ui::Top() - (Ui::Bottom() + Ui::FooterHeight + 8.0f);
-        PanelLayout layout = {52.0f, 88.0f, 106.0f, 132.0f, 152.0f, 44.0f, 6.0f};
-        if (layout.rowsTop + IconButton::ButtonTypes::Count * (layout.rowHeight + layout.rowGap) <= height)
+        PanelLayout layout = {52.0f, 88.0f, 106.0f, 132.0f, 152.0f, 58.0f, 6.0f};
+        if (layout.rowsTop + RowsPerColumn * (layout.rowHeight + layout.rowGap) <= height)
             return layout;
         layout = {46.0f, 78.0f, 94.0f, 116.0f, 132.0f, 0.0f, 5.0f};
-        layout.rowHeight = std::max(30.0f, std::floor((height - layout.rowsTop) / IconButton::ButtonTypes::Count) - layout.rowGap);
+        layout.rowHeight = std::max(30.0f, std::floor((height - layout.rowsTop) / RowsPerColumn) - layout.rowGap);
         return layout;
     }
 
@@ -83,6 +108,8 @@ namespace
         case IconButton::Walls: return Localization::Text::Walls;
         case IconButton::HeroPath: return Localization::Text::HeroPath;
         case IconButton::Quests: return Localization::Text::Quests;
+        case IconButton::Towers: return Localization::Text::Towers;
+        case IconButton::GreatFairies: return Localization::Text::GreatFairies;
         default:
             // Koroks to Locations, in the order of the categories (as in Localization::Text)
             return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
@@ -122,13 +149,18 @@ Legend::Legend()
     const float left = Ui::PanelLeft();
     const float top = Ui::Top();
     const PanelLayout layout = Layout();
+    const float columnWidth = (Ui::PanelInner() - ColumnGap * (Columns - 1)) / Columns;
 
-    for (int i = 0; i < IconButton::ButtonTypes::Count; i++)
+    m_Buttons.resize(IconButton::ButtonTypes::Count, nullptr);
+    for (int place = 0; place < IconButton::ButtonTypes::Count; place++)
     {
-        const float rowTop = top - layout.rowsTop - (layout.rowHeight + layout.rowGap) * i;
-        m_Buttons.push_back(new IconButton((IconButton::ButtonTypes)i, glm::vec2(left, rowTop), Ui::PanelInner(),
-                                           layout.rowHeight));
-        m_Show[i] = false;
+        const int column = place / RowsPerColumn, row = place % RowsPerColumn;
+        const float rowTop = top - layout.rowsTop - (layout.rowHeight + layout.rowGap) * row;
+        const IconButton::ButtonTypes type = DisplayOrder[place];
+        IconButton* button = new IconButton(type, glm::vec2(left + (columnWidth + ColumnGap) * column, rowTop), columnWidth,
+                                            layout.rowHeight, true);
+        m_Buttons[type] = button;
+        m_Show[type] = false;
     }
 
     // Show koroks, shrines and the Hero's Path by default (as SettingsIO::Settings does)
@@ -137,6 +169,8 @@ Legend::Legend()
     m_Buttons[IconButton::HeroPath]->Click(this, true);
     m_Buttons[IconButton::Quests]->Click(this, true);
     m_Buttons[IconButton::Locations]->Click(this, true);
+    m_Buttons[IconButton::Towers]->Click(this, true);
+    m_Buttons[IconButton::GreatFairies]->Click(this, true);
 
     // Set first highlighted button
     UpdateSelectedButton();
@@ -187,7 +221,7 @@ void Legend::Update()
                         {
                             button->Click(this);
 
-                            m_HighlightedButton = i;
+                            m_HighlightedButton = DisplayIndexOf(static_cast<int>(i));
                             UpdateSelectedButton();
 
                             break;
@@ -228,7 +262,7 @@ void Legend::Update()
     {
         // Bounds check
         if (m_HighlightedButton >= 0 && m_HighlightedButton < count)
-            m_Buttons[m_HighlightedButton]->Click(this);
+            m_Buttons[DisplayOrder[m_HighlightedButton]]->Click(this);
     }
 }
 
@@ -237,13 +271,15 @@ void Legend::UpdateSelectedButton()
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->m_IsSelected = false;
 
-    m_Buttons[m_HighlightedButton]->m_IsSelected = true;
+    m_Buttons[DisplayOrder[m_HighlightedButton]]->m_IsSelected = true;
 }
+
 
 void Legend::Render()
 {
     const float left = Ui::PanelLeft();
-    const float right = left + Ui::PanelInner();
+    const float inner = Ui::PanelInner();
+    const float right = left + inner;
     const float top = Ui::Top();
     const PanelLayout layout = Layout();
     const float TabsBaseline = layout.tabs;
@@ -270,7 +306,7 @@ void Legend::Render()
              Ui::Colors::TextDim);
     Ui::Text(MapCompletion::Format(MapCompletion::Hundredths(found), '.'), glm::vec2(right, top - layout.completion), 0.40f,
              Ui::Colors::Text, ALIGN_RIGHT);
-    Ui::ProgressBar(left, top - layout.bar, Ui::PanelInner(), 6.0f,
+    Ui::ProgressBar(left, top - layout.bar, inner, 6.0f,
                     static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
 
     // Where the progress comes from and, on the right, the region the map is showing alone
@@ -332,8 +368,9 @@ Legend::~Legend()
         delete m_Buttons[i];
 }
 
-IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float height)
+IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float height, bool compact)
 {
+    m_Compact = compact;
     m_Width = width;
     m_Height = height;
     m_Position = position;
@@ -354,6 +391,8 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case Walls: iconPath = "romfs:/wall.png"; break;
     case HeroPath: iconPath = "romfs:/heropath.png"; break;
     case Quests: iconPath = "romfs:/quest.png"; break;
+    case Towers: iconPath = "romfs:/tower.png"; break;
+    case GreatFairies: iconPath = "romfs:/fairy.png"; break;
     default: break;
     }
 
@@ -362,6 +401,13 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
         m_Icon.m_Scale = 28.0f / static_cast<float>(m_Icon.m_Texture->m_Height);
     m_Icon.m_Position = glm::vec2(position.x + 34.0f, position.y - height / 2.0f);
+    if (compact)
+    {
+        // Icon and count on the first line, the name under them
+        if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
+            m_Icon.m_Scale = 24.0f / static_cast<float>(m_Icon.m_Texture->m_Height);
+        m_Icon.m_Position = glm::vec2(position.x + 22.0f, position.y - 19.0f);
+    }
     m_Icon.m_ProjectionMatrix = Ui::Projection();
 }
 
@@ -422,6 +468,12 @@ void IconButton::Count(int& found, int& total) const
                     QuestMap::IsDone(quest, [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); }));
         }
         break;
+    case Towers:
+        for (int i = 0; i < Map::TowerCount; ++i) add(Map::m_Towers[i].m_Region, Map::m_Towers[i].m_Found);
+        break;
+    case GreatFairies:
+        for (int i = 0; i < Map::FairyCount; ++i) add(Map::m_Fairies[i].m_Region, Map::m_Fairies[i].m_Found);
+        break;
     default:
         break;
     }
@@ -448,6 +500,13 @@ void IconButton::DrawShapes()
         return; // a line, not things to find: no bar
     int found = 0, total = 0;
     Count(found, total);
+    if (m_Compact)
+    {
+        Ui::ProgressBar(left + 10.0f, bottom + 6.0f, m_Width - 20.0f, 3.0f,
+                        total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
+                        m_IsToggled ? Ui::Colors::Accent : Ui::Colors::TextDim);
+        return;
+    }
     // 8 px from the bottom in rows of 44, less in the shorter rows of a big zoom.
     Ui::ProgressBar(left + 64.0f, bottom + std::min(8.0f, (m_Height - 24.0f) * 0.5f), m_Width - 64.0f - 14.0f, 4.0f,
                     total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
@@ -469,7 +528,10 @@ void IconButton::DrawText()
     const glm::vec3& color = m_IsToggled ? Ui::Colors::Text : Ui::Colors::TextDim;
     const float baseline = m_Position.y - std::max(19.0f, m_Height - 20.0f);
     const std::string& label = Localization::Get(LabelOf(m_Type));
-    Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
+    if (m_Compact)
+        Ui::Text(label, glm::vec2(m_Position.x + 10.0f, m_Position.y - 44.0f), 0.30f, color);
+    else
+        Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
     std::string value = std::to_string(found) + "/" + std::to_string(total);
     if (m_Type == HeroPath)
     {
@@ -479,7 +541,10 @@ void IconButton::DrawText()
         std::snprintf(text, sizeof(text), km >= 100.0 ? "%.0f km" : "%.1f km", km);
         value = SavefileIO::GetHeroPath().segments.empty() ? std::string("-") : std::string(text);
     }
-    Ui::Text(value, glm::vec2(m_Position.x + m_Width - 14.0f, baseline), 0.40f, color, ALIGN_RIGHT);
+    if (m_Compact)
+        Ui::Text(value, glm::vec2(m_Position.x + m_Width - 10.0f, m_Position.y - 26.0f), 0.38f, color, ALIGN_RIGHT);
+    else
+        Ui::Text(value, glm::vec2(m_Position.x + m_Width - 14.0f, baseline), 0.40f, color, ALIGN_RIGHT);
 }
 
 bool IconButton::Click(Legend* legend)

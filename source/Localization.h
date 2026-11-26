@@ -176,6 +176,12 @@ namespace Localization
         QuestInProgress,
         QuestMarkerHere,
         QuestNoMarker,
+        Tower,
+        GreatFairy,
+        TowerActivated,
+        TowerNotActivated,
+        FairyAwake,
+        FairyAsleep,
         Count
     };
 
