@@ -36,7 +36,7 @@ namespace
         "Memories", "quest", "quests", "later", "Common chests",
         "Blood Moon", "in about", "tonight, in", "min of play", "not yet",
         "Only play time in the world counts, not menus or cutscenes.",
-        "Hero's Path"
+        "Hero's Path", "Scroll"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

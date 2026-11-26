@@ -1,4 +1,5 @@
 #include "Dialog.h"
+#include "Ui.h"
 
 #include <sstream>
 #include <iostream>
@@ -19,7 +20,7 @@ Dialog::Dialog(glm::vec2 position, float width, float height, DialogType type)
     m_Background.Create(position, width, height);
     m_Background.m_Color = glm::vec4(0.0f, 0.0f, 0.0f, 0.7f);
 
-    m_Background.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+    m_Background.m_ProjectionMatrix = Ui::Projection();
 
     float bgBottom = m_Background.m_Position.y - m_Height / 2.0f;
     float bgLeft = m_Background.m_Position.x - m_Width / 2.0f;
@@ -136,7 +137,8 @@ void Dialog::Update()
             if (state.count == 1)
             {
                 // Convert to more suitable coords
-                glm::vec2 touchPosition = glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2, -(state.touches[0].y - Map::m_CameraHeight / 2));
+                glm::vec2 touchPosition = Ui::FromScreen(glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2,
+                                                                   -(state.touches[0].y - Map::m_CameraHeight / 2)));
 
                 if (m_ExitButton && m_ExitButton->IsPositionOn(touchPosition)) {
                     m_ExitButton->Click();
@@ -286,7 +288,7 @@ Button::Button(glm::vec2 position, float width, float height, const std::string&
     );
 
     m_Button.m_Color = Button::HighlightedColor;
-    m_Button.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+    m_Button.m_ProjectionMatrix = Ui::Projection();
 
     m_Border.Create(
         "romfs:/buttonborder.png",
@@ -295,7 +297,7 @@ Button::Button(glm::vec2 position, float width, float height, const std::string&
         glm::vec2(position.x + width, position.y),
         glm::vec2(position.x, position.y)
     );
-    m_Border.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+    m_Border.m_ProjectionMatrix = Ui::Projection();
 }
 
 bool Button::IsPositionOn(glm::vec2 position)

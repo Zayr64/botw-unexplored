@@ -165,6 +165,7 @@ namespace Localization
         BloodMoonNotYet,
         BloodMoonNote,
         HeroPath,
+        HintScroll,
         Count
     };
 

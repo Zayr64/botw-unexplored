@@ -47,7 +47,11 @@ void KorokDialog::Render()
     {
         const float width = static_cast<float>(m_Image->m_Texture->m_Width);
         const float height = static_cast<float>(m_Image->m_Texture->m_Height);
-        m_Image->m_Scale = std::min(inner / width, 240.0f / height);
+        // Up to 240 high; less when the text below would run into the coordinates (long hints with a big zoom).
+        const float textHeight = Ui::LineCount(m_Text, 0.42f, inner) * 50.0f * 0.42f;
+        const float limit = Ui::Bottom() + Ui::FooterHeight + 44.0f;
+        const float most = std::max(120.0f, std::min(240.0f, top - limit - 18.0f - textHeight));
+        m_Image->m_Scale = std::min(inner / width, most / height);
         m_Image->m_Position = glm::vec2(left + width * m_Image->m_Scale / 2.0f, top - height * m_Image->m_Scale / 2.0f);
         top -= height * m_Image->m_Scale + 18.0f;
     }
@@ -59,7 +63,7 @@ void KorokDialog::Render()
     m_Icon.Render();
     if (HasImage())
     {
-        m_Image->m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+        m_Image->m_ProjectionMatrix = Ui::Projection();
         m_Image->m_ViewMatrix = nullptr;
         m_Image->Render();
     }
@@ -120,8 +124,8 @@ bool KorokDialog::HasImage() const
 
 bool KorokDialog::IsPositionOn(const glm::vec2& position) const
 {
-    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + Ui::PanelWidth &&
-           position.y >= Map::m_ScreenBottom && position.y <= Map::m_ScreenTop;
+    return position.x >= Ui::Left() && position.x <= Ui::Left() + Ui::PanelWidth && position.y >= Ui::Bottom() &&
+           position.y <= Ui::Top();
 }
 
 bool KorokDialog::IsImagePositionOn(const glm::vec2& position) const

@@ -27,6 +27,7 @@ namespace
 
     int s_Highlighted = 0;  // index into Rows()
     float s_Top = 0.0f;     // where the rows were last drawn, for the touch
+    int s_Scroll = 0;       // the first row shown, when they do not all fit above the bottom bar
 
     // The name of a region is that of its tower, which the game only tells once the tower is activated.
     bool IsKnown(int region)
@@ -108,7 +109,7 @@ void RegionsPanel::Touch(const glm::vec2& position)
     const float offset = s_Top - position.y;
     const int row = static_cast<int>(offset / (RowHeight + RowGap));
     if (offset - row * (RowHeight + RowGap) <= RowHeight)
-        Choose(row, Rows());
+        Choose(s_Scroll + row, Rows());
 }
 
 bool RegionsPanel::HighlightIsWholeMap()
@@ -126,10 +127,29 @@ void RegionsPanel::Render(float top)
         s_Highlighted = 0;
     ShapeBatch& shapes = Ui::Shapes();
 
-    for (int i = 0; i < static_cast<int>(rows.size()); ++i)
+    // As many rows as fit above the bottom bar, the highlighted one among them.
+    const int count = static_cast<int>(rows.size());
+    const float bottom = Ui::Bottom() + Ui::FooterHeight + 8.0f;
+    const int visible = std::max(1, std::min(count, static_cast<int>((top - bottom + RowGap) / (RowHeight + RowGap))));
+    if (s_Highlighted < s_Scroll)
+        s_Scroll = s_Highlighted;
+    if (s_Highlighted >= s_Scroll + visible)
+        s_Scroll = s_Highlighted - visible + 1;
+    s_Scroll = std::max(0, std::min(s_Scroll, count - visible));
+    if (visible < count)
+    {
+        const float x = right + 10.0f;
+        const float height = visible * (RowHeight + RowGap) - RowGap;
+        shapes.AddRoundedRect(x, top - height, x + 4.0f, top, 2.0f, Ui::Colors::RowOff);
+        const float thumb = std::max(24.0f, height * visible / count);
+        const float thumbTop = top - (height - thumb) * s_Scroll / (count - visible);
+        shapes.AddRoundedRect(x, thumbTop - thumb, x + 4.0f, thumbTop, 2.0f, glm::vec4(Ui::Colors::Accent, 1.0f));
+    }
+
+    for (int i = s_Scroll; i < s_Scroll + visible; ++i)
     {
         const int region = rows[i];
-        const float rowTop = top - (RowHeight + RowGap) * i;
+        const float rowTop = top - (RowHeight + RowGap) * (i - s_Scroll);
         const float rowBottom = rowTop - RowHeight;
         const bool shown = region == Map::m_RegionFilter; // the one the map shows (the whole map included)
         const bool highlighted = i == s_Highlighted;

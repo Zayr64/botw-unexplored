@@ -6,6 +6,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <glm/mat4x4.hpp>
 
 class ShapeBatch;
 class TexturedQuad;
@@ -17,6 +18,25 @@ namespace Ui
     constexpr float FooterHeight = 46.0f;
     constexpr float PanelWidth = 380.0f; // legend and cards
     constexpr float PanelMargin = 24.0f;
+
+    // The interface is drawn on a virtual screen Zoom times smaller than the 1280x720 one and stretched to it, so text,
+    // icons and panels grow together over the map, which keeps its size. UNEXPLORED_ZOOM 1 is the size up to zayr21;
+    // 1.15 chosen by the user on 26/11 from screenshots at 1.15 and 1.25.
+#ifndef UNEXPLORED_ZOOM
+#define UNEXPLORED_ZOOM 1.15f
+#endif
+    constexpr float Zoom = UNEXPLORED_ZOOM;
+    // Edges of the virtual screen, origin at the centre (the screen's edges divided by the zoom).
+    float Left();
+    float Right();
+    float Top();
+    float Bottom();
+    // The projection of the virtual screen, for the matrices of the font and of the images of the interface.
+    glm::mat4* Projection();
+    // A point of the real screen (pixels, origin at the centre, y up) on the virtual one: for touches.
+    glm::vec2 FromScreen(const glm::vec2& centred);
+    // Lines a text takes when wrapped to `width`, as the font breaks them.
+    int LineCount(const std::string& text, float scale, float width);
 
     namespace Colors
     {
@@ -41,6 +61,7 @@ namespace Ui
 
     ShapeBatch& Shapes();
     void FlushShapes(); // draws the shapes added so far
+    void FlushShapes(const glm::mat4& projection); // the same with another projection (the map's)
 
     float TextWidth(const std::string& text, float scale);
     glm::vec2 Text(const std::string& text, const glm::vec2& position, float scale, const glm::vec3& color,
@@ -51,6 +72,7 @@ namespace Ui
     {
         std::string buttons;
         std::string label;
+        int keep = 1; // when the bar has no room for every hint, the lowest go first
     };
     void Footer(const std::vector<Hint>& hints, const std::string& context);
 

@@ -1,5 +1,6 @@
 #include "ProgressPanel.h"
 
+#include <algorithm>
 #include <string>
 
 #include "BloodMoon.h"
@@ -26,8 +27,61 @@ namespace
     constexpr float LabelScale = 0.36f;
     constexpr float CapHeight = 34.4f * LabelScale; // height of a capital letter at that scale
 
+    // The rows scroll when they do not fit above the bottom bar; a row outside the panel is not drawn (nothing clips).
+    struct Window
+    {
+        float scroll = 0.0f;  // how far the rows are moved up
+        float content = 0.0f; // height of all the rows (last frame)
+        float room = 0.0f;    // height they have
+    };
+    Window s_Windows[2]; // Progress, Collection
+    float s_ClipTop = 10000.0f;
+    float s_ClipBottom = -10000.0f;
+
+    bool Visible(float top, float height)
+    {
+        return top <= s_ClipTop + 0.5f && top - height >= s_ClipBottom - 0.5f;
+    }
+
+    float Begin(Window& window, float top)
+    {
+        s_ClipTop = top;
+        s_ClipBottom = Ui::Bottom() + Ui::FooterHeight + 8.0f;
+        window.room = s_ClipTop - s_ClipBottom;
+        return top + window.scroll;
+    }
+
+    void End(Window& window, float top)
+    {
+        window.content = s_ClipTop + window.scroll - top;
+        const float most = std::max(0.0f, window.content - window.room);
+        window.scroll = std::min(window.scroll, most);
+        if (most > 0.0f)
+        {
+            // Where the rows are: a thin bar on the right edge of the panel.
+            const float x = Ui::Left() + Ui::PanelWidth - 10.0f;
+            Ui::Shapes().AddRoundedRect(x, s_ClipBottom, x + 4.0f, s_ClipTop, 2.0f, Ui::Colors::RowOff);
+            const float thumb = std::max(24.0f, window.room * window.room / window.content);
+            const float thumbTop = s_ClipTop - (window.room - thumb) * window.scroll / most;
+            Ui::Shapes().AddRoundedRect(x, thumbTop - thumb, x + 4.0f, thumbTop, 2.0f, glm::vec4(Ui::Colors::Accent, 1.0f));
+        }
+        s_ClipTop = 10000.0f;
+        s_ClipBottom = -10000.0f;
+    }
+
+    // A paragraph that is drawn only when all of it is in the panel. Returns the top of what comes next.
+    float NoteParagraph(float top, const std::string& text, float scale, const glm::vec3& color)
+    {
+        const float height = Ui::LineCount(text, scale, Ui::PanelInner()) * 50.0f * scale;
+        if (!Visible(top, height))
+            return top - height;
+        return Ui::Paragraph(top, text, scale, color);
+    }
+
     float Header(float top, TextId title)
     {
+        if (!Visible(top, HeaderStep))
+            return top - HeaderStep;
         const float left = Ui::PanelLeft();
         Ui::Text(Localization::Get(title), glm::vec2(left, top - 18.0f), 0.30f, Ui::Colors::Accent);
         Ui::Shapes().AddRect(left, top - HeaderStep + 3.0f, left + Ui::PanelInner(), top - HeaderStep + 4.0f, Ui::Colors::Hairline);
@@ -36,6 +90,8 @@ namespace
 
     float Row(float top, TextId label, const Counter& counter)
     {
+        if (!Visible(top, RowStep))
+            return top - RowStep;
         const float left = Ui::PanelLeft();
         const float right = left + Ui::PanelInner();
         const float baseline = top - (RowStep + CapHeight) * 0.5f;
@@ -54,6 +110,8 @@ namespace
     // A row with a text on the right instead of a count.
     float TextRow(float top, TextId label, const std::string& value, const glm::vec3& color)
     {
+        if (!Visible(top, RowStep))
+            return top - RowStep;
         const float left = Ui::PanelLeft();
         const float right = left + Ui::PanelInner();
         const float baseline = top - (RowStep + CapHeight) * 0.5f;
@@ -93,7 +151,7 @@ namespace
                           Ui::Colors::Text);
             break;
         }
-        return Ui::Paragraph(top - 2.0f, Localization::Get(Localization::Text::BloodMoonNote), 0.26f, Ui::Colors::TextDim);
+        return NoteParagraph(top - 2.0f, Localization::Get(Localization::Text::BloodMoonNote), 0.26f, Ui::Colors::TextDim);
     }
 
     // What this game has: the Expansion Pass and Master Mode add entries and pieces.
@@ -192,6 +250,8 @@ namespace
 void ProgressPanel::Render(float top)
 {
     const Progress::IsSet isSet = &SavefileIO::IsProgressFlagSet;
+    Window& window = s_Windows[0];
+    top = Begin(window, top);
 
     top = Header(top, Localization::Text::SectionQuests);
     top = Row(top, Localization::Text::MainQuests, Progress::Quests(Data::QuestKind::Main, false, isSet));
@@ -218,6 +278,7 @@ void ProgressPanel::Render(float top)
     top = Row(top, Localization::Text::Locations, Locations());
     top = BloodMoonRow(top);
 
+    End(window, top);
     Ui::FlushShapes();
 }
 
@@ -225,6 +286,8 @@ void ProgressPanel::RenderCollection(float top)
 {
     const Progress::IsSet isSet = &SavefileIO::IsProgressFlagSet;
     const Progress::Game game = Game();
+    Window& window = s_Windows[1];
+    top = Begin(window, top);
 
     top = Header(top, Localization::Text::Compendium);
     top = Row(top, Localization::Text::CompendiumAll, Progress::Compendium(isSet, game));
@@ -234,7 +297,20 @@ void ProgressPanel::RenderCollection(float top)
 
     top = Header(top - SectionGap, Localization::Text::SectionArmor);
     top = Row(top, Localization::Text::ArmorPieces, Progress::Armor(isSet, game));
-    Ui::Paragraph(top - 4.0f, Localization::Get(Localization::Text::ArmorNote), 0.28f, Ui::Colors::TextDim);
+    top = NoteParagraph(top - 4.0f, Localization::Get(Localization::Text::ArmorNote), 0.28f, Ui::Colors::TextDim);
 
+    End(window, top);
     Ui::FlushShapes();
+}
+
+void ProgressPanel::Scroll(bool collection, int rows)
+{
+    Window& window = s_Windows[collection ? 1 : 0];
+    window.scroll = std::max(0.0f, window.scroll + rows * RowStep); // the end is held when the rows are drawn
+}
+
+bool ProgressPanel::Scrolls(bool collection)
+{
+    const Window& window = s_Windows[collection ? 1 : 0];
+    return window.content > window.room + 0.5f;
 }

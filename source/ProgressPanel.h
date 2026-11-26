@@ -7,4 +7,7 @@ namespace ProgressPanel
     void Render(float top);
     // "Collection": the Hyrule Compendium by category and the armor.
     void RenderCollection(float top);
+    // When the rows do not fit above the bottom bar, Up and Down move them a row at a time.
+    void Scroll(bool collection, int rows);
+    bool Scrolls(bool collection);
 }

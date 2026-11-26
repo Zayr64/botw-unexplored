@@ -555,8 +555,10 @@ void SavefileIO::CopySavefiles()
     {
         char name[32];
         std::snprintf(name, sizeof(name), "/trackblock%02d.sav", i);
-        if (FileExists(std::string("save:/tracker") + name))
-            CopyFile(std::string("save:/tracker") + name, trackerFolder + name);
+        // Most of the 30 names are not there: asked quietly, not through FileExists, which logs each miss.
+        const std::string source = std::string("save:/tracker") + name;
+        if (access(source.c_str(), R_OK) == 0)
+            CopyFile(source, trackerFolder + name);
     }
 
 }

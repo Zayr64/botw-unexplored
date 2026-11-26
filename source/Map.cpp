@@ -23,6 +23,7 @@
 #include "Log.h"
 #include "Regions.h"
 #include "RegionsPanel.h"
+#include "ProgressPanel.h"
 #include "Localization.h"
 #include "ManualProgress.h"
 #include "Navigation.h"
@@ -294,7 +295,7 @@ namespace
         const float radius = 23.0f + pulse * 3.0f;
         Ui::Shapes().AddRing(center, radius + 2.0f, radius + 7.0f, glm::vec4(Ui::Colors::Accent, 0.22f));
         Ui::Shapes().AddRing(center, radius - 1.5f, radius + 1.5f, glm::vec4(Ui::Colors::Accent, 1.0f));
-        Ui::FlushShapes();
+        Ui::FlushShapes(Map::m_ProjectionMatrix); // on the map, which the zoom of the interface does not change
     }
 
     int CountFound()
@@ -327,7 +328,10 @@ namespace
     void BuildHints(std::vector<Ui::Hint>& hints, std::string& context)
     {
         using Localization::Text;
-        const auto add = [&](const char* buttons, Text label) { hints.push_back({buttons, Localization::Get(label)}); };
+        const auto add = [&](const char* buttons, Text label, int keep = 1)
+        {
+            hints.push_back({buttons, Localization::Get(label), keep});
+        };
 
         if (Map::m_ImageViewer->IsOpen())
         {
@@ -354,6 +358,8 @@ namespace
                 add("A", Text::HintShowHide);
             else if (Map::m_Legend->m_Tab == Legend::TabRegions)
                 add("A", RegionsPanel::HighlightIsWholeMap() ? Text::WholeMap : Text::HintShowRegion);
+            else if (ProgressPanel::Scrolls(Map::m_Legend->m_Tab == Legend::TabCollection))
+                add("Up/Down", Text::HintScroll);
             add("< >", Text::HintTab);
             add("B", Text::HintClose);
         }
@@ -404,19 +410,19 @@ namespace
             glm::vec3 dotColor;
             bool hasDot = false;
             const std::string source = Map::SourceText(dotColor, hasDot);
-            Ui::Chip(source, Map::m_ScreenRight - 16.0f, Map::m_ScreenTop - 16.0f, true, hasDot ? &dotColor : nullptr);
+            Ui::Chip(source, Ui::Right() - 16.0f, Ui::Top() - 16.0f, true, hasDot ? &dotColor : nullptr);
             if (!LeftPanelOpen())
             {
                 Ui::Chip(Localization::Get(Localization::Text::MapCompletion) + " " +
                          MapCompletion::Format(MapCompletion::Hundredths(MapEntriesFound()), '.'),
-                         Map::m_ScreenLeft + 16.0f, Map::m_ScreenTop - 16.0f, false);
+                         Ui::Left() + 16.0f, Ui::Top() - 16.0f, false);
                 // The region the map is showing alone, with what is found of it
                 if (Map::m_RegionFilter >= 0)
                 {
                     int found = 0, total = 0;
                     RegionsPanel::Count(Map::m_RegionFilter, found, total);
                     Ui::Chip(RegionsPanel::Label(Map::m_RegionFilter) + " " + std::to_string(found) + "/" + std::to_string(total),
-                             Map::m_ScreenLeft + 16.0f, Map::m_ScreenTop - 52.0f, false);
+                             Ui::Left() + 16.0f, Ui::Top() - 52.0f, false);
                 }
             }
         }
@@ -449,12 +455,13 @@ bool Map::Init()
         Log("MAP: font initialization failed");
         return false;
     }
-    m_Font.m_ProjectionMatrix = &m_ProjectionMatrix;
     m_Font.m_ViewMatrix = &m_ViewMatrix;
 
     m_LineRenderer = new LineRenderer();
     s_HeroPathLines = new LineRenderer(4096);
     Ui::Init();
+    // The font only draws the interface: on its virtual screen (Ui::Zoom).
+    m_Font.m_ProjectionMatrix = Ui::Projection();
 
     m_KorokDialog = new KorokDialog();
     m_ObjectInfo = new ObjectInfo();
@@ -468,9 +475,9 @@ bool Map::Init()
 
     // Below the chip that tells where the progress comes from
     m_MasterModeIcon.Create("romfs:/mastermodeicon.png");
-    m_MasterModeIcon.m_Position = glm::vec2(m_ScreenRight - 44.0f, m_ScreenTop - 88.0f);
+    m_MasterModeIcon.m_Position = glm::vec2(Ui::Right() - 44.0f, Ui::Top() - 88.0f);
     m_MasterModeIcon.m_Scale = 0.1f;
-    m_MasterModeIcon.m_ProjectionMatrix = &m_ProjectionMatrix;
+    m_MasterModeIcon.m_ProjectionMatrix = Ui::Projection();
     m_MasterModeIcon.m_ViewMatrix = nullptr;
 
     s_PlayerMarker.Create("romfs:/player.png");
@@ -851,7 +858,7 @@ void Map::Update()
 
     // With the legend or a card open the map slides to the right, so that what is under the aim
     // stays in the middle of the part of the screen that is free.
-    const float shiftTarget = LeftPanelOpen() && !ModalDialogOpen() ? Ui::PanelWidth * 0.5f : 0.0f;
+    const float shiftTarget = LeftPanelOpen() && !ModalDialogOpen() ? Ui::PanelWidth * Ui::Zoom * 0.5f : 0.0f;
     m_ViewShift += (shiftTarget - m_ViewShift) * 0.25f;
     if (std::fabs(shiftTarget - m_ViewShift) < 0.5f)
         m_ViewShift = shiftTarget;
@@ -865,6 +872,7 @@ void Map::Update()
         const glm::vec2 touchPosition = hasTouch
             ? glm::vec2(state.touches[0].x - m_CameraWidth / 2, -(state.touches[0].y - m_CameraHeight / 2))
             : glm::vec2(0.0f);
+        const glm::vec2 uiTouch = Ui::FromScreen(touchPosition); // the interface has its own, zoomed, screen
 
         if (imageViewerWasOpen)
         {
@@ -881,13 +889,13 @@ void Map::Update()
             if (state.count != m_PrevTouchCount)
             {
                 m_PrevTouchCount = state.count;
-                const bool onDialog = (m_Legend->m_IsOpen && m_Legend->IsPositionOnLegend(touchPosition)) ||
-                    (m_NoSavefileDialog->m_IsOpen && m_NoSavefileDialog->IsPositionOn(touchPosition)) ||
-                    (m_GameRunningDialog->m_IsOpen && m_GameRunningDialog->IsPositionOn(touchPosition)) ||
-                    (m_MasterModeDialog->m_IsOpen && m_MasterModeDialog->IsPositionOn(touchPosition));
-                const bool onKorokCard = m_KorokDialog->m_IsOpen && m_KorokDialog->IsPositionOn(touchPosition);
-                const bool onObjectCard = m_ObjectInfo->m_IsOpen && m_ObjectInfo->IsPositionOn(touchPosition);
-                const bool onFooter = touchPosition.y < m_ScreenBottom + Ui::FooterHeight;
+                const bool onDialog = (m_Legend->m_IsOpen && m_Legend->IsPositionOnLegend(uiTouch)) ||
+                    (m_NoSavefileDialog->m_IsOpen && m_NoSavefileDialog->IsPositionOn(uiTouch)) ||
+                    (m_GameRunningDialog->m_IsOpen && m_GameRunningDialog->IsPositionOn(uiTouch)) ||
+                    (m_MasterModeDialog->m_IsOpen && m_MasterModeDialog->IsPositionOn(uiTouch));
+                const bool onKorokCard = m_KorokDialog->m_IsOpen && m_KorokDialog->IsPositionOn(uiTouch);
+                const bool onObjectCard = m_ObjectInfo->m_IsOpen && m_ObjectInfo->IsPositionOn(uiTouch);
+                const bool onFooter = uiTouch.y < Ui::Bottom() + Ui::FooterHeight;
 
                 if (state.count == 1 && !onDialog && !onFooter)
                 {
@@ -896,7 +904,7 @@ void Map::Update()
                     if (onKorokCard || onObjectCard)
                     {
                         m_IsDragging = false;
-                        if (onKorokCard && m_KorokDialog->IsImagePositionOn(touchPosition))
+                        if (onKorokCard && m_KorokDialog->IsImagePositionOn(uiTouch))
                             m_ImageViewer->Open(m_KorokDialog->m_Image);
                     }
                     else
@@ -1386,8 +1394,8 @@ void Map::SetRegionFilter(int region)
     const Data::RegionBounds& bounds = Regions::Bounds(m_RegionFilter);
     const float width = (bounds.maxX - bounds.minX) * MapScale;
     const float height = (bounds.maxZ - bounds.minZ) * MapScale;
-    const float freeWidth = m_CameraWidth - Ui::PanelWidth - 60.0f;
-    const float freeHeight = m_CameraHeight - Ui::FooterHeight - 60.0f;
+    const float freeWidth = m_CameraWidth - Ui::PanelWidth * Ui::Zoom - 60.0f;
+    const float freeHeight = m_CameraHeight - Ui::FooterHeight * Ui::Zoom - 60.0f;
     m_Zoom = std::max(MinZoom, std::min(1.5f, std::min(freeWidth / width, freeHeight / height)));
     m_TargetCameraPosition = glm::vec2((bounds.minX + bounds.maxX) * 0.5f, -(bounds.minZ + bounds.maxZ) * 0.5f) * MapScale;
     m_HasTargetCameraPosition = true;

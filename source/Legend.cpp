@@ -1,5 +1,7 @@
 #include "Legend.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include "MapCompletion.h"
 
@@ -17,7 +19,24 @@
 
 namespace
 {
-    constexpr float TabsBaseline = 52.0f; // below the top of the screen
+    // The panel's header (from the top of the screen) and the ten rows of the legend: as up to zayr21 when they fit
+    // above the bottom bar, else a tighter header and shorter rows (a bigger zoom leaves less height).
+    struct PanelLayout
+    {
+        float tabs, completion, bar, source, rowsTop, rowHeight, rowGap;
+    };
+
+    PanelLayout Layout()
+    {
+        const float height = Ui::Top() - (Ui::Bottom() + Ui::FooterHeight + 8.0f);
+        PanelLayout layout = {52.0f, 88.0f, 106.0f, 132.0f, 152.0f, 44.0f, 6.0f};
+        if (layout.rowsTop + IconButton::ButtonTypes::Count * (layout.rowHeight + layout.rowGap) <= height)
+            return layout;
+        layout = {46.0f, 78.0f, 94.0f, 116.0f, 132.0f, 0.0f, 5.0f};
+        layout.rowHeight = std::max(30.0f, std::floor((height - layout.rowsTop) / IconButton::ButtonTypes::Count) - layout.rowGap);
+        return layout;
+    }
+
     constexpr float TabScale = 0.38f; // the four titles fit the width of the panel
     constexpr float TabGap = 14.0f;
     const Localization::Text tabTitles[Legend::TabCount] = {
@@ -41,7 +60,7 @@ namespace
     // The tab whose title is under this point of the screen, or -1.
     int TabAt(const glm::vec2& position)
     {
-        const float baseline = Map::m_ScreenTop - TabsBaseline;
+        const float baseline = Ui::Top() - Layout().tabs;
         if (position.y < baseline - 14.0f || position.y > baseline + 30.0f)
             return -1;
         float edges[Legend::TabCount][2];
@@ -52,9 +71,6 @@ namespace
         return -1;
     }
 
-    constexpr float RowsTop = 152.0f;  // from the top of the screen to the first row
-    constexpr float RowHeight = 44.0f; // ten rows end just above the bottom bar (nine of 50 until zayr19)
-    constexpr float RowGap = 6.0f;
     constexpr float RowRadius = 8.0f;
 
     Localization::Text LabelOf(IconButton::ButtonTypes type)
@@ -103,12 +119,14 @@ Legend::Legend()
 {
     m_Width = Ui::PanelWidth;
     const float left = Ui::PanelLeft();
-    const float top = Map::m_ScreenTop;
+    const float top = Ui::Top();
+    const PanelLayout layout = Layout();
 
     for (int i = 0; i < IconButton::ButtonTypes::Count; i++)
     {
-        const float rowTop = top - RowsTop - (RowHeight + RowGap) * i;
-        m_Buttons.push_back(new IconButton((IconButton::ButtonTypes)i, glm::vec2(left, rowTop), Ui::PanelInner(), RowHeight));
+        const float rowTop = top - layout.rowsTop - (layout.rowHeight + layout.rowGap) * i;
+        m_Buttons.push_back(new IconButton((IconButton::ButtonTypes)i, glm::vec2(left, rowTop), Ui::PanelInner(),
+                                           layout.rowHeight));
         m_Show[i] = false;
     }
 
@@ -142,7 +160,8 @@ void Legend::Update()
             if (state.count == 1)
             {
                 // Convert to more suitable coords
-                glm::vec2 touchPosition = glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2, -(state.touches[0].y - Map::m_CameraHeight / 2));
+                glm::vec2 touchPosition = Ui::FromScreen(glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2,
+                                                                   -(state.touches[0].y - Map::m_CameraHeight / 2)));
 
                 const int tab = TabAt(touchPosition);
                 if (tab >= 0)
@@ -178,6 +197,15 @@ void Legend::Update()
 
     if (m_Tab == TabRegions)
         RegionsPanel::Update(buttonsPressed);
+    // Progress and Collection scroll when their rows do not fit
+    if (m_Tab == TabProgress || m_Tab == TabCollection)
+    {
+        const bool collection = m_Tab == TabCollection;
+        if (buttonsPressed & HidNpadButton_Down)
+            ProgressPanel::Scroll(collection, 1);
+        if (buttonsPressed & HidNpadButton_Up)
+            ProgressPanel::Scroll(collection, -1);
+    }
     if (m_Tab != TabLegend)
         return;
 
@@ -213,7 +241,10 @@ void Legend::Render()
 {
     const float left = Ui::PanelLeft();
     const float right = left + Ui::PanelInner();
-    const float top = Map::m_ScreenTop;
+    const float top = Ui::Top();
+    const PanelLayout layout = Layout();
+    const float TabsBaseline = layout.tabs;
+    const float RowsTop = layout.rowsTop;
 
     Ui::PanelBackground();
 
@@ -232,18 +263,20 @@ void Legend::Render()
 
     // What the game calls map completion: Koroks, shrines and locations.
     const int found = MapEntriesFound();
-    Ui::Text(Localization::Get(Localization::Text::MapCompletionLong), glm::vec2(left, top - 88.0f), 0.36f, Ui::Colors::TextDim);
-    Ui::Text(MapCompletion::Format(MapCompletion::Hundredths(found), '.'), glm::vec2(right, top - 88.0f), 0.40f,
+    Ui::Text(Localization::Get(Localization::Text::MapCompletionLong), glm::vec2(left, top - layout.completion), 0.36f,
+             Ui::Colors::TextDim);
+    Ui::Text(MapCompletion::Format(MapCompletion::Hundredths(found), '.'), glm::vec2(right, top - layout.completion), 0.40f,
              Ui::Colors::Text, ALIGN_RIGHT);
-    Ui::ProgressBar(left, top - 106.0f, Ui::PanelInner(), 6.0f,
+    Ui::ProgressBar(left, top - layout.bar, Ui::PanelInner(), 6.0f,
                     static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
 
     // Where the progress comes from and, on the right, the region the map is showing alone
     glm::vec3 dotColor;
     bool hasDot = false;
-    Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - 132.0f), 0.32f, Ui::Colors::TextDim);
+    Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - layout.source), 0.32f, Ui::Colors::TextDim);
     if (Map::m_RegionFilter >= 0)
-        Ui::Text(RegionsPanel::Label(Map::m_RegionFilter), glm::vec2(right, top - 132.0f), 0.32f, Ui::Colors::Accent, ALIGN_RIGHT);
+        Ui::Text(RegionsPanel::Label(Map::m_RegionFilter), glm::vec2(right, top - layout.source), 0.32f,
+                 Ui::Colors::Accent, ALIGN_RIGHT);
 
     if (m_Tab == TabProgress)
     {
@@ -274,9 +307,9 @@ void Legend::Render()
 
 bool Legend::IsPositionOnLegend(glm::vec2 position)
 {
-    float left = -Map::m_CameraWidth / 2;
+    const float left = Ui::Left();
     if (position.x > left && position.x < left + m_Width) {
-        if (position.y > -Map::m_CameraHeight / 2 && position.y < Map::m_CameraHeight / 2) {
+        if (position.y > Ui::Bottom() && position.y < Ui::Top()) {
             return true;
         }
     }
@@ -324,7 +357,7 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     if (m_Icon.m_Texture && m_Icon.m_Texture->m_Height > 0)
         m_Icon.m_Scale = 28.0f / static_cast<float>(m_Icon.m_Texture->m_Height);
     m_Icon.m_Position = glm::vec2(position.x + 34.0f, position.y - height / 2.0f);
-    m_Icon.m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+    m_Icon.m_ProjectionMatrix = Ui::Projection();
 }
 
 void IconButton::Count(int& found, int& total) const
@@ -396,7 +429,8 @@ void IconButton::DrawShapes()
         return; // a line, not things to find: no bar
     int found = 0, total = 0;
     Count(found, total);
-    Ui::ProgressBar(left + 64.0f, bottom + 8.0f, m_Width - 64.0f - 14.0f, 4.0f,
+    // 8 px from the bottom in rows of 44, less in the shorter rows of a big zoom.
+    Ui::ProgressBar(left + 64.0f, bottom + std::min(8.0f, (m_Height - 24.0f) * 0.5f), m_Width - 64.0f - 14.0f, 4.0f,
                     total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
                     m_IsToggled ? Ui::Colors::Accent : Ui::Colors::TextDim);
 }
@@ -414,7 +448,7 @@ void IconButton::DrawText()
     Count(found, total);
 
     const glm::vec3& color = m_IsToggled ? Ui::Colors::Text : Ui::Colors::TextDim;
-    const float baseline = m_Position.y - 24.0f;
+    const float baseline = m_Position.y - std::max(19.0f, m_Height - 20.0f);
     const std::string& label = Localization::Get(LabelOf(m_Type));
     Ui::Text(label, glm::vec2(m_Position.x + 64.0f, baseline), 0.40f, color);
     std::string value = std::to_string(found) + "/" + std::to_string(total);

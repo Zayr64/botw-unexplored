@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "Graphics/Font.h"
 #include "Graphics/Quad.h"
@@ -39,6 +40,7 @@ namespace
     constexpr int ToastFrames = 210;           // about 3.5 s
 
     ShapeBatch* s_Shapes = nullptr;
+    glm::mat4 s_Projection(1.0f);
     unsigned int s_Frame = 0;
     std::string s_Toast;
     bool s_ToastWarning = false;
@@ -50,6 +52,15 @@ namespace
     glm::vec4 WithAlpha(const glm::vec3& color, float alpha)
     {
         return glm::vec4(color, alpha);
+    }
+
+    std::vector<std::string> ButtonNames(const std::string& buttons)
+    {
+        std::vector<std::string> names;
+        std::istringstream stream(buttons);
+        for (std::string name; stream >> name;)
+            names.push_back(name);
+        return names;
     }
 
     float CapWidth(const std::string& button)
@@ -89,6 +100,61 @@ void Ui::Init()
 {
     if (!s_Shapes)
         s_Shapes = new ShapeBatch();
+    s_Projection = glm::ortho(Left(), Right(), Bottom(), Top(), -1.0f, 1.0f);
+}
+
+float Ui::Left()
+{
+    return Map::m_ScreenLeft / Zoom;
+}
+
+float Ui::Right()
+{
+    return Map::m_ScreenRight / Zoom;
+}
+
+float Ui::Top()
+{
+    return Map::m_ScreenTop / Zoom;
+}
+
+float Ui::Bottom()
+{
+    return Map::m_ScreenBottom / Zoom;
+}
+
+glm::mat4* Ui::Projection()
+{
+    return &s_Projection;
+}
+
+glm::vec2 Ui::FromScreen(const glm::vec2& centred)
+{
+    return centred / Zoom;
+}
+
+int Ui::LineCount(const std::string& text, float scale, float width)
+{
+    int lines = 0;
+    std::string line;
+    size_t start = 0;
+    while (start < text.size())
+    {
+        size_t end = text.find(' ', start);
+        if (end == std::string::npos)
+            end = text.size();
+        const std::string word = text.substr(start, end - start);
+        const std::string longer = line.empty() ? word : line + " " + word;
+        if (!line.empty() && TextWidth(longer, scale) > width)
+        {
+            ++lines;
+            line = word;
+        }
+        else
+            line = longer;
+        start = end + 1;
+    }
+    return line.empty() ? lines : lines + 1;
 }
 
 void Ui::Destroy()
@@ -116,7 +182,12 @@ ShapeBatch& Ui::Shapes()
 
 void Ui::FlushShapes()
 {
-    s_Shapes->Render(Map::m_ProjectionMatrix);
+    s_Shapes->Render(s_Projection);
+}
+
+void Ui::FlushShapes(const glm::mat4& projection)
+{
+    s_Shapes->Render(projection);
 }
 
 float Ui::TextWidth(const std::string& text, float scale)
@@ -130,27 +201,50 @@ glm::vec2 Ui::Text(const std::string& text, const glm::vec2& position, float sca
     return Map::m_Font.AddTextToBatch(text, position, scale, color, align, maxWidth);
 }
 
-void Ui::Footer(const std::vector<Hint>& hints, const std::string& context)
+void Ui::Footer(const std::vector<Hint>& allHints, const std::string& allContext)
 {
-    const float bottom = Map::m_ScreenBottom;
+    const float bottom = Bottom();
     const float top = bottom + FooterHeight;
     const float centerY = bottom + FooterHeight * 0.5f;
     const float baseline = centerY - CapHeightPerScale * HintScale * 0.5f;
 
-    Shapes().AddRect(Map::m_ScreenLeft, bottom, Map::m_ScreenRight, top, Colors::Bar);
-    Shapes().AddRect(Map::m_ScreenLeft, top, Map::m_ScreenRight, top + 1.0f, Colors::Hairline);
+    Shapes().AddRect(Left(), bottom, Right(), top, Colors::Bar);
+    Shapes().AddRect(Left(), top, Right(), top + 1.0f, Colors::Hairline);
 
-    float x = Map::m_ScreenRight - 22.0f;
+    // With a big zoom not everything fits: the name on the left goes first, then the hints that matter least.
+    std::vector<Hint> hints = allHints;
+    std::string context = allContext;
+    const auto hintsWidth = [&]()
+    {
+        float width = 0.0f;
+        for (const Hint& hint : hints)
+        {
+            width += TextWidth(hint.label, HintScale) + 7.0f + 16.0f;
+            for (const std::string& button : ButtonNames(hint.buttons))
+                width += CapWidth(button) + 4.0f;
+        }
+        return width;
+    };
+    const float room = Right() - Left() - 44.0f;
+    if (!context.empty() && hintsWidth() + TextWidth(context, HintScale) + 24.0f > room)
+        context.clear();
+    while (hints.size() > 1 && hintsWidth() > room)
+    {
+        size_t drop = 0;
+        for (size_t i = 1; i < hints.size(); ++i)
+            if (hints[i].keep < hints[drop].keep)
+                drop = i;
+        hints.erase(hints.begin() + drop);
+    }
+
+    float x = Right() - 22.0f;
     for (std::vector<Hint>::const_reverse_iterator hint = hints.rbegin(); hint != hints.rend(); ++hint)
     {
         x -= TextWidth(hint->label, HintScale);
         Text(hint->label, glm::vec2(x, baseline), HintScale, Colors::Text);
         x -= 7.0f;
 
-        std::vector<std::string> buttons;
-        std::istringstream names(hint->buttons);
-        for (std::string name; names >> name;)
-            buttons.push_back(name);
+        const std::vector<std::string> buttons = ButtonNames(hint->buttons);
         for (std::vector<std::string>::const_reverse_iterator button = buttons.rbegin(); button != buttons.rend(); ++button)
         {
             x -= CapWidth(*button);
@@ -161,7 +255,7 @@ void Ui::Footer(const std::vector<Hint>& hints, const std::string& context)
     }
 
     if (!context.empty())
-        Text(context, glm::vec2(Map::m_ScreenLeft + 22.0f, baseline), HintScale, Colors::TextDim);
+        Text(context, glm::vec2(Left() + 22.0f, baseline), HintScale, Colors::TextDim);
 }
 
 float Ui::Chip(const std::string& text, float x, float top, bool anchorRight, const glm::vec3* dotColor)
@@ -194,10 +288,10 @@ void Ui::DrawToast()
     constexpr float Height = 36.0f;
     constexpr float Scale = 0.38f;
     const float width = TextWidth(s_Toast, Scale) + 58.0f;
-    const float bottom = Map::m_ScreenBottom + FooterHeight + 14.0f;
+    const float bottom = Bottom() + FooterHeight + 14.0f;
     const float centerY = bottom + Height * 0.5f;
-    // Centred on the part of the screen the panel does not cover.
-    const float centerX = Map::m_ViewShift;
+    // Centred on the part of the screen the panel does not cover (the shift is in screen pixels).
+    const float centerX = Map::m_ViewShift / Zoom;
 
     Shapes().AddRoundedRect(centerX - width * 0.5f, bottom, centerX + width * 0.5f, bottom + Height, Height * 0.5f,
                             glm::vec4(0.02f, 0.03f, 0.04f, 0.92f));
@@ -208,7 +302,7 @@ void Ui::DrawToast()
 
 float Ui::PanelLeft()
 {
-    return Map::m_ScreenLeft + PanelMargin;
+    return Left() + PanelMargin;
 }
 
 float Ui::PanelInner()
@@ -218,9 +312,8 @@ float Ui::PanelInner()
 
 void Ui::PanelBackground()
 {
-    Shapes().AddRect(Map::m_ScreenLeft, Map::m_ScreenBottom, Map::m_ScreenLeft + PanelWidth, Map::m_ScreenTop, Colors::Panel);
-    Shapes().AddRect(Map::m_ScreenLeft + PanelWidth, Map::m_ScreenBottom, Map::m_ScreenLeft + PanelWidth + 1.0f,
-                     Map::m_ScreenTop, Colors::Hairline);
+    Shapes().AddRect(Left(), Bottom(), Left() + PanelWidth, Top(), Colors::Panel);
+    Shapes().AddRect(Left() + PanelWidth, Bottom(), Left() + PanelWidth + 1.0f, Top(), Colors::Hairline);
 }
 
 void Ui::ProgressBar(float left, float bottom, float width, float height, float fraction, const glm::vec3& color)
@@ -240,11 +333,11 @@ void Ui::ProgressBar(float left, float bottom, float width, float height, float 
 float Ui::CardHeader(TexturedQuad* icon, float iconHeight, const std::string& title, const std::string& subtitle)
 {
     const float left = PanelLeft();
-    const float top = Map::m_ScreenTop;
+    const float top = Top();
     float textLeft = left;
     if (icon && icon->m_Texture && icon->m_Texture->m_Height > 0)
     {
-        icon->m_ProjectionMatrix = &Map::m_ProjectionMatrix;
+        icon->m_ProjectionMatrix = Projection();
         icon->m_ViewMatrix = nullptr;
         icon->m_Scale = iconHeight / static_cast<float>(icon->m_Texture->m_Height);
         icon->m_Position = glm::vec2(left + 22.0f, top - 56.0f);
@@ -321,5 +414,5 @@ void Ui::Coordinates(const glm::vec2& mapPosition)
     const int gameX = static_cast<int>(mapPosition.x / 0.25f);
     const int gameZ = static_cast<int>(-mapPosition.y / 0.25f);
     Text("X " + std::to_string(gameX) + "   Z " + std::to_string(gameZ),
-         glm::vec2(PanelLeft(), Map::m_ScreenBottom + FooterHeight + 16.0f), 0.30f, Colors::TextDim);
+         glm::vec2(PanelLeft(), Bottom() + FooterHeight + 16.0f), 0.30f, Colors::TextDim);
 }

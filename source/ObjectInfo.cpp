@@ -122,8 +122,8 @@ void ObjectInfo::Render()
 
 bool ObjectInfo::IsPositionOn(const glm::vec2& position) const
 {
-    return position.x >= Map::m_ScreenLeft && position.x <= Map::m_ScreenLeft + Ui::PanelWidth &&
-           position.y >= Map::m_ScreenBottom && position.y <= Map::m_ScreenTop;
+    return position.x >= Ui::Left() && position.x <= Ui::Left() + Ui::PanelWidth && position.y >= Ui::Bottom() &&
+           position.y <= Ui::Top();
 }
 
 glm::vec2 ObjectInfo::GetMapPosition() const
