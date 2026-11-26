@@ -212,18 +212,20 @@ namespace
         const float pin[3] = {-501.25f, 150.5f, -1011.75f};
         game.memory.Put<int32_t>(heap + 0x122C, 37);
         game.memory.Write(heap + 0x1230, pin, sizeof(pin));
-        game.memory.Put<uint64_t>(heap + 0x1000, game.mainBase + 0x24B0F30); // the object's vtable
+        game.memory.Put<uint64_t>(heap + 0x1208, game.mainBase + 0x2B875E8); // the object's vtable, 40 bytes before
+        game.memory.Put<uint64_t>(heap + 0x40000, heap + 0x1208);             // a list that points at it
         // The x of slot 0 alone, with no z near it: not a hit
         game.memory.Write(heap + 0x8000, pin, 4);
         const int storesBefore = game.memory.storeCount;
         MapMarks::Result result;
         assert(MapMarks::Probe(game.memory, game.mainBase, LiveGameData::Botw160(), heap, 0x200000, result));
         assert(game.memory.storeCount == storesBefore); // read only
-        assert(result.details.find("hit 1: slot 1 at 5000001230") != std::string::npos);
-        assert(result.details.find("z at +8") != std::string::npos);
-        assert(result.details.find("main+24b0f30 at -560") != std::string::npos);
+        assert(result.details.find("hit 1: slot 1 (icon 37) at 5000001230, z at +8, icon at -4, in an object at -40 (main+2b875e8)") !=
+               std::string::npos);
         assert(result.details.find("hit 2") == std::string::npos);
         assert(result.details.find("16 unreadable") != std::string::npos);
+        assert(result.details.find("pass 2: 1 objects, 1 pointers to them") != std::string::npos);
+        assert(result.details.find("pointer to object 1 at 5000040000") != std::string::npos);
         // No marks: nothing to look for
         FakeGame empty;
         BuildGame(empty, {});

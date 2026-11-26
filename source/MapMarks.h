@@ -73,7 +73,8 @@ namespace MapMarks
     // zayr33 (test): read only. Looks in the game's heap for the place of each mark on the map (its x with its z
     // near) outside the flags, to find the list the map screen draws from, which the game fills from the flags
     // when an area loads (a pin written to the flags shows after the next loading). Every hit goes to result.details
-    // with the memory around it and the pointers into the game's code before it (the vtable of the object).
+    // with the mark's icon when it is near and the object it is in (the nearest pointer into the game's code before
+    // it); then, in a second pass, who points at those objects (zayr34).
     bool Probe(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, uint64_t heapBase,
                uint64_t heapSize, Result& result);
 }

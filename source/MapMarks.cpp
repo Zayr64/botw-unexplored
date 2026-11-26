@@ -316,6 +316,46 @@ namespace
                 return true;
         return false;
     }
+
+    // Goes through the heap a megabyte at a time (64 KB at a time where part is not mapped), calling `visit` with
+    // each block read. Returns how many 64 KB blocks could not be read.
+    template <typename Visit>
+    int WalkHeap(Memory& memory, uint64_t heapBase, uint64_t heapSize, Visit visit)
+    {
+        int unreadable = 0;
+        for (uint64_t chunk = 0; chunk < heapSize; chunk += ProbeChunk)
+        {
+            const uint64_t address = heapBase + chunk;
+            const size_t size = static_cast<size_t>(std::min<uint64_t>(ProbeChunk, heapSize - chunk));
+            if (memory.Read(address, s_ProbeChunk, size))
+            {
+                visit(address, s_ProbeChunk, size);
+                continue;
+            }
+            for (size_t part = 0; part < size; part += 0x10000)
+            {
+                const size_t length = std::min<size_t>(0x10000, size - part);
+                if (memory.Read(address + part, s_ProbeChunk, length))
+                    visit(address + part, s_ProbeChunk, length);
+                else
+                    ++unreadable;
+            }
+        }
+        return unreadable;
+    }
+
+    void Dump(Memory& memory, uint64_t at, int from, int to, std::string& out)
+    {
+        uint32_t words[8];
+        for (int line = from; line < to; line += 32)
+            if (memory.Read(at + line, words, sizeof(words)))
+            {
+                Append(out, "  %+5d:", line);
+                for (const uint32_t word : words)
+                    Append(out, " %08x", word);
+                out += "\n";
+            }
+    }
 }
 
 bool MapMarks::Probe(Memory& memory, uint64_t mainBase, const Layout& layout, uint64_t heapBase, uint64_t heapSize,
@@ -330,10 +370,10 @@ bool MapMarks::Probe(Memory& memory, uint64_t mainBase, const Layout& layout, ui
     if (heapSize == 0 || heapSize > 0x200000000ULL)
         return Fail(result, "the game's heap is not known");
 
-    // The x of each mark, as the game holds it; a hit is kept when the mark's z is within 32 bytes.
     struct Pattern
     {
         uint32_t x, z;
+        int32_t icon;
         int slot;
     };
     std::vector<Pattern> patterns;
@@ -342,42 +382,31 @@ bool MapMarks::Probe(Memory& memory, uint64_t mainBase, const Layout& layout, ui
         Pattern pattern;
         std::memcpy(&pattern.x, &mark.position[0], 4);
         std::memcpy(&pattern.z, &mark.position[2], 4);
+        pattern.icon = mark.icon;
         pattern.slot = mark.slot;
         patterns.push_back(pattern);
     }
-    Append(result.details, "probe: heap %llx, %llu MB; %zu marks\n", static_cast<unsigned long long>(heapBase),
+    Append(result.details, "probe 2: heap %llx, %llu MB; %zu marks\n", static_cast<unsigned long long>(heapBase),
            static_cast<unsigned long long>(heapSize >> 20), patterns.size());
 
-    int hits = 0, unreadable = 0;
-    constexpr int MaxHits = 48;
-    for (uint64_t chunk = 0; chunk < heapSize && hits < MaxHits; chunk += ProbeChunk)
+    // Pass 1: the x of each mark with its z within 32 bytes
+    struct Found
     {
-        const uint64_t address = heapBase + chunk;
-        const size_t size = static_cast<size_t>(std::min<uint64_t>(ProbeChunk, heapSize - chunk));
-        if (!memory.Read(address, s_ProbeChunk, size))
-        {
-            // Partly unmapped: 64 KB at a time
-            bool any = false;
-            for (size_t part = 0; part < size; part += 0x10000)
-                if (memory.Read(address + part, s_ProbeChunk + part, std::min<size_t>(0x10000, size - part)))
-                    any = true;
-                else
-                {
-                    std::memset(s_ProbeChunk + part, 0, std::min<size_t>(0x10000, size - part));
-                    ++unreadable;
-                }
-            if (!any)
-                continue;
-        }
-        for (size_t offset = 0; offset + 4 <= size && hits < MaxHits; offset += 4)
+        uint64_t address;
+        size_t pattern;
+        int zAt;
+    };
+    std::vector<Found> found;
+    constexpr size_t MaxFound = 4000;
+    const int unreadable = WalkHeap(memory, heapBase, heapSize, [&](uint64_t address, const uint8_t* bytes, size_t size) {
+        for (size_t offset = 0; offset + 4 <= size && found.size() < MaxFound; offset += 4)
         {
             uint32_t word;
-            std::memcpy(&word, s_ProbeChunk + offset, 4);
-            for (const Pattern& pattern : patterns)
+            std::memcpy(&word, bytes + offset, 4);
+            for (size_t k = 0; k < patterns.size(); ++k)
             {
-                if (word != pattern.x)
+                if (word != patterns[k].x)
                     continue;
-                // z near it
                 int zAt = 0;
                 for (int d = -32; d <= 32 && zAt == 0; d += 4)
                 {
@@ -385,40 +414,113 @@ bool MapMarks::Probe(Memory& memory, uint64_t mainBase, const Layout& layout, ui
                     if (d == 0 || at < 0 || static_cast<size_t>(at) + 4 > size)
                         continue;
                     uint32_t other;
-                    std::memcpy(&other, s_ProbeChunk + at, 4);
-                    if (other == pattern.z)
+                    std::memcpy(&other, bytes + at, 4);
+                    if (other == patterns[k].z)
                         zAt = d;
                 }
-                if (zAt == 0)
-                    continue;
-                const uint64_t hit = address + offset;
-                const bool known = Near(hit, state.flagPositions, 0x48) || Near(hit, state.proxyPositions, 0x20);
-                ++hits;
-                Append(result.details, "hit %d: slot %d at %llx (heap+%llx), z at %+d%s\n", hits, pattern.slot,
-                       static_cast<unsigned long long>(hit), static_cast<unsigned long long>(hit - heapBase), zAt,
-                       known ? ", the flag or its copy" : "");
-                if (known)
-                    continue;
-                // 0x80 bytes before it and 0x80 after, as words; then pointers into main up to 0x400 before it
-                uint32_t around[64];
-                if (memory.Read(hit - 0x80, around, sizeof(around)))
-                    for (int line = 0; line < 8; ++line)
-                    {
-                        std::string text;
-                        for (int k = 0; k < 8; ++k)
-                            Append(text, " %08x", around[line * 8 + k]);
-                        Append(result.details, "  %+5d:%s\n", line * 32 - 0x80, text.c_str());
-                    }
-                uint64_t before[128];
-                if (memory.Read(hit - sizeof(before), before, sizeof(before)))
-                    for (int k = 127; k >= 0; --k)
-                        if (before[k] >= mainBase && before[k] < mainBase + 0x4000000)
-                            Append(result.details, "  main+%llx at %+d\n",
-                                   static_cast<unsigned long long>(before[k] - mainBase), (k - 128) * 8);
+                if (zAt != 0)
+                    found.push_back({address + offset, k, zAt});
             }
         }
+    });
+    Append(result.details, "pass 1: %zu hits, %d unreadable 64 KB blocks\n", found.size(), unreadable);
+
+    // Each hit: the mark's icon near it, and the object it is in (the nearest pointer into the code before it)
+    std::vector<uint64_t> objects; // of the hits with the icon near, for pass 2
+    uint64_t lastDumpedPage = ~0ULL;
+    int lines = 0;
+    for (size_t i = 0; i < found.size() && lines < 600; ++i)
+    {
+        const Found& hit = found[i];
+        const Pattern& pattern = patterns[hit.pattern];
+        const bool known = Near(hit.address, state.flagPositions, 0x48) || Near(hit.address, state.proxyPositions, 0x20);
+        int iconAt = 0;
+        uint32_t near[32]; // 64 bytes before and after
+        if (!known && memory.Read(hit.address - 64, near, sizeof(near)))
+            for (int d = 4; d <= 60 && iconAt == 0; d += 4)
+            {
+                if (static_cast<int32_t>(near[16 - d / 4]) == pattern.icon)
+                    iconAt = -d;
+                else if (d < 64 && 16 + d / 4 < 32 && static_cast<int32_t>(near[16 + d / 4]) == pattern.icon)
+                    iconAt = d;
+            }
+        uint64_t object = 0, vtable = 0;
+        uint64_t before[32]; // 256 bytes before
+        const uint64_t aligned = hit.address & ~7ULL;
+        if (!known && memory.Read(aligned - sizeof(before), before, sizeof(before)))
+            for (int k = 31; k >= 0 && object == 0; --k)
+                if (before[k] >= mainBase && before[k] < mainBase + 0x4000000)
+                {
+                    object = aligned - sizeof(before) + static_cast<uint64_t>(k) * 8;
+                    vtable = before[k];
+                }
+        Append(result.details, "hit %zu: slot %d (icon %d) at %llx, z at %+d%s", i + 1, pattern.slot,
+               static_cast<int>(pattern.icon), static_cast<unsigned long long>(hit.address), hit.zAt,
+               known ? ", the flag or its copy\n" : "");
+        ++lines;
+        if (known)
+            continue;
+        if (iconAt != 0)
+            Append(result.details, ", icon at %+d", iconAt);
+        if (object != 0)
+            Append(result.details, ", in an object at %+lld (main+%llx)",
+                   static_cast<long long>(object) - static_cast<long long>(hit.address),
+                   static_cast<unsigned long long>(vtable - mainBase));
+        result.details += "\n";
+        if (iconAt != 0 && object != 0 && objects.size() < 24 &&
+            std::find(objects.begin(), objects.end(), object) == objects.end())
+            objects.push_back(object);
+        // The memory around: for the first hit of each 64 KB, and for every one with the icon near
+        const uint64_t page = hit.address >> 16;
+        if (page != lastDumpedPage || iconAt != 0)
+        {
+            lastDumpedPage = page;
+            Dump(memory, hit.address, -128, 128, result.details);
+            lines += 8;
+        }
     }
-    Append(result.details, "probe: %d hits, %d unreadable 64 KB blocks\n", hits, unreadable);
+
+    // Pass 2: who points at those objects (the list of the map screen's marks, if they are in one)
+    if (!objects.empty())
+    {
+        struct Pointer
+        {
+            uint64_t address;
+            size_t object;
+        };
+        std::vector<Pointer> pointers;
+        WalkHeap(memory, heapBase, heapSize, [&](uint64_t address, const uint8_t* bytes, size_t size) {
+            for (size_t offset = 0; offset + 8 <= size && pointers.size() < 200; offset += 8)
+            {
+                uint64_t word;
+                std::memcpy(&word, bytes + offset, 8);
+                for (size_t k = 0; k < objects.size(); ++k)
+                    if (word == objects[k])
+                        pointers.push_back({address + offset, k});
+            }
+        });
+        Append(result.details, "pass 2: %zu objects, %zu pointers to them\n", objects.size(), pointers.size());
+        for (size_t i = 0; i < objects.size(); ++i)
+        {
+            Append(result.details, "object %zu at %llx:\n", i + 1, static_cast<unsigned long long>(objects[i]));
+            Dump(memory, objects[i], -64, 256, result.details);
+        }
+        for (const Pointer& pointer : pointers)
+        {
+            Append(result.details, "pointer to object %zu at %llx\n", pointer.object + 1,
+                   static_cast<unsigned long long>(pointer.address));
+            Dump(memory, pointer.address, -64, 64, result.details);
+            uint64_t before[16];
+            if (memory.Read(pointer.address - sizeof(before), before, sizeof(before)))
+                for (int k = 15; k >= 0; --k)
+                    if (before[k] >= mainBase && before[k] < mainBase + 0x4000000)
+                    {
+                        Append(result.details, "  main+%llx at %+d\n",
+                               static_cast<unsigned long long>(before[k] - mainBase), (k - 16) * 8);
+                        break;
+                    }
+        }
+    }
     result.ok = true;
     return true;
 }
