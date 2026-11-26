@@ -227,7 +227,12 @@ def use_icon_name(a, by_name):
     """Recipes name some materials by an alias (Item_Plant_J for Silent Princess); the pouch item is the one its
     itemUseIconActorName points to."""
     alias = str(a.get("itemUseIconActorName", "")) if a is not None else ""
-    return alias if alias and alias in by_name else None
+    if alias and alias in by_name:
+        return alias
+    # Some have no icon alias and say it in their group instead (Item_Mushroom_D, the Rushroom of the climbing
+    # armor's recipes, is in the group of Item_MushroomGet_D, the one the pouch holds; found on 26/11).
+    group = str(a.get("systemSameGroupActorName", "")) if a is not None else ""
+    return group if group and group != str(a.get("name", "")) and group in by_name else None
 
 
 def level_lines(boot, names, lines):

@@ -220,19 +220,20 @@ int main(int argc, char** argv)
 
     std::unique_ptr<ReservePlan> plan(new ReservePlan());
     PlanReserve(*cook, *reserve, save, pouch.data(), pouchCount, *plan);
-    // The armor in the pouch piece by piece (the detail of the Reserve tab) adds up to the two tiers of that armor.
+    // What each material is held back for, one by one (the detail of the Reserve tab), adds up to its tiers.
     int mismatches = 0;
     for (int i = 0; i < plan->materialCount; i++)
     {
         const MaterialPlan& m = plan->materials[i];
-        int32_t sum = 0;
-        for (int k = 0; k < plan->pieceNeedCount; k++)
-            if (plan->pieceNeeds[k].item == m.item)
-                sum += plan->pieceNeeds[k].amount;
-        mismatches += sum != m.need[OwnedReachable] + m.need[OwnedNextFairy];
+        int32_t sum[TierCount] = {};
+        for (int k = 0; k < plan->useCount; k++)
+            if (plan->uses[k].item == m.item)
+                sum[plan->uses[k].tier] += plan->uses[k].amount;
+        mismatches += sum[OwnedReachable] != m.need[OwnedReachable] + m.need[OwnedNextFairy];
+        for (const Tier tier : {ArmorNotOwned, Crafted, Quests})
+            mismatches += sum[tier] != m.need[tier];
     }
-    printf("piece needs: %d (piece, material) pairs, %d materials whose pieces do not add up\n", plan->pieceNeedCount,
-           mismatches);
+    printf("material uses: %d, %d tiers of a material that do not add up\n", plan->useCount, mismatches);
 
     printf("== Save\n");
     printf("rupees %d, pouch %d slots (%d dishes), Great Fairies %d of 4, armor pieces %d\n", plan->rupees, pouchCount,

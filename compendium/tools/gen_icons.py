@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Makes the app's icons from a dump of the game (1.6.0): the item icons of every ingredient and material in
 cook-data.txt (UI/StockItem/<actor>.sbitemico), the dishes (Item_Cook_*) once more at their full size for the Dishes
-tab, and a few icons of the game's interface (Layout/Common.sblarc in
+tab, the armor and the Ancient Oven items for the Reserve tab (an upgraded piece has no icon of its own: it takes the
+one of the piece it is made from), and a few icons of the game's interface (Layout/Common.sblarc in
 Pack/Bootup.pack): rupee, heart, and the effect icons of the pause menu.
 
 They are the game's images, so they never go into this repository: copy the output folder to
@@ -99,6 +100,40 @@ ELIXIR_EFFECTS = ["AllSpeed", "AttackUp", "DefenseUp", "ExGutsMaxUp", "Fireproof
                   "Quietness", "ResistCold", "ResistElectric", "ResistHot"]
 
 
+def armor_icons(cook_data):
+    """Each armor of cook-data.txt and where to look for its icon, in order: its own, then each piece below it (the
+    piece one star down is among its ingredients); a "_B" look also without the "_B"."""
+    armors = {}
+    for line in Path(cook_data).read_text(encoding="utf-8").splitlines():
+        parts = line.split(" ")
+        if parts[0] != "ARMOR" or len(parts) < 9:
+            continue
+        count = int(parts[8])
+        armors[parts[1]] = (parts[2], [parts[9 + 2 * i] for i in range(count)])
+    result = {}
+    for key, (name, _) in armors.items():
+        chain, current, seen = [name], key, {key}
+        while True:
+            below = [i for i in armors[current][1] if i in armors and i not in seen]
+            if not below:
+                break
+            current = below[0]
+            seen.add(current)
+            chain.append(armors[current][0])
+        candidates = []
+        for c in chain:
+            candidates.append(c)
+            if c.endswith("_B"):
+                candidates.append(c[:-2])
+        result[name] = candidates
+    return result
+
+
+def craft_names(cook_data):
+    return sorted(line.split(" ")[2] for line in Path(cook_data).read_text(encoding="utf-8").splitlines()
+                  if line.startswith("CRAFT "))
+
+
 def main():
     romfs, cook_data, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     (out / "items").mkdir(parents=True, exist_ok=True)
@@ -109,6 +144,25 @@ def main():
     names = item_names(cook_data)
     if "Item_Cook_C_17" in names:
         names += ["Item_Cook_C_17_" + effect for effect in ELIXIR_EFFECTS]
+    names += craft_names(cook_data)
+    # The armor: each piece under its own name, with the first icon the dump has along its chain
+    sources = {}
+    for name, candidates in armor_icons(cook_data).items():
+        for c in candidates:
+            if (romfs / "UI/StockItem" / (c + ".sbitemico")).exists():
+                sources[name] = c
+                break
+    armor = 0
+    for name, source in sorted(sources.items()):
+        textures = bntx.textures(bytes(oead.yaz0.decompress((romfs / "UI/StockItem" / (source + ".sbitemico")).read_bytes())))
+        if not textures:
+            continue
+        _, w, h, rgba = textures[0]
+        image = Image.frombytes("RGBA", (w, h), rgba)
+        if max(w, h) > ITEM_SIZE:
+            image = image.resize((ITEM_SIZE * w // max(w, h), ITEM_SIZE * h // max(w, h)), Image.LANCZOS)
+        image.save(out / "items" / (name + ".png"), optimize=True)
+        armor += 1
     for name in names:
         path = romfs / "UI/StockItem" / (name + ".sbitemico")
         if not path.exists():
@@ -154,7 +208,7 @@ def main():
             image.save(out / "ui" / (app_name + ".png"), optimize=True)
         else:
             print("not found:", texture)
-    print(f"{out}: {made} item icons ({missing} items without one), {dishes} of them dishes at full size, "
+    print(f"{out}: {armor} armor icons, {made} item icons ({missing} items without one), {dishes} of them dishes at full size, "
           f"{len(found)} interface icons, {enemies} enemy pictures")
 
 

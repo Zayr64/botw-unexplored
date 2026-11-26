@@ -239,28 +239,29 @@ namespace Compendium
             }
         }
 
-        void AddPieceNeed(ReservePlan& plan, uint32_t piece, uint32_t item, int32_t amount, int star)
+        void AddUse(ReservePlan& plan, Tier tier, uint32_t what, uint32_t item, int32_t amount, int star = 0)
         {
-            if (amount <= 0)
+            if (amount <= 0 || !Material(plan, item))
                 return;
-            for (int i = 0; i < plan.pieceNeedCount; i++)
+            for (int i = 0; i < plan.useCount; i++)
             {
-                PieceNeed& p = plan.pieceNeeds[i];
-                if (p.piece == piece && p.item == item)
+                MaterialUse& u = plan.uses[i];
+                if (u.tier == tier && u.what == what && u.item == item)
                 {
-                    p.amount += amount;
-                    p.fromStar = star < p.fromStar ? star : p.fromStar;
-                    p.toStar = star > p.toStar ? star : p.toStar;
+                    u.amount += amount;
+                    u.fromStar = star < u.fromStar ? star : u.fromStar;
+                    u.toStar = star > u.toStar ? star : u.toStar;
                     return;
                 }
             }
-            if (plan.pieceNeedCount < MaxPieceNeeds)
+            if (plan.useCount < MaxMaterialUses)
             {
-                PieceNeed& p = plan.pieceNeeds[plan.pieceNeedCount++];
-                p.piece = piece;
-                p.item = item;
-                p.amount = amount;
-                p.fromStar = p.toStar = star;
+                MaterialUse& u = plan.uses[plan.useCount++];
+                u.tier = tier;
+                u.what = what;
+                u.item = item;
+                u.amount = amount;
+                u.fromStar = u.toStar = star;
             }
         }
 
@@ -349,7 +350,7 @@ namespace Compendium
                 const int n = MaterialsOf(*step, items, amounts, data);
                 AddNeeds(out, tier, n, items, amounts);
                 for (int k = 0; k < n; k++)
-                    AddPieceNeed(out, a->hash, items[k], amounts[k], stars);
+                    AddUse(out, OwnedReachable, a->hash, items[k], amounts[k], stars);
                 if (!step->next)
                     break;
             }
@@ -401,6 +402,8 @@ namespace Compendium
                 {
                     out.rupeesNeeded[ArmorNotOwned] += base.creatingPrice;
                     AddNeeds(out, ArmorNotOwned, base.ingredientCount, base.ingredients, base.amounts);
+                    for (int k = 0; k < base.ingredientCount; k++)
+                        AddUse(out, ArmorNotOwned, base.hash, base.ingredients[k], base.amounts[k], 0);
                 }
                 else
                 {
@@ -413,6 +416,8 @@ namespace Compendium
                 int32_t amounts[MaxRecipeItems];
                 const int n = MaterialsOf(*step, items, amounts, data);
                 AddNeeds(out, ArmorNotOwned, n, items, amounts);
+                for (int k = 0; k < n; k++)
+                    AddUse(out, ArmorNotOwned, base.hash, items[k], amounts[k], step->star - 1);
                 if (!step->next)
                     break;
             }
@@ -427,6 +432,8 @@ namespace Compendium
             out.craftedItems++;
             out.rupeesNeeded[Crafted] += c.price;
             AddNeeds(out, Crafted, c.ingredientCount, c.ingredients, c.amounts);
+            for (int k = 0; k < c.ingredientCount; k++)
+                AddUse(out, Crafted, c.hash, c.ingredients[k], c.amounts[k]);
         }
 
         // Side quests not finished.
@@ -441,7 +448,10 @@ namespace Compendium
                 continue;
             MaterialPlan* m = Material(out, q.item);
             if (m)
+            {
                 m->need[Quests] += q.count;
+                AddUse(out, Quests, static_cast<uint32_t>(i), q.item, q.count);
+            }
             if (!q.countKnown)
                 out.questsWithUnknownCount++;
             bool seen = false;

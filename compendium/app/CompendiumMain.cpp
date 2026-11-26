@@ -1269,7 +1269,41 @@ namespace
         return items;
     }
 
-    // The selected material: have against needed, and what it is for, the armor in the pouch piece by piece.
+    // The name and the picture of what a material is held back for.
+    std::string UseName(const App& app, const MaterialUse& u)
+    {
+        if (u.tier == Quests)
+            return u.what < static_cast<uint32_t>(app.reserve->questCount) ? app.reserve->quests[u.what].title : "?";
+        return NameOf(app, u.what);
+    }
+
+    std::string UseIcon(const App& app, const MaterialUse& u)
+    {
+        if (u.tier == Crafted)
+        {
+            for (int i = 0; i < app.reserve->craftCount; i++)
+                if (app.reserve->crafts[i].hash == u.what)
+                    return app.reserve->crafts[i].name;
+            return "";
+        }
+        if (u.tier == Quests)
+            return "";
+        const ArmorEntry* a = app.reserve->FindArmor(u.what);
+        return a ? a->name : "";
+    }
+
+    // After the name: the stars of an armor's upgrades; for a piece not owned, "make" when the Ancient Oven makes it.
+    std::string UseTag(const MaterialUse& u)
+    {
+        if (u.tier != OwnedReachable && u.tier != ArmorNotOwned)
+            return "";
+        if (u.toStar == 0)
+            return "make";
+        const std::string stars = Stars(std::max(1, u.fromStar), u.toStar);
+        return u.fromStar == 0 ? "make, " + stars : stars;
+    }
+
+    // The selected material: have against needed, then what it is for by name, in four short sections.
     void ReserveDetail(const App& app, const ReserveItem& it, float x, float top, float width)
     {
         const ReservePlan& p = *app.plan;
@@ -1298,66 +1332,77 @@ namespace
         y += 34;
         Text("you have " + Number(m.have), x, y, SmallText, TextDim);
         Text("needed " + Number(needed), x + width, y, SmallText, TextDim, ALIGN_RIGHT);
-        y += 42;
+        y += 36;
 
-        const float numX = x + 64, textX = x + 80, scale = 0.38f;
-        auto line = [&](int32_t amount, const std::string& what, const glm::vec3& c) {
-            Text(Number(amount), numX, y, scale, c, ALIGN_RIGHT);
-            Text(Fit(what, scale, x + width - textX), textX, y, scale, c);
-            y += 30;
-        };
-        const struct
+        // What it is for: each thing by name and picture, the most first, in sections. The upgrades that wait for
+        // another Great Fairy are among the upgrades (their stars say it).
+        struct Section
         {
             Tier tier;
-            const char* what;
-        } kinds[] = {{ArmorNotOwned, "armor you don't have"}, {Crafted, "the Ancient Oven"}, {Quests, "side quests"}};
-        int otherLines = free > 0 ? 1 : 0;
-        for (const auto& k : kinds)
-            otherLines += m.need[k.tier] > 0;
-        const int32_t ownNeed = m.need[OwnedReachable] + m.need[OwnedNextFairy];
-        if (ownNeed > 0)
+            const char* title;
+            std::vector<const MaterialUse*> uses;
+            int32_t total;
+        };
+        Section sections[] = {{OwnedReachable, "Upgrades", {}, 0},
+                              {ArmorNotOwned, "Armor to get", {}, 0},
+                              {Crafted, "Ancient Oven", {}, 0},
+                              {Quests, "Side quests", {}, 0}};
+        int present = 0;
+        for (Section& s : sections)
         {
-            std::string what = "your armor";
-            if (m.need[OwnedNextFairy] == ownNeed)
-                what += ", after another Great Fairy";
-            else if (m.need[OwnedNextFairy] > 0)
-                what += ", " + Number(m.need[OwnedNextFairy]) + " of it after another Great Fairy";
-            line(ownNeed, what, TextColor);
-            std::vector<const PieceNeed*> pieces;
-            for (int i = 0; i < p.pieceNeedCount; i++)
-                if (p.pieceNeeds[i].item == m.item)
-                    pieces.push_back(&p.pieceNeeds[i]);
-            std::stable_sort(pieces.begin(), pieces.end(),
-                             [](const PieceNeed* a, const PieceNeed* b) { return a->amount > b->amount; });
-            // As many pieces as leave room for the other lines
-            const float room = ScreenH - FooterH - 12 - y - otherLines * 30;
-            size_t shown = std::min(pieces.size(), static_cast<size_t>(std::max(0.0f, room / 26)));
-            if (shown < pieces.size() && shown > 0)
-                shown--; // the line that says how many more
-            for (size_t k = 0; k < shown; k++)
-            {
-                const PieceNeed& pn = *pieces[k];
-                Text(Number(pn.amount), numX + 28, y, SmallText, TextDim, ALIGN_RIGHT);
-                const std::string stars = "  " + Stars(pn.fromStar, pn.toStar);
-                const float starsW = Width(stars, SmallText);
-                const float after = Text(Fit(NameOf(app, pn.piece), SmallText, x + width - textX - 28 - starsW),
-                                         textX + 28, y, SmallText, TextDim);
-                Text(stars, after, y, SmallText, Gold);
-                y += 26;
-            }
-            if (shown < pieces.size())
-            {
-                Text("and " + std::to_string(pieces.size() - shown) + " more pieces", textX + 28, y, SmallText, TextDim);
-                y += 26;
-            }
-            y += 4;
+            for (int i = 0; i < p.useCount; i++)
+                if (p.uses[i].item == m.item && p.uses[i].tier == s.tier)
+                {
+                    s.uses.push_back(&p.uses[i]);
+                    s.total += p.uses[i].amount;
+                }
+            std::stable_sort(s.uses.begin(), s.uses.end(),
+                             [](const MaterialUse* a, const MaterialUse* b) { return a->amount > b->amount; });
+            present += !s.uses.empty();
         }
-        for (const auto& k : kinds)
-            if (m.need[k.tier] > 0)
-                line(m.need[k.tier], app.countHidden ? std::string(k.what) : std::string(k.what) + " (not counted)",
-                     app.countHidden ? TextColor : TextDim);
-        if (free > 0)
-            line(free, "free to cook or sell", Good);
+        // Lines: a title for each section, and its things as long as there is room, the later sections keeping one
+        // line each; a section cut short says how many more on its last line.
+        const float lineH = 27.0f, titleH = 28.0f;
+        int budget = static_cast<int>((ScreenH - FooterH - 8 - y - present * titleH) / lineH);
+        int later = present;
+        const float iconX = x, numX = x + 70, nameX = x + 82;
+        for (const Section& s : sections)
+        {
+            if (s.uses.empty())
+                continue;
+            later--;
+            const int lines = std::min(static_cast<int>(s.uses.size()), std::max(1, budget - later));
+            budget -= lines;
+            const bool counted = s.tier == OwnedReachable || app.countHidden;
+            const glm::vec3 titleColor = s.tier == OwnedReachable ? Warn : TextDim;
+            const float after = Text(s.title, x, y + 4, SmallText, counted ? titleColor : TextDim);
+            Text(Number(s.total) + (counted ? std::string() : "  not counted"), after + 12, y + 4, SmallText, TextDim);
+            y += titleH;
+            const bool cut = lines < static_cast<int>(s.uses.size());
+            const int shown = cut && lines > 1 ? lines - 1 : lines;
+            for (int k = 0; k < shown; k++)
+            {
+                const MaterialUse& u = *s.uses[k];
+                const std::string icon = UseIcon(app, u);
+                if (!icon.empty())
+                    Icons::Item(icon, iconX, y - 21, 26);
+                Text(Number(u.amount), numX, y, 0.38f, counted ? TextColor : TextDim, ALIGN_RIGHT);
+                std::string tag = UseTag(u);
+                if (cut && lines == 1)
+                    tag += (tag.empty() ? "" : "   ") + std::string("+") + std::to_string(s.uses.size() - 1) + " more";
+                const float tagW = tag.empty() ? 0.0f : Width(tag, SmallText) + 12;
+                const float end = Text(Fit(UseName(app, u), 0.38f, x + width - nameX - tagW), nameX, y, 0.38f,
+                                       counted ? TextColor : TextDim);
+                if (!tag.empty())
+                    Text(tag, end + 12, y, SmallText, u.tier == OwnedReachable && counted ? Gold : TextDim);
+                y += lineH;
+            }
+            if (cut && lines > 1)
+            {
+                Text("and " + std::to_string(s.uses.size() - shown) + " more", nameX, y, SmallText, TextDim);
+                y += lineH;
+            }
+        }
     }
 
     void ReserveTab(App& app)
@@ -1368,13 +1413,12 @@ namespace
         const int32_t own = p.rupeesNeeded[OwnedReachable] + p.rupeesNeeded[OwnedNextFairy];
         const float top =
             StatCards({MakeStat("Great Fairies", std::to_string(p.fairies), TextColor, "of 4", 0.7f),
-                       MakeStat("Armor upgrades left", std::to_string(p.ownedUpgradesLeft[0]), TextColor,
-                                p.ownedUpgradesLeft[1] > 0 ? "+" + std::to_string(p.ownedUpgradesLeft[1]) + " with more fairies"
+                       MakeStat("Upgrades left", std::to_string(p.ownedUpgradesLeft[0]), TextColor,
+                                p.ownedUpgradesLeft[1] > 0 ? "+" + std::to_string(p.ownedUpgradesLeft[1]) + " after another fairy"
                                                            : std::string(),
                                 1.25f),
-                       MakeStat("Rupees: armor, fountains", Number(own), p.rupees >= own ? Good : Gold,
-                                std::string(), 1.25f),
-                       MakeStat("Rupees for the rest", app.countHidden ? Number(rest) : std::string("not counted"),
+                       MakeStat("Rupees: fountains", Number(own), p.rupees >= own ? Good : Gold, std::string(), 1.0f),
+                       MakeStat("Rupees: armor, oven", app.countHidden ? Number(rest) : std::string("not counted"),
                                 app.countHidden ? (p.rupees >= p.RupeesNeeded(mask) ? Good : Gold) : TextDim,
                                 std::string(), 0.95f)},
                       HeaderH + 14) +
@@ -1395,8 +1439,8 @@ namespace
             counts[it.group]++;
             groupOf.push_back(it.group);
         }
-        const std::vector<GroupTitle> titles = {{"Short for your armor   " + std::to_string(counts[0]), Warn},
-                                                {"Short for the rest   " + std::to_string(counts[1]), TextDim},
+        const std::vector<GroupTitle> titles = {{"Short for upgrades   " + std::to_string(counts[0]), Warn},
+                                                {"Short for new armor, oven, quests   " + std::to_string(counts[1]), TextDim},
                                                 {"Enough   " + std::to_string(counts[2]), Good}};
         const float listW = ListWidth();
         GroupedList(app, 1, groupOf, titles, top, bottom, [&](int i, float ry) {

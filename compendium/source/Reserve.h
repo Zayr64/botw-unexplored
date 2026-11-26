@@ -112,17 +112,21 @@ namespace Compendium
         int32_t Free(uint8_t tierMask) const;
     };
 
-    // What the upgrades left on one armor piece in the pouch take of one material (0.1.17: the Reserve tab says which
-    // pieces a material is held back for).
-    struct PieceNeed
+    // One thing a material is held back for, so the Reserve tab can name it (0.1.17 the pieces in the pouch, 0.1.18 all):
+    //   OwnedReachable  the upgrades left on a piece in the pouch (both owned tiers); `what` is the piece
+    //   ArmorNotOwned   a piece not in the pouch: making it (star 0) and its upgrades; `what` is its base piece
+    //   Crafted         an Ancient Oven item; `what` is the item
+    //   Quests          a side quest; `what` is its index in ReserveData::quests
+    struct MaterialUse
     {
-        uint32_t piece = 0; // the piece in the pouch
+        Tier tier = OwnedReachable;
+        uint32_t what = 0;
         uint32_t item = 0;
         int32_t amount = 0;
-        int fromStar = 0;   // the stars of the first and the last upgrade that take it (1 to 4)
+        int fromStar = 0; // armor: the stars of the first and the last step that take it (0: making the piece)
         int toStar = 0;
     };
-    constexpr int MaxPieceNeeds = 1024;
+    constexpr int MaxMaterialUses = 2048;
 
     struct ReservePlan
     {
@@ -138,8 +142,8 @@ namespace Compendium
         int questsWithUnknownCount = 0;
         int materialCount = 0;
         MaterialPlan materials[MaxMaterials];
-        int pieceNeedCount = 0;
-        PieceNeed pieceNeeds[MaxPieceNeeds]; // the tiers OwnedReachable and OwnedNextFairy, by piece
+        int useCount = 0;
+        MaterialUse uses[MaxMaterialUses];
 
         const MaterialPlan* Find(uint32_t item) const;
         int32_t RupeesNeeded(uint8_t tierMask) const;
