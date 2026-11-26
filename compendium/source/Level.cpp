@@ -30,7 +30,10 @@ namespace Compendium
                 ok = line.Hex(f.flag) && line.Word(f.actor, sizeof(f.actor)) && line.Float(f.point) &&
                      line.OptionalInt(f.max);
                 if (ok)
+                {
+                    f.max = ReachableKills(f.actor, f.max);
                     flagCount++;
+                }
             }
             else if (strcmp(kind, "LEVELSPECIES") == 0)
             {
@@ -59,6 +62,15 @@ namespace Compendium
             return false;
         }
         return ok;
+    }
+
+    int32_t ReachableKills(const char* actor, int32_t flagMax)
+    {
+        static const char* const onceOnly[] = {"Enemy_Assassin_Senior", "Enemy_GanonBeast", "Priest_Boss_Normal"};
+        for (const char* name : onceOnly)
+            if (strcmp(actor, name) == 0)
+                return 1;
+        return flagMax;
     }
 
     int32_t Kills(const SaveFile& save, const char* actor)

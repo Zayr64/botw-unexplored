@@ -22,8 +22,15 @@ namespace Compendium
         uint32_t flag = 0;            // CRC32 of Defeated_<actor>_Num
         char actor[NameLength] = {}; // the enemy, e.g. Enemy_Bokoblin_Senior
         float point = 0.0f;
-        int32_t max = 0;              // the counter stops here (10 for most); 0 if unknown
+        int32_t max = 0;              // the most kills that can count (10 for most; see ReachableKills); 0 if unknown
     };
+
+    // The most kills of `actor` that can ever count, from the limit of its flag in the game's data (MaxValue, 10 for
+    // most enemies, 2 for the Blights). The bosses fought once stay at 1 although their flag allows 10: the counter of
+    // Monk Maz Koshia only goes up while it is 0 and that of Dark Beast Ganon only the first time it is beaten
+    // (zeldamods.org, "Difficulty scaling"), and Master Kohga is placed once and never revived by the Blood Moon.
+    // The overworld bosses (Molduga, Molduking...) are revived by it, so their 10 can be reached.
+    int32_t ReachableKills(const char* actor, int32_t flagMax);
 
     struct Rank
     {

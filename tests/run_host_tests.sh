@@ -60,6 +60,9 @@ fi
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_regions.cpp source/Regions.cpp source/RegionData.cpp source/ShrineFlags.cpp -o /tmp/test_regions
 /tmp/test_regions
 python3 tests/test_data_mapping.py
+# The hidden level of the cooking app (EXP tab): the most kills each enemy can count, with a made-up save.
+"$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_level.cpp compendium/source/Level.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp -o /tmp/test_level
+/tmp/test_level
 # Cooking app: needs cook-data.txt, made from the game's files (compendium/tools/gen_cook_data.py), so it is skipped
 # without COOK_DATA. COOK_CASES: dishes read from the game's screen (compendium/tests/savage13_cases.py).
 "$compiler" -std=c++14 -Wall -Wextra -pedantic -ffp-contract=off "${sanitizers[@]}" -Icompendium/source compendium/tests/test_cook.cpp compendium/source/Cook.cpp compendium/source/CookData.cpp compendium/source/SaveFile.cpp compendium/source/Search.cpp compendium/source/Sale.cpp compendium/source/Level.cpp -o /tmp/test_cook
