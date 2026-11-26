@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "FakeGameMemory.h"
@@ -199,10 +200,42 @@ namespace
         assert(game.memory.storeCount == 0);
         std::printf("no marks ok\n");
     }
+
+    void TestProbe()
+    {
+        FakeGame game;
+        BuildGame(game, {{0, 42, 793.7f, 189.2f, 3721.9f}, {1, 37, -501.25f, 150.5f, -1011.75f}});
+        // A "heap" of 2 MB, its second megabyte unmapped, with a list like the map screen's: the pin of slot 1 as x, y,
+        // z after an icon number, 0x1230 into it
+        const uint64_t heap = 0x5000000000ULL;
+        game.memory.Map(heap, 0x100000);
+        const float pin[3] = {-501.25f, 150.5f, -1011.75f};
+        game.memory.Put<int32_t>(heap + 0x122C, 37);
+        game.memory.Write(heap + 0x1230, pin, sizeof(pin));
+        game.memory.Put<uint64_t>(heap + 0x1000, game.mainBase + 0x24B0F30); // the object's vtable
+        // The x of slot 0 alone, with no z near it: not a hit
+        game.memory.Write(heap + 0x8000, pin, 4);
+        const int storesBefore = game.memory.storeCount;
+        MapMarks::Result result;
+        assert(MapMarks::Probe(game.memory, game.mainBase, LiveGameData::Botw160(), heap, 0x200000, result));
+        assert(game.memory.storeCount == storesBefore); // read only
+        assert(result.details.find("hit 1: slot 1 at 5000001230") != std::string::npos);
+        assert(result.details.find("z at +8") != std::string::npos);
+        assert(result.details.find("main+24b0f30 at -560") != std::string::npos);
+        assert(result.details.find("hit 2") == std::string::npos);
+        assert(result.details.find("16 unreadable") != std::string::npos);
+        // No marks: nothing to look for
+        FakeGame empty;
+        BuildGame(empty, {});
+        MapMarks::Result none;
+        assert(!MapMarks::Probe(empty.memory, empty.mainBase, LiveGameData::Botw160(), heap, 0x200000, none));
+        std::printf("probe ok\n");
+    }
 }
 
 int main()
 {
+    TestProbe();
     TestFirstFreePin();
     TestFivePinsUsed();
     TestProxyThatDoesNotMatch();

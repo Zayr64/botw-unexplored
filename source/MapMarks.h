@@ -33,6 +33,22 @@ namespace MapMarks
         float position[3];
     };
 
+    // A slot as the game holds it: the flag the game reads and the copy it saves.
+    struct Slot
+    {
+        int32_t icon = EmptyIcon, proxyIcon = EmptyIcon;
+        float position[3] = {EmptyX, 0.0f, 0.0f}, proxyPosition[3] = {EmptyX, 0.0f, 0.0f};
+    };
+
+    // Where the two arrays and their copies are, and what they hold.
+    struct State
+    {
+        std::vector<uint64_t> flagIcons, flagPositions, proxyIcons, proxyPositions; // the objects, by slot
+        std::vector<Slot> slots;
+        bool pinUsed[LastPin - FirstPin + 1] = {};
+        uint32_t valueOffsets[2] = {0, 0}; // of the value in Flag<s32> and Flag<Vector3f>
+    };
+
     struct Result
     {
         bool ok = false;
@@ -49,4 +65,15 @@ namespace MapMarks
     // expected; a write that fails half way is undone as far as possible.
     bool Add(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, int32_t icon,
              const float position[3], Result& result);
+
+    // Finds and reads both arrays and their copies (result.before: the marks shown; result.details: every slot used).
+    bool Load(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, State& state,
+              Result& result);
+
+    // zayr33 (test): read only. Looks in the game's heap for the place of each mark on the map (its x with its z
+    // near) outside the flags, to find the list the map screen draws from, which the game fills from the flags
+    // when an area loads (a pin written to the flags shows after the next loading). Every hit goes to result.details
+    // with the memory around it and the pointers into the game's code before it (the vtable of the object).
+    bool Probe(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, uint64_t heapBase,
+               uint64_t heapSize, Result& result);
 }

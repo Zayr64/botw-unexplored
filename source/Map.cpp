@@ -1,7 +1,9 @@
 #include "Map.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 #include <vector>
 #include <switch.h>
@@ -115,6 +117,20 @@ namespace
         return !ProgressIsCurrent() && ManualProgress::CanPersist();
     }
 
+    // What the pins did, kept between openings (log.txt starts again each time): sdmc:/switch/botw-unexplored/pins.txt
+    void PinLog(const std::string& what, const std::string& details)
+    {
+        FILE* file = std::fopen("sdmc:/switch/botw-unexplored/pins.txt", "a");
+        if (!file)
+            return;
+        const time_t now = std::time(nullptr);
+        char when[32] = "";
+        if (const struct tm* local = std::localtime(&now))
+            std::strftime(when, sizeof(when), "%d/%m %H:%M:%S", local);
+        std::fprintf(file, "== %s %s\n%s", when, what.c_str(), details.c_str());
+        std::fclose(file);
+    }
+
     // zayr32 (test): with the progress read live from the game, Y on a card puts a pin on the game's own map
     bool CanPinInGame()
     {
@@ -146,11 +162,32 @@ namespace
         const bool placed = MapMarks::Add(GameMemory::Reader(), GameMemory::MainBase(), layout, -1, position, result);
         GameMemory::Close();
         Log("PIN: Link's height " + std::string(hasLink ? "read" : "unknown") + "; " + result.details);
+        PinLog("pin, Link's height " + std::string(hasLink ? "read" : "unknown"), result.details);
         if (placed)
             Ui::Toast(Localization::Get(Text::ToastPinPlaced) + " (" + std::to_string(result.icon) + ", slot " +
                       std::to_string(result.slot) + ")");
         else
             Ui::Toast(Localization::Get(Text::ToastPinFailed) + ": " + result.error, true);
+    }
+
+    // zayr33 (test): RS while live looks for the marks of the game's map in its heap (read only), into pins.txt
+    void ProbeMapMarks()
+    {
+        std::string message;
+        if (GameMemory::Open(message) != GameMemory::Status::Ready)
+        {
+            Ui::Toast("Probe: " + message, true);
+            return;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        MapMarks::Result result;
+        const bool done = MapMarks::Probe(GameMemory::Reader(), GameMemory::MainBase(), LiveGameData::Botw160(),
+                                          GameMemory::HeapBase(), GameMemory::HeapSize(), result);
+        GameMemory::Close();
+        const int seconds = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count());
+        PinLog("probe, " + std::to_string(seconds) + " s", result.details);
+        Ui::Toast(done ? "Probe done (" + std::to_string(seconds) + " s): pins.txt" : "Probe: " + result.error, !done);
     }
 
     bool ResolveFound(Data::ObjectType type, uint32_t hash, bool foundInSave, bool& manualProgressChanged)
@@ -937,6 +974,10 @@ void Map::Update()
             }
         }
     }
+
+    // zayr33 (test): the right stick pressed, while live, looks for the map's own list of marks
+    if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_StickR) && CanPinInGame())
+        ProbeMapMarks();
 
     // "-" reads the progress again (the running game's, when the app was opened from the Album)
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_Minus))
