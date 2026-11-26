@@ -638,12 +638,6 @@ namespace
                 if (next)
                     hints.push_back({"A", next == 1 ? "what for" : "name", 3});
             }
-            if (app.tab == 3 && app.levelPlan && !app.levelRows.empty())
-            {
-                const LevelRow& row = app.levelRows[app.cursor[3]];
-                if (row.reveal == 0 && app.levelPlan->flags[row.index].kills == 0)
-                    hints.push_back({"A", "name", 3});
-            }
             if (app.tab == 0)
             {
                 const std::string other = DishToggleHint(app);
@@ -1471,12 +1465,11 @@ namespace
                 Rect(0, ry, ScreenW, lineH, RowOn);
             else if (i % 2)
                 Rect(0, ry, ScreenW, lineH, RowAlt);
-            const bool named = fs.kills > 0 || row.reveal > 0;
+            // Every enemy by name and picture, defeated or not (chosen on 25/11, as for the ranks above); the ones
+            // not defeated yet in grey.
             const char* label = NameOf(app, Crc32(f.actor));
-            if (named)
-                Icons::Enemy(f.actor, 24, ry + 1, 28);
-            Text(named ? Fit(label, 0.38f, colDefeated - 60 - 110) : std::string("Not defeated yet"), 60, ry + 21, 0.38f,
-                 named ? TextColor : TextDim);
+            Icons::Enemy(f.actor, 24, ry + 1, 28);
+            Text(Fit(label, 0.38f, colDefeated - 60 - 110), 60, ry + 21, 0.38f, fs.kills > 0 ? TextColor : TextDim);
             // Each counter stops at its limit (10 for most enemies): further kills add nothing.
             const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());
             Text(defeated, colDefeated, ry + 21, 0.38f,
@@ -1592,8 +1585,6 @@ int main()
             // With room for one dish, A shows the other (the cheapest as strong, or the yellow-heart dish).
             if ((down & HidNpadButton_A) && app.tab == 0)
                 app.dishPage = app.dishPage ? 0 : 1;
-            if ((down & HidNpadButton_A) && app.tab == 3 && !app.levelRows.empty())
-                app.levelRows[app.cursor[3]].reveal = 1;
             if ((down & HidNpadButton_A) && app.tab == 1 && !app.rows.empty())
             {
                 MaterialRow& row = app.rows[app.cursor[1]];
