@@ -5,43 +5,121 @@
 namespace
 {
     const std::string english[] = {
-        "Exit", "Choose another profile", "No save data found for that user", "Make sure you chose the correct profile.",
-        "BotW is running and could not be read", "Open this app once with BotW closed:", "it keeps a copy of the save to show while you play.",
-        "No", "Yes", "Master mode save file detected", "Would you like to load it?", "Legend", "B - close", "B - back", "Koroks",
-        "Shrines", "Hinoxes", "Taluses", "Moldugas", "Locations", "Y - mark as found",
-        "Press X: legend", "BotW is running.", "Loaded older save", "Press Y: master mode",
-        "Press Y: normal mode", "ZL/ZR: nearest  R: center  L: Link  (+): exit",
-        "Position", "Found", "Not found", "Object info", "Nearest missing", "Korok", "Shrine", "DLC Shrine", "Location", "Hinox", "Stone Talus", "Molduga", "Map", "Completed", "All chests", "Distance from Link",
-        "of Link", "of the last save", "Open", "Nearest", "At aim", "Link",
-        "Legend", "Sync", "Exit", "Back", "Photo", "Mark found",
-        "Previous / next", "Show / hide", "Close", "Select", "Master mode", "Normal mode",
-        "Zoom", "Map completion", "slot",
-        "Discovered", "Not discovered", "Not completed", "All chests opened", "Chests left", "Marked as found by you",
-        "Defeated", "Not defeated", "Korok seed", "Link is inside",
-        "Marked as found", "Synced with the game", "Synced with the game: nothing new", "Could not read the game", "Nothing under the aim", "Nothing missing in the categories shown",
-        "new", "of",
-        "Chests", "Armor & key items", "Rare weapons", "Rare materials",
-        "Treasure chest", "Special chest", "Not opened", "Opened",
-        "Hidden", "Contents", "A weapon", "A bow", "A shield", "Armor",
-        "Arrows", "A gem or ore", "Rupees", "A material", "Horse gear", "A key item",
-        "Reveal", "Show item", "Unlocks when its camp is cleared", "Shows up during a side quest",
-        "Breakable walls", "Breakable wall", "Broken", "Not broken",
-        "Progress", "Regions", "Tab", "Show region", "Whole map", "Unknown region",
-        "Quests", "World", "Collection",
-        "Main quests", "Shrine quests", "Side quests", "Main quests (DLC)", "Side quests (DLC)", "open",
-        "Towers", "Shrines completed", "Chests in shrines", "Great Fairies",
-        "Divine Beasts", "Chests in Divine Beasts", "Hyrule Compendium",
-        "All entries", "Creatures", "Monsters", "Materials", "Equipment", "Treasure",
-        "Armor", "Pieces", "The pieces that only amiibo give are not counted.",
-        "Memories", "quest", "quests", "later", "Common chests",
-        "Blood Moon", "in about", "tonight, in", "min of play", "not yet",
-        "Only play time in the world counts, not menus or cutscenes.",
-        "Hero's Path", "Scroll",
-        "Quests", "Quest", "Side quest", "Shrine quest", "Not taken yet", "Not available yet: something else first",
-        "Main quest", "In progress", "Where the game's marker for this step points",
-        "No marker in the game for this step: where the quest was taken",
-        "Tower", "Great Fairy Fountain", "Activated", "Not activated", "The fairy is awake", "The fairy sleeps",
-        "You already have it: not opened", "The horse god is awake", "The horse god sleeps"
+        "Exit", // Exit
+        "Choose another profile", // ChooseAnotherProfile
+        "No save data found for that user", // NoSaveDataTitle
+        "Make sure you chose the correct profile.", // NoSaveDataDescription
+        "BotW is running and could not be read", // GameRunningTitle
+        "Open this app once with BotW closed:", // GameRunningDescription
+        "it keeps a copy of the save to show while you play.", // GameRunningDescription2
+        "No", // No
+        "Legend", // Legend
+        "B - close", // Close
+        "Koroks", // Koroks
+        "Shrines", // Shrines
+        "Hinoxes", // Hinoxes
+        "Taluses", // Taluses
+        "Moldugas", // Moldugas
+        "Locations", // Locations
+        "Y - mark as found", // MarkFound
+        "Position", // Position
+        "Found", // Found
+        "Not found", // NotFound
+        "Object info", // ObjectInfo
+        "Nearest missing", // NextMissing
+        "Korok", // Korok
+        "Shrine", // Shrine
+        "DLC Shrine", // DLCShrine
+        "Location", // Location
+        "Hinox", // Hinox
+        "Stone Talus", // StoneTalus
+        "Molduga", // Molduga
+        "Map", // MapCompletion
+        "Completed", // ShrineCompleted
+        "of Link", // OfLink
+        "of the last save", // OfLastSave
+        "Open", // HintOpen
+        "Nearest", // HintNearest
+        "At aim", // HintAtAim
+        "Link", // HintLink
+        "Legend", // HintLegend
+        "Sync", // HintSync
+        "Exit", // HintExit
+        "Back", // HintBack
+        "Photo", // HintPhoto
+        "Mark found", // HintMarkFound
+        "Previous / next", // HintPreviousNext
+        "Show / hide", // HintShowHide
+        "Close", // HintClose
+        "Select", // HintSelect
+        "Master mode", // HintMasterMode
+        "Normal mode", // HintNormalMode
+        "Map completion", // MapCompletionLong
+        "Discovered", // Discovered
+        "Not discovered", // NotDiscovered
+        "Not completed", // NotCompleted
+        "All chests opened", // AllChestsOpened
+        "Chests left", // ChestsLeft
+        "Marked as found by you", // MarkedByYou
+        "Defeated", // Defeated
+        "Not defeated", // NotDefeated
+        "Korok seed", // KorokSeed
+        "Marked as found", // ToastMarked
+        "Synced with the game", // ToastSynced
+        "Synced with the game: nothing new", // ToastNoChange
+        "Could not read the game", // ToastSyncFailed
+        "Nothing under the aim", // ToastNothingHere
+        "Nothing missing in the categories shown", // ToastNothingMissing
+        "new", // NewSince
+        "of", // Of
+        "Chests", // Chests
+        "Armor & key items", // ArmorChests
+        "Rare weapons", // WeaponChests
+        "Rare materials", // MaterialChests
+        "Treasure chest", // TreasureChest
+        "Special chest", // SpecialChest
+        "Not opened", // NotOpened
+        "Opened", // Opened
+        "Unlocks when its camp is cleared", // ChestEnemyCamp
+        "Shows up during a side quest", // ChestSideQuest
+        "Breakable walls", // Walls
+        "Breakable wall", // BreakableWall
+        "Broken", // Broken
+        "Not broken", // NotBroken
+        "Towers", // Towers
+        "Chests in shrines", // ShrineChests
+        "Great Fairies", // GreatFairies
+        "Divine Beasts", // DivineBeasts
+        "Chests in Divine Beasts", // DivineBeastChests
+        "Hyrule Compendium", // Compendium
+        "Creatures", // Creatures
+        "Monsters", // Monsters
+        "Materials", // Materials
+        "Equipment", // Equipment
+        "Treasure", // Treasure
+        "Memories", // Memories
+        "quests", // QuestsToTake
+        "Blood Moon", // BloodMoon
+        "Hero's Path", // HeroPath
+        "Quests", // Quests
+        "Quest", // Quest
+        "Side quest", // SideQuestTitle
+        "Shrine quest", // ShrineQuestTitle
+        "Not taken yet", // QuestNotTaken
+        "Not available yet: something else first", // QuestNotYet
+        "Main quest", // MainQuestTitle
+        "In progress", // QuestInProgress
+        "Where the game's marker for this step points", // QuestMarkerHere
+        "No marker in the game for this step: where the quest was taken", // QuestNoMarker
+        "Tower", // Tower
+        "Great Fairy Fountain", // GreatFairy
+        "Activated", // TowerActivated
+        "Not activated", // TowerNotActivated
+        "The fairy is awake", // FairyAwake
+        "The fairy sleeps", // FairyAsleep
+        "You already have it: not opened", // ChestItemHad
+        "The horse god is awake", // HorseGodAwake
+        "The horse god sleeps", // HorseGodAsleep
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

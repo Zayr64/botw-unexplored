@@ -246,6 +246,8 @@ namespace
             return;
         }
 
+        texture->Count(static_cast<size_t>(kilobytes) * 1024);
+
         // Same corner order and texture coordinates as the low-resolution map, which is also loaded flipped.
         const MapHdGrid::Rect rect = MapHdGrid::ChunkRect(decoded.index);
         const glm::vec2 corners[4] = {

@@ -21,6 +21,7 @@
 #include "Graphics/InitGL.h"
 #include "Graphics/ShapeBatch.h"
 #include "Log.h"
+#include "Measure.h"
 #include "SwitchStyle.h"
 
 #include "Cook.h"
@@ -475,6 +476,7 @@ namespace
             text.append(buffer, n);
         fclose(f);
 
+        Measure::Step("cook-data read");
         app.cook.reset(new CookData());
         app.reserve.reset(new ReserveData());
         char error[160] = {};
@@ -485,6 +487,7 @@ namespace
             return false;
         }
 
+        Measure::Step("cook-data parsed");
         app.loaded = SaveSource::Load();
         if (app.loaded.kind == SaveSource::Kind::None || !app.save.Load(app.loaded.bytes.data(), app.loaded.bytes.size()))
         {
@@ -502,8 +505,10 @@ namespace
         Log("Max hearts (quarters):", app.maxHearts);
         Log("Max stamina:", app.maxStamina);
 
+        Measure::Step("save or game read");
         app.plan.reset(new ReservePlan());
         PlanReserve(*app.cook, *app.reserve, app.save, app.pouch.data(), app.pouchCount, *app.plan);
+        Measure::Step("reserve planned");
         {
             std::unique_ptr<LevelData> level(new LevelData());
             char levelError[160] = {};
@@ -563,8 +568,10 @@ namespace
         std::stable_sort(app.rows.begin(), app.rows.end(),
                          [](const MaterialRow& a, const MaterialRow& b) { return a.name < b.name; });
 
+        Measure::Step("tables");
         Compute(app);
         Log("Computed dishes, combinations:", app.evaluated);
+        Measure::Step("cooking (" + std::to_string(app.evaluated) + " combinations)");
         return true;
     }
 
@@ -1758,6 +1765,7 @@ namespace
 int main()
 {
     LogInit();
+    Measure::Start();
     Log("START: botw-compendium");
     appletLockExit();
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -1784,6 +1792,7 @@ int main()
     std::unique_ptr<ShapeBatch> shapes(new ShapeBatch());
     g_shapes = shapes.get();
     Icons::Init();
+    Measure::Step("EGL, font and icons ready");
 
     App app;
     bool ok = false;
@@ -1915,11 +1924,13 @@ int main()
         {
             Compute(app);
             app.computing = false;
+            Measure::Step("cooking again");
         }
         frame++;
         g_frame++;
     }
 
+    Measure::Step("exit");
     Log("SHUTDOWN");
     Icons::Destroy();
     shapes.reset();

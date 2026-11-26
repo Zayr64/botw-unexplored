@@ -139,7 +139,6 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         candidate.saveTime = GetSavefileTimestamp("save:/" + std::to_string(saveSlot) + "/caption.sav");
         CommitState(candidate);
         Map::m_GameRunningDialog->SetOpen(false);
-        Map::m_MasterModeDialog->SetOpen(false);
         Map::m_NoSavefileDialog->SetOpen(false);
         LoadHeroPath("save:/tracker/"); // the save is still mounted here
 
@@ -195,7 +194,6 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         // The game keeps the path in memory where this app does not read it: the copy of the last closed-game run.
         LoadHeroPath(ProfileFolder(candidate.accountUid1, candidate.accountUid2) + "/tracker/");
         Map::m_GameRunningDialog->SetOpen(false);
-        Map::m_MasterModeDialog->SetOpen(false);
         Map::m_NoSavefileDialog->SetOpen(false);
         return true;
     }

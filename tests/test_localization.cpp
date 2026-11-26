@@ -10,5 +10,5 @@ int main()
            Localization::GetObjectTypeName(Data::ObjectType::Shrine));
     assert(Localization::GetObjectTypeName(Data::ObjectType::Count) ==
            Localization::Get(Localization::Text::ObjectInfo));
-    assert(!Localization::Get(Localization::Text::ImageViewerBack).empty());
+    assert(!Localization::Get(Localization::Text::Exit).empty());
 }

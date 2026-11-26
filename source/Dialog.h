@@ -47,8 +47,7 @@ class Dialog
 public:
     enum DialogType {
         InvalidSavefile,
-        GameIsRunning,
-        MasterModeChoose
+        GameIsRunning
     };
 public:
     Dialog(glm::vec2 position, float width, float height, DialogType type);

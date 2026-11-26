@@ -54,19 +54,6 @@ Dialog::Dialog(glm::vec2 position, float width, float height, DialogType type)
         m_Description = "Please run this app at least once without BotW running";
         m_Description2 = "After that you can use it while playing.";
     }
-    else if (m_Type == DialogType::MasterModeChoose)
-    {
-        m_ExitButton = new Button(glm::vec2(buttonX, buttonY), exitButtonWidth, buttonHeight, "No");
-        m_ExitButton->m_Button.m_Color = Button::SelectedColor;//glm::vec4(197, 77, 77, 0.8f);
-
-        float button2Width = exitButtonWidth;
-        float button2X = bgRight - sideMargin - button2Width;
-        m_ChooseProfileButton = new Button(glm::vec2(button2X, buttonY), exitButtonWidth, buttonHeight, "Yes");
-        m_Title = "Master mode save file detected";
-        m_Description = "Would you like to load it?";
-
-        m_SelectedButton = 1;
-    }
 
     UpdateTexts();
     UpdateSelectedButton();
@@ -90,13 +77,6 @@ void Dialog::UpdateTexts()
         // Why the game's memory could not be read instead
         m_Note = SavefileIO::CurrentState.liveMessage.empty() ? std::string()
                : "(" + SavefileIO::CurrentState.liveMessage + ")";
-    }
-    else if (m_Type == DialogType::MasterModeChoose)
-    {
-        m_ExitButton->m_Text = Localization::Get(Localization::Text::No);
-        m_ChooseProfileButton->m_Text = Localization::Get(Localization::Text::Yes);
-        m_Title = Localization::Get(Localization::Text::MasterModeTitle);
-        m_Description = Localization::Get(Localization::Text::MasterModeDescription);
     }
 }
 bool Dialog::IsPositionOn(glm::vec2 position)
@@ -144,13 +124,7 @@ void Dialog::Update()
                     m_ExitButton->Click();
                     m_SelectedButton = 0;
 
-                    if (m_Type != DialogType::MasterModeChoose)
-                        Map::m_ShouldExit = true;
-                    else
-                    {
-                        m_IsOpen = false;
-                        Map::m_Legend->m_IsOpen = true;
-                    }
+                    Map::m_ShouldExit = true;
                 } else if (m_ChooseProfileButton && m_ChooseProfileButton->IsPositionOn(touchPosition))
                 {
                     m_ChooseProfileButton->Click();
@@ -164,8 +138,6 @@ void Dialog::Update()
                             Map::UpdateMapObjects();
                         }
                     }
-                    // else if (m_Type == DialogType::MasterModeChoose)
-                    //     Map::m_ShouldLoadMastermodeFile = true;
                 }
 
                 UpdateTexts();
@@ -202,14 +174,7 @@ void Dialog::Update()
         // Exit button
         if (m_SelectedButton == 0)
         {
-            if (m_Type != DialogType::MasterModeChoose)
-                Map::m_ShouldExit = true;
-            else
-            {
-                m_IsOpen = false;
-                Map::m_Legend->m_IsOpen = true;
-            }
-
+            Map::m_ShouldExit = true;
         }
         else if (m_SelectedButton == 1) {
             if (m_Type == DialogType::InvalidSavefile)
@@ -220,9 +185,6 @@ void Dialog::Update()
                     Map::UpdateMapObjects();
                 }
             }
-
-            // else if (m_Type == DialogType::MasterModeChoose)
-            //     Map::m_ShouldLoadMastermodeFile = true;
         }
     }
 }

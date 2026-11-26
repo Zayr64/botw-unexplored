@@ -40,7 +40,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE	:=	BotW Compendium
 APP_AUTHOR	:=	Zayr64
-APP_VERSION :=  0.1.18
+APP_VERSION :=  0.1.19
 
 TARGET		:=	botw-compendium
 BUILD		:=	build
@@ -106,7 +106,7 @@ export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 CFILES		:=	CheatService.c
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 CPPFILES	:=	$(filter-out Quad.cpp LineRenderer.cpp,$(CPPFILES))
-CPPFILES	:=	$(filter $(notdir $(wildcard app/*.cpp source/*.cpp)) Font.cpp ShapeBatch.cpp Shader.cpp Vertex.cpp Texture2D.cpp CompressedTexture.cpp Dds.cpp SwitchStyle.cpp stb_image.cpp Utf8.cpp ImageOverride.cpp LiveGameData.cpp GameMemory.cpp,$(CPPFILES))
+CPPFILES	:=	$(filter $(notdir $(wildcard app/*.cpp source/*.cpp)) Font.cpp ShapeBatch.cpp Shader.cpp Vertex.cpp Texture2D.cpp CompressedTexture.cpp Dds.cpp SwitchStyle.cpp stb_image.cpp Utf8.cpp ImageOverride.cpp LiveGameData.cpp GameMemory.cpp FreeMemory.cpp Measure.cpp,$(CPPFILES))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 

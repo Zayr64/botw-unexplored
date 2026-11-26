@@ -64,7 +64,7 @@ namespace
 
     bool ModalDialogOpen()
     {
-        return Map::m_NoSavefileDialog->m_IsOpen || Map::m_GameRunningDialog->m_IsOpen || Map::m_MasterModeDialog->m_IsOpen;
+        return Map::m_NoSavefileDialog->m_IsOpen || Map::m_GameRunningDialog->m_IsOpen;
     }
 
     // The legend or a card covers the left of the screen.
@@ -487,7 +487,6 @@ bool Map::Init()
     m_Legend = new Legend();
     m_NoSavefileDialog = new Dialog(glm::vec2(0.0f, 0.0f), 700.0f, 400.0f, Dialog::InvalidSavefile);
     m_GameRunningDialog = new Dialog(glm::vec2(0.0f, 0.0f), 700.0f, 400.0f, Dialog::GameIsRunning);
-    m_MasterModeDialog = new Dialog(glm::vec2(0.0f, 0.0f), 700.0f, 400.0f, Dialog::MasterModeChoose);
 
     // Below the chip that tells where the progress comes from
     m_MasterModeIcon.Create("romfs:/mastermodeicon.png");
@@ -1013,8 +1012,7 @@ void Map::Update()
                 m_PrevTouchCount = state.count;
                 const bool onDialog = (m_Legend->m_IsOpen && m_Legend->IsPositionOnLegend(uiTouch)) ||
                     (m_NoSavefileDialog->m_IsOpen && m_NoSavefileDialog->IsPositionOn(uiTouch)) ||
-                    (m_GameRunningDialog->m_IsOpen && m_GameRunningDialog->IsPositionOn(uiTouch)) ||
-                    (m_MasterModeDialog->m_IsOpen && m_MasterModeDialog->IsPositionOn(uiTouch));
+                    (m_GameRunningDialog->m_IsOpen && m_GameRunningDialog->IsPositionOn(uiTouch));
                 const bool onKorokCard = m_KorokDialog->m_IsOpen && m_KorokDialog->IsPositionOn(uiTouch);
                 const bool onObjectCard = m_ObjectInfo->m_IsOpen && m_ObjectInfo->IsPositionOn(uiTouch);
                 const bool onFooter = uiTouch.y < Ui::Bottom() + Ui::FooterHeight;
@@ -1059,8 +1057,6 @@ void Map::Update()
         m_NoSavefileDialog->Update();
     if (m_GameRunningDialog->m_IsOpen)
         m_GameRunningDialog->Update();
-    if (m_MasterModeDialog->m_IsOpen)
-        m_MasterModeDialog->Update();
 
     // Update objects
     if (SavefileIO::LoadedSavefile)
@@ -1235,8 +1231,6 @@ void Map::Render()
         m_NoSavefileDialog->Render();
     if (m_GameRunningDialog->m_IsOpen)
         m_GameRunningDialog->Render();
-    if (m_MasterModeDialog->m_IsOpen)
-        m_MasterModeDialog->Render();
 
     if (m_ImageViewer->IsOpen())
     {
@@ -1324,8 +1318,6 @@ void Map::Destroy()
     m_NoSavefileDialog = nullptr;
     delete m_GameRunningDialog;
     m_GameRunningDialog = nullptr;
-    delete m_MasterModeDialog;
-    m_MasterModeDialog = nullptr;
     delete m_KorokDialog;
     m_KorokDialog = nullptr;
     delete m_ObjectInfo;
@@ -1565,4 +1557,3 @@ ObjectInfo* Map::m_ObjectInfo;
 ImageViewer* Map::m_ImageViewer;
 Dialog* Map::m_NoSavefileDialog;
 Dialog* Map::m_GameRunningDialog;
-Dialog* Map::m_MasterModeDialog;

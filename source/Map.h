@@ -136,5 +136,4 @@ namespace Map
     extern ImageViewer* m_ImageViewer;
     extern Dialog* m_NoSavefileDialog;
     extern Dialog* m_GameRunningDialog;
-    extern Dialog* m_MasterModeDialog;
 };

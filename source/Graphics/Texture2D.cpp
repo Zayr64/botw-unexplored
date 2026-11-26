@@ -10,9 +10,25 @@
 #include <unistd.h>
 #include <vector>
 
+namespace
+{
+	size_t s_LiveBytes = 0;
+}
+
 Texture2D::Texture2D()
 {
 
+}
+
+void Texture2D::Count(size_t bytes)
+{
+	s_LiveBytes = s_LiveBytes - m_Bytes + bytes;
+	m_Bytes = bytes;
+}
+
+size_t Texture2D::LiveBytes()
+{
+	return s_LiveBytes;
 }
 
 Texture2D::Texture2D(const std::string& filepath)
@@ -50,6 +66,10 @@ void Texture2D::Load(const std::string& filepath)
 				m_Width = info.width;
 				m_Height = info.height;
 				m_NrChannels = 3;
+				size_t bytes = 0;
+				for (int i = 0; i < info.levelCount; i++)
+					bytes += info.levels[i].size;
+				Count(bytes);
 				Log("Texture BC1", ddsPath);
 				return;
 			}
@@ -86,6 +106,8 @@ void Texture2D::Load(const std::string& filepath)
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 		glGenerateMipmap(GL_TEXTURE_2D);
+		// Four bytes a pixel on the GPU, a third more for the mipmaps
+		Count(static_cast<size_t>(m_Width) * m_Height * 4 * 4 / 3);
 		if (overridden)
 		{
 			m_Width = logicalWidth;
@@ -116,6 +138,7 @@ void Texture2D::Unbind()
 
 Texture2D::~Texture2D()
 {
+    Count(0);
     if (m_Texture != 0)
     {
         glDeleteTextures(1, &m_Texture);

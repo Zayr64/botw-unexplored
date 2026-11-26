@@ -22,6 +22,7 @@
 #include "Legend.h"
 #include "Localization.h"
 #include "Log.h"
+#include "Measure.h"
 #include "MapObject.hpp"
 #include "Settings.h"
 #include "ManualProgress.h"
@@ -189,6 +190,7 @@ void cleanUp()
 int main()
 {
     LogInit();
+    Measure::Start();
     Log("START: main");
 
     // To be able to run memory cleanup when the app closes
@@ -212,6 +214,7 @@ int main()
     else
         romfsInitialized = true;
     Log("START: RomFS complete");
+    Measure::Step("romfs");
 
     // Configure our supported input layout: a single player with standard controller styles
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -231,6 +234,7 @@ int main()
     // Load OpenGL routines using glad
     gladLoadGL();
     Log("START: GL loader complete");
+    Measure::Step("EGL and GL");
 
     // OpenGL config
     glEnable(GL_BLEND);
@@ -248,6 +252,7 @@ int main()
         return EXIT_FAILURE;
     }
     Map::m_Pad = &pad;
+    Measure::Step("map, icons and font");
 
     // Load settings if they exist. Legacy settings are immediately rewritten in the versioned format.
     std::ifstream settingsFile("sdmc:/switch/botw-unexplored/settings.txt");
@@ -315,8 +320,10 @@ int main()
         {
             hasLoadedSave = true;
             // With the game running behind the app, its own progress (and mode) is read from memory.
+            Measure::Step("first frame");
             const bool loadSucceeded = SavefileIO::LoadGamesave(false, false, true);
             Log("LoadGamesave() status:", loadSucceeded ? "true" : "false");
+            Measure::Step("save or game read");
             if (loadSucceeded)
             {
                 Map::m_LoadMasterMode = SavefileIO::MasterModeFileLoaded;
@@ -326,6 +333,7 @@ int main()
                               SavefileIO::CurrentState.liveMessage, true);
                 MigrateLegacyKorokProgress();
             }
+            Measure::Step("map objects");
 
         }
 
@@ -340,6 +348,7 @@ int main()
         hasDoneFirstDraw = true;
     }
 
+    Measure::Step("exit");
     Log("Exiting...");
 
     cleanUp();
