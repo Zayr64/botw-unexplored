@@ -25,8 +25,5 @@ namespace GameMemory
 
     // Valid between a successful Open and Close.
     uint64_t MainBase();
-    // The game's heap (for MapMarks::Probe).
-    uint64_t HeapBase();
-    uint64_t HeapSize();
     LiveGameData::Memory& Reader();
 }

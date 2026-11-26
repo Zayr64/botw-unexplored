@@ -305,222 +305,281 @@ bool MapMarks::Add(Memory& memory, uint64_t mainBase, const Layout& layout, int3
 
 namespace
 {
-    // Static: the app may run from the Album with little memory.
-    constexpr size_t ProbeChunk = 0x100000;
-    uint8_t s_ProbeChunk[ProbeChunk + 64];
+    // zayr35: the marks as the map screen holds them (BotW 1.6.0, main 8E9978D50BDD20B4). Where and what, from
+    // igawa6/eden-duo-companions (native/modules/botw_map_offsets.h, botw_map_pins.h, botw_map_special.h), a module of
+    // the Eden emulator that reads and edits these marks; the dumps of 26/11 on this console agree with it (the three
+    // vtables of the marks, the size of a pin and of a stamp, the index of a pin).
+    constexpr uint64_t ScreenManagerPointer = 0x2CA63B0; // main+: the map screen's manager of marks
+    constexpr uint64_t ScreenManagerVtable = 0x2B86848;
+    constexpr uint64_t ScreenControlPointer = 0x2CA63B8; // main+: the screen's control, which points at the manager
+    constexpr uint64_t ScreenControlVtable = 0x2B8AAD8;
+    constexpr uint64_t ControlManagerOffset = 0x8D8;
+    constexpr uint64_t MedallionOffset = 0x480; // the Travel Medallion's mark (icon 42)
+    constexpr uint64_t StampsOffset = 0x610;    // sead::PtrArray of the 100 stamps
+    constexpr uint64_t FreeStampOffset = 0x650; // the first stamp not on the map
+    constexpr uint64_t PinsOffset = 0x658;      // sead::PtrArray of the 5 pins
+    constexpr uint64_t ProjectionOffset = 0x878, Projection2Offset = 0x8B0;
+    constexpr uint64_t PinVtable = 0x2B866B0, StampVtable = 0x2B874F0, MedallionVtable = 0x2B875E8;
+    constexpr int ScreenPins = 5, ScreenStamps = 100;
+    constexpr size_t PinSize = 0x80, StampSize = 0x50, MedallionRead = 0x100, RecordRead = 0x100;
+    // A mark: +0x08 the record the game makes to show it (null: not on the map), +0x1C its icon, +0x20 and +0x24 its
+    // cell in a grid of 250 units, +0x28 where it is, +0x3C state bits (0x10: on the map), +0x40 its index
+    constexpr size_t RecordAt = 0x08, IconAt = 0x1C, CellAt = 0x20, PositionAt = 0x28, StateAt = 0x3C, IndexAt = 0x40;
+    constexpr uint32_t StateShown = 0x10;
+    constexpr uint64_t MainSpan = 0x4000000;
 
-    bool Near(uint64_t address, const std::vector<uint64_t>& objects, uint64_t span)
+    struct ScreenMark
     {
-        for (const uint64_t object : objects)
-            if (address >= object && address < object + span)
-                return true;
-        return false;
+        uint8_t bytes[MedallionRead];
+        uint64_t vtable, record;
+        int32_t icon, cell[2], index;
+        float position[3];
+        uint32_t state;
+    };
+
+    bool ReadScreenMark(Memory& memory, uint64_t address, size_t size, ScreenMark& mark)
+    {
+        std::memset(&mark, 0, sizeof(mark));
+        if (address == 0 || size > sizeof(mark.bytes) || !memory.Read(address, mark.bytes, size))
+            return false;
+        mark.vtable = U64(mark.bytes);
+        mark.record = U64(mark.bytes + RecordAt);
+        std::memcpy(&mark.icon, mark.bytes + IconAt, 4);
+        std::memcpy(mark.cell, mark.bytes + CellAt, 8);
+        std::memcpy(mark.position, mark.bytes + PositionAt, 12);
+        std::memcpy(&mark.state, mark.bytes + StateAt, 4);
+        std::memcpy(&mark.index, mark.bytes + IndexAt, 4);
+        return true;
     }
 
-    // Goes through the heap a megabyte at a time (64 KB at a time where part is not mapped), calling `visit` with
-    // each block read. Returns how many 64 KB blocks could not be read.
-    template <typename Visit>
-    int WalkHeap(Memory& memory, uint64_t heapBase, uint64_t heapSize, Visit visit)
+    // main+X for a pointer into the game's code, the address otherwise
+    std::string Where(uint64_t value, uint64_t mainBase)
     {
-        int unreadable = 0;
-        for (uint64_t chunk = 0; chunk < heapSize; chunk += ProbeChunk)
+        char text[40];
+        if (value >= mainBase && value < mainBase + MainSpan)
+            std::snprintf(text, sizeof(text), "main+%llx", static_cast<unsigned long long>(value - mainBase));
+        else
+            std::snprintf(text, sizeof(text), "%llx", static_cast<unsigned long long>(value));
+        return text;
+    }
+
+    void DumpBytes(const uint8_t* bytes, size_t size, std::string& out)
+    {
+        for (size_t line = 0; line < size; line += 32)
         {
-            const uint64_t address = heapBase + chunk;
-            const size_t size = static_cast<size_t>(std::min<uint64_t>(ProbeChunk, heapSize - chunk));
-            if (memory.Read(address, s_ProbeChunk, size))
+            Append(out, "  +%03zx:", line);
+            for (size_t word = line; word < line + 32 && word + 4 <= size; word += 4)
             {
-                visit(address, s_ProbeChunk, size);
-                continue;
+                uint32_t value;
+                std::memcpy(&value, bytes + word, 4);
+                Append(out, " %08x", value);
             }
-            for (size_t part = 0; part < size; part += 0x10000)
-            {
-                const size_t length = std::min<size_t>(0x10000, size - part);
-                if (memory.Read(address + part, s_ProbeChunk, length))
-                    visit(address + part, s_ProbeChunk, length);
-                else
-                    ++unreadable;
-            }
+            out += "\n";
         }
-        return unreadable;
     }
 
-    void Dump(Memory& memory, uint64_t at, int from, int to, std::string& out)
+    // One line for a mark, its bytes when asked, and the record it points at.
+    void DescribeMark(Memory& memory, uint64_t mainBase, const char* kind, int number, uint64_t address,
+                      const ScreenMark& mark, size_t size, bool dump, std::string& out)
     {
-        uint32_t words[8];
-        for (int line = from; line < to; line += 32)
-            if (memory.Read(at + line, words, sizeof(words)))
-            {
-                Append(out, "  %+5d:", line);
-                for (const uint32_t word : words)
-                    Append(out, " %08x", word);
-                out += "\n";
-            }
+        if (number >= 0)
+            Append(out, "%s %d", kind, number);
+        else
+            out += kind;
+        Append(out, " at %llx: vtable %s, icon %d, cell %d %d, at %.2f %.2f %.2f, state 0x%x, index %d, record %llx",
+               static_cast<unsigned long long>(address), Where(mark.vtable, mainBase).c_str(), static_cast<int>(mark.icon),
+               static_cast<int>(mark.cell[0]), static_cast<int>(mark.cell[1]), mark.position[0], mark.position[1],
+               mark.position[2], static_cast<unsigned>(mark.state), static_cast<int>(mark.index),
+               static_cast<unsigned long long>(mark.record));
+        if (mark.state & StateShown)
+        {
+            const int cellX = static_cast<int>(std::floor((mark.position[0] + 5000.0f) / 250.0f));
+            const int cellZ = static_cast<int>(std::floor((mark.position[2] + 4000.0f) / 250.0f));
+            if (cellX != mark.cell[0] || cellZ != mark.cell[1])
+                Append(out, " (the grid of 250 gives %d %d)", cellX, cellZ);
+        }
+        out += "\n";
+        if (dump)
+            DumpBytes(mark.bytes, size, out);
+        if (mark.record == 0)
+            return;
+        uint8_t record[RecordRead];
+        if (!memory.Read(mark.record, record, sizeof(record)))
+        {
+            Append(out, "  record at %llx: could not be read\n", static_cast<unsigned long long>(mark.record));
+            return;
+        }
+        Append(out, "  record at %llx: first word %s\n", static_cast<unsigned long long>(mark.record),
+               Where(U64(record), mainBase).c_str());
+        DumpBytes(record, sizeof(record), out);
     }
+
+    struct Shown
+    {
+        std::string name; // "pin 1", "stamp 0", "the medallion"
+        int32_t icon;
+        float position[3];
+        bool inFlags;
+    };
 }
 
-bool MapMarks::Probe(Memory& memory, uint64_t mainBase, const Layout& layout, uint64_t heapBase, uint64_t heapSize,
-                     Result& result)
+bool MapMarks::ReadScreen(Memory& memory, uint64_t mainBase, const Layout& layout, Result& result)
 {
     result = Result();
     State state;
-    if (!Load(memory, mainBase, layout, state, result))
-        return false;
-    if (result.before.empty())
-        return Fail(result, "the game's map has no mark to look for");
-    if (heapSize == 0 || heapSize > 0x200000000ULL)
-        return Fail(result, "the game's heap is not known");
+    const bool flagsRead = Load(memory, mainBase, layout, state, result);
+    if (!flagsRead)
+        result.details += "(the flags could not be read: the screen alone)\n";
+    const std::vector<Mark> flags = result.before;
 
-    struct Pattern
-    {
-        uint32_t x, z;
-        int32_t icon;
-        int slot;
-    };
-    std::vector<Pattern> patterns;
-    for (const Mark& mark : result.before)
-    {
-        Pattern pattern;
-        std::memcpy(&pattern.x, &mark.position[0], 4);
-        std::memcpy(&pattern.z, &mark.position[2], 4);
-        pattern.icon = mark.icon;
-        pattern.slot = mark.slot;
-        patterns.push_back(pattern);
-    }
-    Append(result.details, "probe 2: heap %llx, %llu MB; %zu marks\n", static_cast<unsigned long long>(heapBase),
-           static_cast<unsigned long long>(heapSize >> 20), patterns.size());
-
-    // Pass 1: the x of each mark with its z within 32 bytes
-    struct Found
-    {
-        uint64_t address;
-        size_t pattern;
-        int zAt;
-    };
-    std::vector<Found> found;
-    constexpr size_t MaxFound = 4000;
-    const int unreadable = WalkHeap(memory, heapBase, heapSize, [&](uint64_t address, const uint8_t* bytes, size_t size) {
-        for (size_t offset = 0; offset + 4 <= size && found.size() < MaxFound; offset += 4)
+    int failed = 0;
+    auto check = [&](bool passed, const std::string& what) {
+        if (!passed)
         {
-            uint32_t word;
-            std::memcpy(&word, bytes + offset, 4);
-            for (size_t k = 0; k < patterns.size(); ++k)
-            {
-                if (word != patterns[k].x)
-                    continue;
-                int zAt = 0;
-                for (int d = -32; d <= 32 && zAt == 0; d += 4)
-                {
-                    const long at = static_cast<long>(offset) + d;
-                    if (d == 0 || at < 0 || static_cast<size_t>(at) + 4 > size)
-                        continue;
-                    uint32_t other;
-                    std::memcpy(&other, bytes + at, 4);
-                    if (other == patterns[k].z)
-                        zAt = d;
-                }
-                if (zAt != 0)
-                    found.push_back({address + offset, k, zAt});
-            }
+            ++failed;
+            Append(result.details, "check failed: %s\n", what.c_str());
         }
-    });
-    Append(result.details, "pass 1: %zu hits, %d unreadable 64 KB blocks\n", found.size(), unreadable);
+        return passed;
+    };
 
-    // Each hit: the mark's icon near it, and the object it is in (the nearest pointer into the code before it)
-    std::vector<uint64_t> objects; // of the hits with the icon near, for pass 2
-    uint64_t lastDumpedPage = ~0ULL;
-    int lines = 0;
-    for (size_t i = 0; i < found.size() && lines < 600; ++i)
+    uint64_t manager = 0, managerVtable = 0;
+    if (!memory.Read(mainBase + ScreenManagerPointer, &manager, sizeof(manager)) || manager == 0 ||
+        !memory.Read(manager, &managerVtable, sizeof(managerVtable)))
+        return Fail(result, "the game's map screen was not found");
+    Append(result.details, "map screen: manager at %llx, vtable %s\n", static_cast<unsigned long long>(manager),
+           Where(managerVtable, mainBase).c_str());
+    if (managerVtable != mainBase + ScreenManagerVtable)
+        return Fail(result, "the game's map screen does not look as expected");
+
+    // The screen's control and the map's projection: only told, nothing depends on them
+    uint64_t control = 0, controlVtable = 0, controlManager = 0;
+    if (memory.Read(mainBase + ScreenControlPointer, &control, sizeof(control)) && control != 0 &&
+        memory.Read(control, &controlVtable, sizeof(controlVtable)) &&
+        memory.Read(control + ControlManagerOffset, &controlManager, sizeof(controlManager)))
+        Append(result.details, "control at %llx: vtable %s (expected main+%llx), +0x8d8 the manager: %s\n",
+               static_cast<unsigned long long>(control), Where(controlVtable, mainBase).c_str(),
+               static_cast<unsigned long long>(ScreenControlVtable), controlManager == manager ? "yes" : "no");
+    else
+        Append(result.details, "control: not there (%llx)\n", static_cast<unsigned long long>(control));
+    float projection[6];
+    if (memory.Read(manager + ProjectionOffset, projection, 16) && memory.Read(manager + Projection2Offset, projection + 4, 8))
+        Append(result.details, "projection: %g %g %g %g; %g %g\n", projection[0], projection[1], projection[2],
+               projection[3], projection[4], projection[5]);
+
+    std::vector<Shown> shown;
+    auto note = [&](const std::string& name, const ScreenMark& mark) {
+        if (mark.state & StateShown)
+            shown.push_back({name, mark.icon, {mark.position[0], mark.position[1], mark.position[2]}, false});
+    };
+
+    // The five pins
+    PtrArray pins = {};
+    std::vector<uint64_t> pinList;
+    if (check(memory.Read(manager + PinsOffset, &pins, sizeof(pins)), "the pins could not be read") &&
+        check(pins.size == ScreenPins && pins.capacity == ScreenPins && pins.data != 0, "there are not five pins"))
     {
-        const Found& hit = found[i];
-        const Pattern& pattern = patterns[hit.pattern];
-        const bool known = Near(hit.address, state.flagPositions, 0x48) || Near(hit.address, state.proxyPositions, 0x20);
-        int iconAt = 0;
-        uint32_t near[32]; // 64 bytes before and after
-        if (!known && memory.Read(hit.address - 64, near, sizeof(near)))
-            for (int d = 4; d <= 60 && iconAt == 0; d += 4)
-            {
-                if (static_cast<int32_t>(near[16 - d / 4]) == pattern.icon)
-                    iconAt = -d;
-                else if (d < 64 && 16 + d / 4 < 32 && static_cast<int32_t>(near[16 + d / 4]) == pattern.icon)
-                    iconAt = d;
-            }
-        uint64_t object = 0, vtable = 0;
-        uint64_t before[32]; // 256 bytes before
-        const uint64_t aligned = hit.address & ~7ULL;
-        if (!known && memory.Read(aligned - sizeof(before), before, sizeof(before)))
-            for (int k = 31; k >= 0 && object == 0; --k)
-                if (before[k] >= mainBase && before[k] < mainBase + 0x4000000)
-                {
-                    object = aligned - sizeof(before) + static_cast<uint64_t>(k) * 8;
-                    vtable = before[k];
-                }
-        Append(result.details, "hit %zu: slot %d (icon %d) at %llx, z at %+d%s", i + 1, pattern.slot,
-               static_cast<int>(pattern.icon), static_cast<unsigned long long>(hit.address), hit.zAt,
-               known ? ", the flag or its copy\n" : "");
-        ++lines;
-        if (known)
+        pinList.assign(ScreenPins, 0);
+        if (!check(memory.Read(pins.data, pinList.data(), pinList.size() * 8), "the pins' pointers could not be read"))
+            pinList.clear();
+    }
+    Append(result.details, "pins: %d of %d at %llx\n", static_cast<int>(pins.size), static_cast<int>(pins.capacity),
+           static_cast<unsigned long long>(pins.data));
+    for (size_t i = 0; i < pinList.size(); ++i)
+    {
+        const std::string name = "pin " + std::to_string(i);
+        ScreenMark mark;
+        if (!check(ReadScreenMark(memory, pinList[i], PinSize, mark), name + " could not be read"))
             continue;
-        if (iconAt != 0)
-            Append(result.details, ", icon at %+d", iconAt);
-        if (object != 0)
-            Append(result.details, ", in an object at %+lld (main+%llx)",
-                   static_cast<long long>(object) - static_cast<long long>(hit.address),
-                   static_cast<unsigned long long>(vtable - mainBase));
-        result.details += "\n";
-        if (iconAt != 0 && object != 0 && objects.size() < 24 &&
-            std::find(objects.begin(), objects.end(), object) == objects.end())
-            objects.push_back(object);
-        // The memory around: for the first hit of each 64 KB, and for every one with the icon near
-        const uint64_t page = hit.address >> 16;
-        if (page != lastDumpedPage || iconAt != 0)
-        {
-            lastDumpedPage = page;
-            Dump(memory, hit.address, -128, 128, result.details);
-            lines += 8;
-        }
+        check(mark.vtable == mainBase + PinVtable, name + "'s vtable");
+        check(mark.index == static_cast<int32_t>(i), name + "'s index");
+        DescribeMark(memory, mainBase, "pin", static_cast<int>(i), pinList[i], mark, PinSize, true, result.details);
+        note(name, mark);
     }
 
-    // Pass 2: who points at those objects (the list of the map screen's marks, if they are in one)
-    if (!objects.empty())
+    // The stamps: those on the map or ever used, the first free one
+    PtrArray stamps = {};
+    std::vector<uint64_t> stampList;
+    if (check(memory.Read(manager + StampsOffset, &stamps, sizeof(stamps)), "the stamps could not be read") &&
+        check(stamps.size == ScreenStamps && stamps.capacity == ScreenStamps && stamps.data != 0,
+              "there are not 100 stamps"))
     {
-        struct Pointer
-        {
-            uint64_t address;
-            size_t object;
-        };
-        std::vector<Pointer> pointers;
-        WalkHeap(memory, heapBase, heapSize, [&](uint64_t address, const uint8_t* bytes, size_t size) {
-            for (size_t offset = 0; offset + 8 <= size && pointers.size() < 200; offset += 8)
-            {
-                uint64_t word;
-                std::memcpy(&word, bytes + offset, 8);
-                for (size_t k = 0; k < objects.size(); ++k)
-                    if (word == objects[k])
-                        pointers.push_back({address + offset, k});
-            }
-        });
-        Append(result.details, "pass 2: %zu objects, %zu pointers to them\n", objects.size(), pointers.size());
-        for (size_t i = 0; i < objects.size(); ++i)
-        {
-            Append(result.details, "object %zu at %llx:\n", i + 1, static_cast<unsigned long long>(objects[i]));
-            Dump(memory, objects[i], -64, 256, result.details);
-        }
-        for (const Pointer& pointer : pointers)
-        {
-            Append(result.details, "pointer to object %zu at %llx\n", pointer.object + 1,
-                   static_cast<unsigned long long>(pointer.address));
-            Dump(memory, pointer.address, -64, 64, result.details);
-            uint64_t before[16];
-            if (memory.Read(pointer.address - sizeof(before), before, sizeof(before)))
-                for (int k = 15; k >= 0; --k)
-                    if (before[k] >= mainBase && before[k] < mainBase + 0x4000000)
-                    {
-                        Append(result.details, "  main+%llx at %+d\n",
-                               static_cast<unsigned long long>(before[k] - mainBase), (k - 16) * 8);
-                        break;
-                    }
-        }
+        stampList.assign(ScreenStamps, 0);
+        if (!check(memory.Read(stamps.data, stampList.data(), stampList.size() * 8),
+                   "the stamps' pointers could not be read"))
+            stampList.clear();
     }
+    uint64_t freeStamp = 0;
+    memory.Read(manager + FreeStampOffset, &freeStamp, sizeof(freeStamp));
+    std::string stampLines;
+    int onMap = 0, freeIndex = -1, firstNotShown = -1, badVtables = 0;
+    for (size_t j = 0; j < stampList.size(); ++j)
+    {
+        ScreenMark mark;
+        if (!ReadScreenMark(memory, stampList[j], StampSize, mark) || mark.vtable != mainBase + StampVtable)
+        {
+            ++badVtables;
+            continue;
+        }
+        const bool isShown = (mark.state & StateShown) != 0;
+        if (isShown)
+            ++onMap;
+        else if (firstNotShown < 0)
+            firstNotShown = static_cast<int>(j);
+        if (stampList[j] == freeStamp)
+            freeIndex = static_cast<int>(j);
+        if (isShown || mark.record != 0 || mark.state != 0 || mark.position[0] > EmptyX)
+            DescribeMark(memory, mainBase, "stamp", static_cast<int>(j), stampList[j], mark, StampSize,
+                         isShown || mark.record != 0, stampLines);
+        note("stamp " + std::to_string(j), mark);
+    }
+    check(badVtables == 0, std::to_string(badVtables) + " stamps could not be read or have another vtable");
+    Append(result.details, "stamps: %d of %d at %llx; %d on the map; the first free one (%llx) is stamp %d, the first "
+                           "not on the map stamp %d\n",
+           static_cast<int>(stamps.size), static_cast<int>(stamps.capacity), static_cast<unsigned long long>(stamps.data),
+           onMap, static_cast<unsigned long long>(freeStamp), freeIndex, firstNotShown);
+    result.details += stampLines;
+
+    // The Travel Medallion
+    uint64_t medallion = 0;
+    ScreenMark mark;
+    if (check(memory.Read(manager + MedallionOffset, &medallion, sizeof(medallion)) &&
+                  ReadScreenMark(memory, medallion, MedallionRead, mark),
+              "the medallion could not be read"))
+    {
+        check(mark.vtable == mainBase + MedallionVtable, "the medallion's vtable");
+        check(mark.icon == 42, "the medallion's icon");
+        DescribeMark(memory, mainBase, "the medallion", -1, medallion, mark, MedallionRead, true, result.details);
+        note("the medallion", mark);
+    }
+
+    // Which marks of the flags the screen has (a pin the app wrote shows after a loading)
+    if (flagsRead)
+    {
+        for (const Mark& flag : flags)
+        {
+            const Shown* match = nullptr;
+            for (Shown& screen : shown)
+                if (!screen.inFlags && screen.icon == flag.icon && std::fabs(screen.position[0] - flag.position[0]) < 0.5f &&
+                    std::fabs(screen.position[2] - flag.position[2]) < 0.5f)
+                {
+                    screen.inFlags = true;
+                    match = &screen;
+                    break;
+                }
+            Append(result.details, "flag slot %d (icon %d): %s%s\n", flag.slot, static_cast<int>(flag.icon),
+                   match ? "on the map screen as " : "not on the map screen", match ? match->name.c_str() : "");
+        }
+        for (const Shown& screen : shown)
+            if (!screen.inFlags)
+                Append(result.details, "%s (icon %d): on the map screen, not in the flags\n", screen.name.c_str(),
+                       static_cast<int>(screen.icon));
+    }
+    if (failed == 0)
+        result.details += "checks: all passed\n";
+    else
+        Append(result.details, "checks: %d failed\n", failed);
+    result.failedChecks = failed;
+    result.error.clear();
     result.ok = true;
     return true;
 }

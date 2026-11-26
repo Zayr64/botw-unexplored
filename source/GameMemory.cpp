@@ -12,7 +12,6 @@ namespace
     constexpr uint64_t BotwTitleId = 0x01007EF00011E000ULL;
 
     uint64_t s_MainBase = 0;
-    uint64_t s_HeapBase = 0, s_HeapSize = 0;
 
     class CheatServiceReader : public LiveGameData::Memory
     {
@@ -86,8 +85,6 @@ GameMemory::Status GameMemory::Open(std::string& message)
     }
 
     s_MainBase = metadata.main_nso.base;
-    s_HeapBase = metadata.heap.base;
-    s_HeapSize = metadata.heap.size;
     message.clear();
     return Status::Ready;
 }
@@ -103,15 +100,6 @@ uint64_t GameMemory::MainBase()
     return s_MainBase;
 }
 
-uint64_t GameMemory::HeapBase()
-{
-    return s_HeapBase;
-}
-
-uint64_t GameMemory::HeapSize()
-{
-    return s_HeapSize;
-}
 
 LiveGameData::Memory& GameMemory::Reader()
 {

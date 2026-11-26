@@ -57,6 +57,7 @@ namespace MapMarks
         std::vector<Mark> before; // the marks on the map before
         int slot = -1;            // where the new one went
         int32_t icon = EmptyIcon;
+        int failedChecks = 0;     // ReadScreen
     };
 
     // Puts a mark on the game's map at `position` (game coordinates x, y, z): `icon`, or with -1 the first pin that is
@@ -70,11 +71,9 @@ namespace MapMarks
     bool Load(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, State& state,
               Result& result);
 
-    // zayr33 (test): read only. Looks in the game's heap for the place of each mark on the map (its x with its z
-    // near) outside the flags, to find the list the map screen draws from, which the game fills from the flags
-    // when an area loads (a pin written to the flags shows after the next loading). Every hit goes to result.details
-    // with the mark's icon when it is near and the object it is in (the nearest pointer into the game's code before
-    // it); then, in a second pass, who points at those objects (zayr34).
-    bool Probe(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, uint64_t heapBase,
-               uint64_t heapSize, Result& result);
+    // zayr35 (test): read only. The marks as the map screen holds them, which it fills from the flags when an area
+    // loads: the five pins, the stamps and the Travel Medallion, each with the record the game makes to show it, every
+    // check that the source of these offsets makes (igawa6/eden-duo-companions, for 1.6.0), and which marks of the
+    // flags the screen has. Into result.details; false when the screen's manager is not found.
+    bool ReadScreen(LiveGameData::Memory& memory, uint64_t mainBase, const LiveGameData::Layout& layout, Result& result);
 }

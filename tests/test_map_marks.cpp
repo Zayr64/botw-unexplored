@@ -1,5 +1,6 @@
 // MapMarks (zayr32 test): a pin on the running game's map, written to the Flag<T> objects and to their proxies.
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -201,43 +202,139 @@ namespace
         std::printf("no marks ok\n");
     }
 
-    void TestProbe()
+    // A map screen as the game holds it: the manager, five pins, 100 stamps, the medallion, and the screen's control.
+    struct FakeScreen
+    {
+        uint64_t manager, pins, stamps, medallion, control, records;
+    };
+
+    void PutMark(FakeGame& game, uint64_t at, uint64_t vtable, int32_t icon, int32_t index, float x, float y, float z,
+                 uint32_t state, uint64_t record)
+    {
+        game.memory.Map(at, 0x100);
+        game.memory.Put<uint64_t>(at, vtable);
+        game.memory.Put<uint64_t>(at + 0x08, record);
+        game.memory.Put<int32_t>(at + 0x1C, icon);
+        game.memory.Put<int32_t>(at + 0x20, static_cast<int32_t>(std::floor((x + 5000.0f) / 250.0f)));
+        game.memory.Put<int32_t>(at + 0x24, static_cast<int32_t>(std::floor((z + 4000.0f) / 250.0f)));
+        const float position[3] = {x, y, z};
+        game.memory.Write(at + 0x28, position, sizeof(position));
+        game.memory.Put<uint32_t>(at + 0x3C, state);
+        game.memory.Put<int32_t>(at + 0x40, index);
+    }
+
+    FakeScreen BuildScreen(FakeGame& game)
+    {
+        const uint64_t heap = 0x5000000000ULL;
+        FakeScreen screen = {heap, heap + 0x2000, heap + 0x3000, heap + 0x6000, heap + 0x7000, heap + 0x8000};
+        game.memory.Map(heap, 0x10000);
+        game.memory.Put<uint64_t>(game.mainBase + 0x2CA63B0, screen.manager);
+        game.memory.Put<uint64_t>(screen.manager, game.mainBase + 0x2B86848);
+        // Pins: 37 to 41, the second (38) put by the game, with its record
+        game.memory.Put<int32_t>(screen.manager + 0x658, 5);
+        game.memory.Put<int32_t>(screen.manager + 0x65C, 5);
+        game.memory.Put<uint64_t>(screen.manager + 0x660, heap + 0x1000);
+        for (int i = 0; i < 5; ++i)
+        {
+            const uint64_t pin = screen.pins + 0x80 * i;
+            game.memory.Put<uint64_t>(heap + 0x1000 + 8 * i, pin);
+            if (i == 1)
+                PutMark(game, pin, game.mainBase + 0x2B866B0, 38, 1, 500.0f, 100.0f, 600.0f, 0x10, screen.records);
+            else
+                PutMark(game, pin, game.mainBase + 0x2B866B0, 37 + i, i, MapMarks::EmptyX, 0.0f, 0.0f, 0, 0);
+        }
+        game.memory.Put<uint64_t>(screen.records, game.mainBase + 0x2C00000);
+        // Stamps: the first (30) on the map, with its record; the second is the first free one
+        game.memory.Put<int32_t>(screen.manager + 0x610, 100);
+        game.memory.Put<int32_t>(screen.manager + 0x614, 100);
+        game.memory.Put<uint64_t>(screen.manager + 0x618, heap + 0x1100);
+        for (int j = 0; j < 100; ++j)
+        {
+            const uint64_t stamp = screen.stamps + 0x50 * j;
+            game.memory.Put<uint64_t>(heap + 0x1100 + 8 * j, stamp);
+            if (j == 0)
+                PutMark(game, stamp, game.mainBase + 0x2B874F0, 30, 0, -10.0f, 5.0f, -20.0f, 0x10, screen.records + 0x100);
+            else
+                PutMark(game, stamp, game.mainBase + 0x2B874F0, -1, j, MapMarks::EmptyX, 0.0f, 0.0f, 0, 0);
+        }
+        game.memory.Put<uint64_t>(screen.manager + 0x650, screen.stamps + 0x50);
+        // The medallion, as on the console: placed, no record
+        game.memory.Put<uint64_t>(screen.manager + 0x480, screen.medallion);
+        PutMark(game, screen.medallion, game.mainBase + 0x2B875E8, 42, -1, 793.7f, 189.2f, 3721.9f, 0x210, 0);
+        // The screen's control
+        game.memory.Put<uint64_t>(game.mainBase + 0x2CA63B8, screen.control);
+        game.memory.Put<uint64_t>(screen.control, game.mainBase + 0x2B8AAD8);
+        game.memory.Map(screen.control, 0x1000);
+        game.memory.Put<uint64_t>(screen.control + 0x8D8, screen.manager);
+        return screen;
+    }
+
+    bool Has(const MapMarks::Result& result, const char* text)
+    {
+        if (result.details.find(text) != std::string::npos)
+            return true;
+        std::printf("not in the details: %s\n%s", text, result.details.c_str());
+        return false;
+    }
+
+    void TestReadScreen()
     {
         FakeGame game;
-        BuildGame(game, {{0, 42, 793.7f, 189.2f, 3721.9f}, {1, 37, -501.25f, 150.5f, -1011.75f}});
-        // A "heap" of 2 MB, its second megabyte unmapped, with a list like the map screen's: the pin of slot 1 as x, y,
-        // z after an icon number, 0x1230 into it
-        const uint64_t heap = 0x5000000000ULL;
-        game.memory.Map(heap, 0x100000);
-        const float pin[3] = {-501.25f, 150.5f, -1011.75f};
-        game.memory.Put<int32_t>(heap + 0x122C, 37);
-        game.memory.Write(heap + 0x1230, pin, sizeof(pin));
-        game.memory.Put<uint64_t>(heap + 0x1208, game.mainBase + 0x2B875E8); // the object's vtable, 40 bytes before
-        game.memory.Put<uint64_t>(heap + 0x40000, heap + 0x1208);             // a list that points at it
-        // The x of slot 0 alone, with no z near it: not a hit
-        game.memory.Write(heap + 0x8000, pin, 4);
+        // The flags: the medallion, a pin the app wrote (37, not on the screen yet) and the stamp
+        BuildGame(game, {{0, 42, 793.7f, 189.2f, 3721.9f}, {1, 37, 80.0f, 140.6f, -620.0f}, {2, 30, -10.0f, 5.0f, -20.0f}});
+        const FakeScreen screen = BuildScreen(game);
         const int storesBefore = game.memory.storeCount;
         MapMarks::Result result;
-        assert(MapMarks::Probe(game.memory, game.mainBase, LiveGameData::Botw160(), heap, 0x200000, result));
+        assert(MapMarks::ReadScreen(game.memory, game.mainBase, LiveGameData::Botw160(), result));
         assert(game.memory.storeCount == storesBefore); // read only
-        assert(result.details.find("hit 1: slot 1 (icon 37) at 5000001230, z at +8, icon at -4, in an object at -40 (main+2b875e8)") !=
-               std::string::npos);
-        assert(result.details.find("hit 2") == std::string::npos);
-        assert(result.details.find("16 unreadable") != std::string::npos);
-        assert(result.details.find("pass 2: 1 objects, 1 pointers to them") != std::string::npos);
-        assert(result.details.find("pointer to object 1 at 5000040000") != std::string::npos);
-        // No marks: nothing to look for
-        FakeGame empty;
-        BuildGame(empty, {});
+        assert(result.ok && result.failedChecks == 0 && result.error.empty());
+        assert(Has(result, "map screen: manager at 5000000000, vtable main+2b86848"));
+        assert(Has(result, "control at 5000007000: vtable main+2b8aad8 (expected main+2b8aad8), +0x8d8 the manager: yes"));
+        assert(Has(result, "pins: 5 of 5 at 5000001000"));
+        assert(Has(result, "pin 1 at 5000002080: vtable main+2b866b0, icon 38, cell 22 18, at 500.00 100.00 600.00, "
+                           "state 0x10, index 1, record 5000008000\n"));
+        assert(Has(result, "  record at 5000008000: first word main+2c00000"));
+        assert(Has(result, "pin 4 at 5000002200: vtable main+2b866b0, icon 41"));
+        assert(Has(result, "stamps: 100 of 100 at 5000001100; 1 on the map; the first free one (5000003050) is stamp 1, "
+                           "the first not on the map stamp 1"));
+        assert(Has(result, "stamp 0 at 5000003000: vtable main+2b874f0, icon 30"));
+        assert(result.details.find("stamp 2 at") == std::string::npos); // never used: not told
+        assert(Has(result, "the medallion at 5000006000: vtable main+2b875e8, icon 42, cell 23 30"));
+        assert(Has(result, "flag slot 0 (icon 42): on the map screen as the medallion"));
+        assert(Has(result, "flag slot 1 (icon 37): not on the map screen\n"));
+        assert(Has(result, "flag slot 2 (icon 30): on the map screen as stamp 0"));
+        assert(Has(result, "pin 1 (icon 38): on the map screen, not in the flags"));
+        assert(Has(result, "checks: all passed"));
+
+        // A pin out of place, and a cell that does not match: told, the rest still read
+        game.memory.Put<int32_t>(screen.pins + 0x80 * 3 + 0x40, 7);
+        game.memory.Put<int32_t>(screen.pins + 0x80 + 0x20, 5);
+        MapMarks::Result odd;
+        assert(MapMarks::ReadScreen(game.memory, game.mainBase, LiveGameData::Botw160(), odd));
+        assert(odd.failedChecks == 1);
+        assert(Has(odd, "check failed: pin 3's index"));
+        assert(Has(odd, "(the grid of 250 gives 22 18)"));
+        assert(Has(odd, "checks: 1 failed"));
+
+        // Another manager (another version): nothing read past it
+        game.memory.Put<uint64_t>(screen.manager, game.mainBase + 0x2B86850);
+        MapMarks::Result other;
+        assert(!MapMarks::ReadScreen(game.memory, game.mainBase, LiveGameData::Botw160(), other));
+        assert(!other.error.empty());
+        assert(other.details.find("pins:") == std::string::npos);
+        // No map screen at all
+        FakeGame bare;
+        BuildGame(bare, {});
         MapMarks::Result none;
-        assert(!MapMarks::Probe(empty.memory, empty.mainBase, LiveGameData::Botw160(), heap, 0x200000, none));
-        std::printf("probe ok\n");
+        assert(!MapMarks::ReadScreen(bare.memory, bare.mainBase, LiveGameData::Botw160(), none));
+        assert(game.memory.storeCount == storesBefore);
+        std::printf("read screen ok\n");
     }
 }
 
 int main()
 {
-    TestProbe();
+    TestReadScreen();
     TestFirstFreePin();
     TestFivePinsUsed();
     TestProxyThatDoesNotMatch();

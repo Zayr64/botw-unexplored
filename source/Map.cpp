@@ -1,7 +1,6 @@
 #include "Map.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -160,9 +159,13 @@ namespace
         const float position[3] = {mapPosition.x / 0.25f, hasLink ? link[1] : 0.0f, -mapPosition.y / 0.25f};
         MapMarks::Result result;
         const bool placed = MapMarks::Add(GameMemory::Reader(), GameMemory::MainBase(), layout, -1, position, result);
+        // zayr35 (test): what the map screen holds right after (read only)
+        MapMarks::Result screen;
+        MapMarks::ReadScreen(GameMemory::Reader(), GameMemory::MainBase(), layout, screen);
         GameMemory::Close();
         Log("PIN: Link's height " + std::string(hasLink ? "read" : "unknown") + "; " + result.details);
-        PinLog("pin, Link's height " + std::string(hasLink ? "read" : "unknown"), result.details);
+        PinLog("pin, Link's height " + std::string(hasLink ? "read" : "unknown"),
+               result.details + "-- the map screen right after\n" + screen.details);
         if (placed)
             Ui::Toast(Localization::Get(Text::ToastPinPlaced) + " (" + std::to_string(result.icon) + ", slot " +
                       std::to_string(result.slot) + ")");
@@ -170,24 +173,25 @@ namespace
             Ui::Toast(Localization::Get(Text::ToastPinFailed) + ": " + result.error, true);
     }
 
-    // zayr33 (test): RS while live looks for the marks of the game's map in its heap (read only), into pins.txt
-    void ProbeMapMarks()
+    // zayr35 (test): RS while live reads the marks as the game's map screen holds them (read only), into pins.txt
+    void ReadMapScreen()
     {
         std::string message;
         if (GameMemory::Open(message) != GameMemory::Status::Ready)
         {
-            Ui::Toast("Probe: " + message, true);
+            Ui::Toast("Map screen: " + message, true);
             return;
         }
-        const auto started = std::chrono::steady_clock::now();
         MapMarks::Result result;
-        const bool done = MapMarks::Probe(GameMemory::Reader(), GameMemory::MainBase(), LiveGameData::Botw160(),
-                                          GameMemory::HeapBase(), GameMemory::HeapSize(), result);
+        const bool done = MapMarks::ReadScreen(GameMemory::Reader(), GameMemory::MainBase(), LiveGameData::Botw160(), result);
         GameMemory::Close();
-        const int seconds = static_cast<int>(
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count());
-        PinLog("probe, " + std::to_string(seconds) + " s", result.details);
-        Ui::Toast(done ? "Probe done (" + std::to_string(seconds) + " s): pins.txt" : "Probe: " + result.error, !done);
+        PinLog("map screen", result.details);
+        if (!done)
+            Ui::Toast("Map screen: " + result.error, true);
+        else if (result.failedChecks > 0)
+            Ui::Toast("Map screen read, " + std::to_string(result.failedChecks) + " checks failed: pins.txt", true);
+        else
+            Ui::Toast("Map screen read: pins.txt");
     }
 
     bool ResolveFound(Data::ObjectType type, uint32_t hash, bool foundInSave, bool& manualProgressChanged)
@@ -977,7 +981,7 @@ void Map::Update()
 
     // zayr33 (test): the right stick pressed, while live, looks for the map's own list of marks
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_StickR) && CanPinInGame())
-        ProbeMapMarks();
+        ReadMapScreen();
 
     // "-" reads the progress again (the running game's, when the app was opened from the Album)
     if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_Minus))
