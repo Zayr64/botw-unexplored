@@ -29,9 +29,9 @@ fi
 sed 's#"Graphics/InitGL.h"#"HostInitGL.h"#' "$REPO/compendium/app/CompendiumMain.cpp" > "$OUT/Main_host.cpp"
 SRCS=("$OUT/Main_host.cpp" "$HV/host.cpp" "$REPO/compendium/app/SaveSource.cpp" "$REPO/compendium/app/CompendiumLog.cpp"
       "$REPO/compendium/app/Icons.cpp" "$REPO/source/Utf8.cpp" "$REPO/source/ImageOverride.cpp"
-      "$REPO/source/LiveGameData.cpp" "$REPO/source/GameMemory.cpp" "$HV/extra/HostCheatService.cpp")
+      "$REPO/source/LiveGameData.cpp" "$REPO/source/GameMemory.cpp" "$REPO/source/Dds.cpp" "$HV/extra/HostCheatService.cpp")
 for f in "$REPO"/compendium/source/*.cpp; do SRCS+=("$f"); done
-for f in Font ShapeBatch Shader Vertex Texture2D stb_image; do SRCS+=("$REPO/source/Graphics/$f.cpp"); done
+for f in Font ShapeBatch Shader Vertex Texture2D CompressedTexture stb_image; do SRCS+=("$REPO/source/Graphics/$f.cpp"); done
 lib() { ls "$LIBDIR"/$1.so* 2>/dev/null | head -1; }
 g++ "${FLAGS[@]}" -ffp-contract=off "${SRCS[@]}" "$(lib libEGL)" "$(lib libGL)" "$(lib libfreetype)" "$(lib libpng16)" \
     -lpthread -o "$OUT/app"
