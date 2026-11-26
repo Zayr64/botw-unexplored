@@ -101,6 +101,15 @@ namespace
 
     constexpr float RowRadius = 8.0f;
 
+    // zayr30: the cells as the Switch's own menus draw them. Neutral tiles, darker when the category is off; the one
+    // selected in a pulsing cyan frame, a gap away, as on the HOME menu; whether the category shows, by a toggle as in
+    // System Settings (chosen by the user over a check as when picking in the Album, and over the blue cells of zayr28).
+    const glm::vec4 SwitchTileOn = {0.24f, 0.25f, 0.27f, 1.0f};
+    const glm::vec4 SwitchTileOff = {0.15f, 0.155f, 0.165f, 1.0f};
+    const glm::vec3 SwitchCyan = {0.10f, 0.80f, 0.98f};
+    const glm::vec4 SwitchTrackOff = {0.36f, 0.37f, 0.39f, 1.0f};
+
+
     Localization::Text LabelOf(IconButton::ButtonTypes type)
     {
         switch (type)
@@ -488,6 +497,34 @@ void IconButton::DrawShapes()
     const float top = m_Position.y, bottom = m_Position.y - m_Height;
     ShapeBatch& shapes = Ui::Shapes();
 
+    if (m_Compact)
+    {
+        if (m_IsSelected)
+        {
+            const float pulse = 0.80f + 0.20f * std::sin(static_cast<float>(Ui::Frame()) * 0.10f);
+            shapes.AddRoundedRect(left - 6.0f, bottom - 6.0f, right + 6.0f, top + 6.0f, RowRadius + 6.0f,
+                                  glm::vec4(SwitchCyan * pulse, 1.0f));
+            shapes.AddRoundedRect(left - 3.0f, bottom - 3.0f, right + 3.0f, top + 3.0f, RowRadius + 3.0f,
+                                  glm::vec4(glm::vec3(Ui::Colors::Panel), 1.0f)); // the gap
+        }
+        shapes.AddRoundedRect(left, bottom, right, top, RowRadius, m_IsToggled ? SwitchTileOn : SwitchTileOff);
+        {
+            // A toggle of System Settings: cyan with the knob right when on, grey with it left when off
+            const float w = 30.0f, h = 16.0f, r = right - 9.0f, t = top - 10.0f;
+            shapes.AddRoundedRect(r - w, t - h, r, t, h * 0.5f, m_IsToggled ? glm::vec4(SwitchCyan, 1.0f) : SwitchTrackOff);
+            shapes.AddCircle(glm::vec2(m_IsToggled ? r - h * 0.5f : r - w + h * 0.5f, t - h * 0.5f), h * 0.5f - 2.5f,
+                             glm::vec4(1.0f));
+        }
+        if (m_Type == HeroPath)
+            return;
+        int switchFound = 0, switchTotal = 0;
+        Count(switchFound, switchTotal);
+        Ui::ProgressBar(left + 10.0f, bottom + 6.0f, m_Width - 20.0f, 3.0f,
+                        switchTotal > 0 ? static_cast<float>(switchFound) / static_cast<float>(switchTotal) : 0.0f,
+                        m_IsToggled ? SwitchCyan : Ui::Colors::TextDim);
+        return;
+    }
+
     if (m_IsSelected)
     {
         // An outline in the accent colour around an opaque row
@@ -503,13 +540,6 @@ void IconButton::DrawShapes()
         return; // a line, not things to find: no bar
     int found = 0, total = 0;
     Count(found, total);
-    if (m_Compact)
-    {
-        Ui::ProgressBar(left + 10.0f, bottom + 6.0f, m_Width - 20.0f, 3.0f,
-                        total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
-                        m_IsToggled ? Ui::Colors::Accent : Ui::Colors::TextDim);
-        return;
-    }
     // 8 px from the bottom in rows of 44, less in the shorter rows of a big zoom.
     Ui::ProgressBar(left + 64.0f, bottom + std::min(8.0f, (m_Height - 24.0f) * 0.5f), m_Width - 64.0f - 14.0f, 4.0f,
                     total > 0 ? static_cast<float>(found) / static_cast<float>(total) : 0.0f,
@@ -545,7 +575,7 @@ void IconButton::DrawText()
         value = SavefileIO::GetHeroPath().segments.empty() ? std::string("-") : std::string(text);
     }
     if (m_Compact)
-        Ui::Text(value, glm::vec2(m_Position.x + m_Width - 10.0f, m_Position.y - 26.0f), 0.38f, color, ALIGN_RIGHT);
+        Ui::Text(value, glm::vec2(m_Position.x + 40.0f, m_Position.y - 26.0f), 0.38f, color); // the toggle is on the right
     else
         Ui::Text(value, glm::vec2(m_Position.x + m_Width - 14.0f, baseline), 0.40f, color, ALIGN_RIGHT);
 }
