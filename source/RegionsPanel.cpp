@@ -29,26 +29,18 @@ namespace
     float s_Top = 0.0f;     // where the rows were last drawn, for the touch
     int s_Scroll = 0;       // the first row shown, when they do not all fit above the bottom bar
 
-    // The name of a region is that of its tower, which the game only tells once the tower is activated.
-    bool IsKnown(int region)
-    {
-        return SavefileIO::IsLocationStateDone(Regions::TowerLocationHash(region));
-    }
-
-    // The whole map first, then the regions known by name in alphabetical order, then the others.
+    // The whole map first, then every region in alphabetical order (named before its tower is activated: no
+    // more spoiler protection, 26/11).
     std::vector<int> Rows()
     {
-        std::vector<int> known, unknown;
+        std::vector<int> rows;
         for (int region = 0; region < Regions::Count; ++region)
-            (IsKnown(region) ? known : unknown).push_back(region);
-        std::sort(known.begin(), known.end(), [](int a, int b)
+            rows.push_back(region);
+        std::sort(rows.begin(), rows.end(), [](int a, int b)
         {
             return std::strcmp(Regions::Name(a), Regions::Name(b)) < 0;
         });
-        std::vector<int> rows;
-        rows.push_back(Regions::None);
-        rows.insert(rows.end(), known.begin(), known.end());
-        rows.insert(rows.end(), unknown.begin(), unknown.end());
+        rows.insert(rows.begin(), Regions::None);
         return rows;
     }
 
@@ -65,7 +57,7 @@ std::string RegionsPanel::Label(int region)
 {
     if (region < 0 || region >= Regions::Count)
         return Localization::Get(Localization::Text::WholeMap);
-    return IsKnown(region) ? std::string(Regions::Name(region)) : Localization::Get(Localization::Text::UnknownRegion);
+    return std::string(Regions::Name(region));
 }
 
 void RegionsPanel::Count(int region, int& found, int& total)
@@ -166,13 +158,12 @@ void RegionsPanel::Render(float top)
 
         int found = 0, total = 0;
         Count(region, found, total);
-        const bool known = region == Regions::None || IsKnown(region);
         const float baseline = rowTop - (RowHeight + CapHeight) * 0.5f;
         const std::string label = Label(region);
         const std::string count = std::to_string(found) + "/" + std::to_string(total);
-        Ui::Text(label, glm::vec2(left + 12.0f, baseline), LabelScale, known ? Ui::Colors::Text : Ui::Colors::TextDim);
+        Ui::Text(label, glm::vec2(left + 12.0f, baseline), LabelScale, Ui::Colors::Text);
         Ui::Text(count, glm::vec2(right - 12.0f, baseline), LabelScale,
-                 total > 0 && found >= total ? Ui::Colors::Good : (known ? Ui::Colors::Text : Ui::Colors::TextDim), ALIGN_RIGHT);
+                 total > 0 && found >= total ? Ui::Colors::Good : Ui::Colors::Text, ALIGN_RIGHT);
 
         // Between the two: the shrine and side quests taken in this region that are not in the log yet. Those
         // that can be taken now; with none, those that wait for something else to happen first.
