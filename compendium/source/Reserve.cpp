@@ -239,6 +239,31 @@ namespace Compendium
             }
         }
 
+        void AddPieceNeed(ReservePlan& plan, uint32_t piece, uint32_t item, int32_t amount, int star)
+        {
+            if (amount <= 0)
+                return;
+            for (int i = 0; i < plan.pieceNeedCount; i++)
+            {
+                PieceNeed& p = plan.pieceNeeds[i];
+                if (p.piece == piece && p.item == item)
+                {
+                    p.amount += amount;
+                    p.fromStar = star < p.fromStar ? star : p.fromStar;
+                    p.toStar = star > p.toStar ? star : p.toStar;
+                    return;
+                }
+            }
+            if (plan.pieceNeedCount < MaxPieceNeeds)
+            {
+                PieceNeed& p = plan.pieceNeeds[plan.pieceNeedCount++];
+                p.piece = piece;
+                p.item = item;
+                p.amount = amount;
+                p.fromStar = p.toStar = star;
+            }
+        }
+
         bool IsGet(const SaveFile& save, const char* actor)
         {
             char flag[96];
@@ -323,6 +348,8 @@ namespace Compendium
                 int32_t amounts[MaxRecipeItems];
                 const int n = MaterialsOf(*step, items, amounts, data);
                 AddNeeds(out, tier, n, items, amounts);
+                for (int k = 0; k < n; k++)
+                    AddPieceNeed(out, a->hash, items[k], amounts[k], stars);
                 if (!step->next)
                     break;
             }

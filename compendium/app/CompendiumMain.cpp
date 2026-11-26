@@ -130,12 +130,6 @@ namespace
         return t + "...";
     }
 
-    // The full text when it fits the width, else the brief one (cut if even that does not fit).
-    std::string Pick(const std::string& full, const std::string& brief, float scale, float width)
-    {
-        return Width(full, scale) <= width ? full : Fit(brief, scale, width);
-    }
-
     // The words of a text on lines no wider than `width`.
     std::vector<std::string> Wrap(const std::string& s, float scale, float width)
     {
@@ -291,6 +285,7 @@ namespace
         std::string error;
         int evaluated = 0;
         int dishPage = 0; // the Dishes tab with room for one dish: 0 the first (best), 1 the other (A)
+        int gridColumns = 0; // EXP: the enemies are tiles, Up/Down a row of this many, Left/Right one
     };
 
     // Keeps the cursor in the list and the list's window on the cursor.
@@ -305,20 +300,14 @@ namespace
     }
 
     // Where the window is in a list longer than the screen: a bar on the right edge.
-    void ScrollBar(float top, float height, int rows, int visible, int scroll)
+    void ScrollBar(float top, float height, int rows, int visible, int scroll, float right = ScreenW)
     {
         if (rows <= visible)
             return;
-        const float x = ScreenW - 9, w = 5;
+        const float x = right - 9, w = 5;
         RoundRect(x, top, w, height, 2.5f, glm::vec4(1.0f, 1.0f, 1.0f, 0.10f));
         const float thumb = std::max(28.0f, height * visible / rows);
         RoundRect(x, top + (height - thumb) * scroll / (rows - visible), w, thumb, 2.5f, glm::vec4(Accent, 0.95f));
-    }
-
-    // "3 / 62": the cursor's row and how many there are, next to the name of a list's first column.
-    std::string Position(int cursor, int rows)
-    {
-        return rows > 0 ? std::to_string(cursor + 1) + " / " + std::to_string(rows) : std::string();
     }
 
     int32_t HeartsTarget(const App& app)
@@ -683,7 +672,7 @@ namespace
         if (!app.loading && app.error.empty())
         {
             hints.push_back({"L R", "tab", 1});
-            hints.push_back({"Up/Down", "move", 0});
+            hints.push_back({app.tab == 3 ? "Up/Down Left/Right" : "Up/Down", "move", 0});
             if (app.visible[app.tab] > 0 && RowCount(app) > app.visible[app.tab])
                 hints.push_back({"Left/Right", "page", 2});
             if (app.tab == 0)
@@ -1119,154 +1108,334 @@ namespace
         }
     }
 
+    // 0.1.17, the user's review of 26/11 ("Tudo um listão enorme não é muito legal de navegar e descobrir"): the
+    // numbers that were lines of text at the top of Reserve, Sell and EXP, each in a card; Reserve and Sell a short
+    // list in groups with the selected item on the right, as in Dishes; the enemies of EXP in tiles.
+    const float CardH = 64.0f;
+    const glm::vec4 CardColor(1.0f, 1.0f, 1.0f, 0.045f);
+    const glm::vec4 TrackColor(1.0f, 1.0f, 1.0f, 0.12f);
+
+    struct Stat
+    {
+        std::string label;
+        std::string value;
+        glm::vec3 color;
+        std::string extra; // after the value, dim
+        std::string note;  // at the card's right end, dim
+        float bar;         // 0 to 1: a bar between the value and the note; < 0 for none
+        float weight;      // the card's share of the width
+    };
+
+    Stat MakeStat(const std::string& label, const std::string& value, const glm::vec3& color, const std::string& extra,
+                  float weight)
+    {
+        return {label, value, color, extra, std::string(), -1.0f, weight};
+    }
+
+    // A row of cards across the screen. Returns the y under them.
+    float StatCards(const std::vector<Stat>& stats, float top)
+    {
+        const float gap = 12.0f, left = 24.0f;
+        float weights = 0.0f;
+        for (const Stat& s : stats)
+            weights += s.weight;
+        const float room = ScreenW - 2 * left - gap * (stats.size() - 1);
+        float x = left;
+        for (const Stat& s : stats)
+        {
+            const float w = room * s.weight / weights;
+            RoundRect(x, top, w, CardH, 10, CardColor);
+            Text(Fit(s.label, SmallText, w - 32), x + 16, top + 23, SmallText, TextDim);
+            float after = Text(s.value, x + 16, top + 52, 0.54f, s.color);
+            const float noteW = s.note.empty() ? 0.0f : Width(s.note, SmallText) + 14;
+            if (!s.extra.empty())
+            {
+                const float space = x + w - 16 - noteW - (after + 10) - (s.bar >= 0.0f ? 60 : 0);
+                if (space > 30)
+                    after = Text(Fit(s.extra, SmallText, space), after + 10, top + 51, SmallText, TextDim);
+            }
+            if (s.bar >= 0.0f)
+            {
+                const float bx = after + 14, bw = x + w - 16 - noteW - bx;
+                if (bw > 40)
+                {
+                    RoundRect(bx, top + 41, bw, 8, 4, TrackColor);
+                    RoundRect(bx, top + 41, std::max(8.0f, bw * std::min(1.0f, std::max(0.0f, s.bar))), 8, 4,
+                              glm::vec4(s.color, 1.0f));
+                }
+            }
+            if (!s.note.empty())
+                Text(s.note, x + w - 16, top + 51, SmallText, TextDim, ALIGN_RIGHT);
+            x += w + gap;
+        }
+        return top + CardH;
+    }
+
+    struct GroupTitle
+    {
+        std::string text;
+        glm::vec3 color;
+    };
+
+    const float ListLine = 34.0f;
+
+    float ListWidth()
+    {
+        return std::min(430.0f, ScreenW * 0.42f);
+    }
+
+    // A list in groups on the left, from `top` to `bottom`: each group's title on a line of its own, then its items.
+    // `groupOf[i]` is the group of the i-th item, in order; the cursor counts the items only, and the title over the
+    // first item of a group comes into view with it. `drawItem(i, top)` draws one item's line.
+    template <typename DrawItem>
+    void GroupedList(App& app, int tab, const std::vector<int>& groupOf, const std::vector<GroupTitle>& titles, float top,
+                     float bottom, DrawItem drawItem)
+    {
+        const float w = ListWidth();
+        Rect(0, top, w, bottom - top, PanelColor);
+        std::vector<int> lines; // an item, or -1 - its group for a title
+        std::vector<int> lineOf(groupOf.size(), 0);
+        for (size_t i = 0; i < groupOf.size(); i++)
+        {
+            if (i == 0 || groupOf[i] != groupOf[i - 1])
+                lines.push_back(-1 - groupOf[i]);
+            lineOf[i] = static_cast<int>(lines.size());
+            lines.push_back(static_cast<int>(i));
+        }
+        const int count = static_cast<int>(lines.size());
+        const int visible = std::max(1, static_cast<int>((bottom - top - 8) / ListLine));
+        app.visible[tab] = visible;
+        if (groupOf.empty())
+            return;
+        int& cursor = app.cursor[tab];
+        int& scroll = app.scroll[tab];
+        cursor = std::max(0, std::min(cursor, static_cast<int>(groupOf.size()) - 1));
+        int line = lineOf[cursor];
+        KeepInView(line, scroll, count, visible);
+        if (line > 0 && lines[line - 1] < 0 && scroll == line)
+            scroll--;
+        for (int l = scroll; l < count && l < scroll + visible; l++)
+        {
+            const float ry = top + 4 + (l - scroll) * ListLine;
+            if (lines[l] < 0)
+            {
+                const GroupTitle& title = titles[-1 - lines[l]];
+                Text(title.text, 20, ry + 26, SmallText, title.color);
+                continue;
+            }
+            if (lines[l] == cursor)
+                SelectedRow(6, ry, w - 18, ListLine, 8, PanelColor);
+            drawItem(lines[l], ry);
+        }
+        ScrollBar(top + 4, visible * ListLine, count, visible, scroll, w);
+    }
+
+    // "★2–4": the stars of an armor's upgrades
+    std::string Stars(int from, int to)
+    {
+        const std::string star = "\xE2\x98\x85";
+        return from == to ? star + std::to_string(to) : star + std::to_string(from) + "\xE2\x80\x93" + std::to_string(to);
+    }
+
+    struct ReserveItem
+    {
+        int group;      // 0 short for the armor in the pouch, 1 short for the rest, 2 enough
+        int row;        // in app.rows
+        int32_t amount; // what is missing, or what is free
+    };
+
+    // The materials in three groups, the most missing (or the most free) first.
+    std::vector<ReserveItem> ReserveItems(const App& app)
+    {
+        const uint8_t mask = TierMask(app);
+        std::vector<ReserveItem> items;
+        for (size_t i = 0; i < app.rows.size(); i++)
+        {
+            const MaterialPlan& m = app.plan->materials[app.rows[i].index];
+            const int32_t ownShort = std::max(0, m.need[OwnedReachable] + m.need[OwnedNextFairy] - m.have);
+            const int32_t shortBy = m.Needed(mask) - m.have;
+            if (ownShort > 0)
+                items.push_back({0, static_cast<int>(i), ownShort});
+            else if (shortBy > 0)
+                items.push_back({1, static_cast<int>(i), shortBy});
+            else
+                items.push_back({2, static_cast<int>(i), m.Free(mask)});
+        }
+        std::stable_sort(items.begin(), items.end(), [](const ReserveItem& a, const ReserveItem& b) {
+            if (a.group != b.group)
+                return a.group < b.group;
+            return a.amount > b.amount;
+        });
+        return items;
+    }
+
+    // The selected material: have against needed, and what it is for, the armor in the pouch piece by piece.
+    void ReserveDetail(const App& app, const ReserveItem& it, float x, float top, float width)
+    {
+        const ReservePlan& p = *app.plan;
+        const uint8_t mask = TierMask(app);
+        const MaterialPlan& m = p.materials[app.rows[it.row].index];
+        const int32_t needed = m.Needed(mask);
+        const int32_t shortBy = needed - m.have;
+        const int32_t free = m.Free(mask);
+        float y = top + 40;
+        Icons::Item(ActorName(app, m.item), x, y - 33, 44);
+        const std::string status = it.group < 2 ? "short " + Number(it.amount) : Number(free) + " free";
+        const glm::vec3 color = it.group < 2 ? (it.group == 0 ? Warn : TextColor) : (free > 0 ? Good : TextDim);
+        const float statusW = Width(status, 0.46f);
+        Text(Fit(app.rows[it.row].name, 0.50f, width - 56 - statusW - 20), x + 56, y, 0.50f, TextColor);
+        Text(status, x + width, y, 0.46f, color, ALIGN_RIGHT);
+
+        // Have against needed: the needed part of the bar lighter, what you have over it.
+        y += 22;
+        const float most = static_cast<float>(std::max<int32_t>(1, std::max(m.have, needed)));
+        RoundRect(x, y, width, 12, 6, glm::vec4(1.0f, 1.0f, 1.0f, 0.07f));
+        if (needed > 0)
+            RoundRect(x, y, std::max(12.0f, width * needed / most), 12, 6, glm::vec4(1.0f, 1.0f, 1.0f, 0.16f));
+        if (m.have > 0)
+            RoundRect(x, y, std::max(12.0f, width * m.have / most), 12, 6,
+                      glm::vec4(shortBy > 0 ? (it.group == 0 ? Warn : TextDim) : Good, 1.0f));
+        y += 34;
+        Text("you have " + Number(m.have), x, y, SmallText, TextDim);
+        Text("needed " + Number(needed), x + width, y, SmallText, TextDim, ALIGN_RIGHT);
+        y += 42;
+
+        const float numX = x + 64, textX = x + 80, scale = 0.38f;
+        auto line = [&](int32_t amount, const std::string& what, const glm::vec3& c) {
+            Text(Number(amount), numX, y, scale, c, ALIGN_RIGHT);
+            Text(Fit(what, scale, x + width - textX), textX, y, scale, c);
+            y += 30;
+        };
+        const struct
+        {
+            Tier tier;
+            const char* what;
+        } kinds[] = {{ArmorNotOwned, "armor you don't have"}, {Crafted, "the Ancient Oven"}, {Quests, "side quests"}};
+        int otherLines = free > 0 ? 1 : 0;
+        for (const auto& k : kinds)
+            otherLines += m.need[k.tier] > 0;
+        const int32_t ownNeed = m.need[OwnedReachable] + m.need[OwnedNextFairy];
+        if (ownNeed > 0)
+        {
+            std::string what = "your armor";
+            if (m.need[OwnedNextFairy] == ownNeed)
+                what += ", after another Great Fairy";
+            else if (m.need[OwnedNextFairy] > 0)
+                what += ", " + Number(m.need[OwnedNextFairy]) + " of it after another Great Fairy";
+            line(ownNeed, what, TextColor);
+            std::vector<const PieceNeed*> pieces;
+            for (int i = 0; i < p.pieceNeedCount; i++)
+                if (p.pieceNeeds[i].item == m.item)
+                    pieces.push_back(&p.pieceNeeds[i]);
+            std::stable_sort(pieces.begin(), pieces.end(),
+                             [](const PieceNeed* a, const PieceNeed* b) { return a->amount > b->amount; });
+            // As many pieces as leave room for the other lines
+            const float room = ScreenH - FooterH - 12 - y - otherLines * 30;
+            size_t shown = std::min(pieces.size(), static_cast<size_t>(std::max(0.0f, room / 26)));
+            if (shown < pieces.size() && shown > 0)
+                shown--; // the line that says how many more
+            for (size_t k = 0; k < shown; k++)
+            {
+                const PieceNeed& pn = *pieces[k];
+                Text(Number(pn.amount), numX + 28, y, SmallText, TextDim, ALIGN_RIGHT);
+                const std::string stars = "  " + Stars(pn.fromStar, pn.toStar);
+                const float starsW = Width(stars, SmallText);
+                const float after = Text(Fit(NameOf(app, pn.piece), SmallText, x + width - textX - 28 - starsW),
+                                         textX + 28, y, SmallText, TextDim);
+                Text(stars, after, y, SmallText, Gold);
+                y += 26;
+            }
+            if (shown < pieces.size())
+            {
+                Text("and " + std::to_string(pieces.size() - shown) + " more pieces", textX + 28, y, SmallText, TextDim);
+                y += 26;
+            }
+            y += 4;
+        }
+        for (const auto& k : kinds)
+            if (m.need[k.tier] > 0)
+                line(m.need[k.tier], app.countHidden ? std::string(k.what) : std::string(k.what) + " (not counted)",
+                     app.countHidden ? TextColor : TextDim);
+        if (free > 0)
+            line(free, "free to cook or sell", Good);
+    }
+
     void ReserveTab(App& app)
     {
         const ReservePlan& p = *app.plan;
         const uint8_t mask = TierMask(app);
-        float y = HeaderH + 34;
+        const int32_t rest = p.rupeesNeeded[ArmorNotOwned] + p.rupeesNeeded[Crafted] + p.rupeesNeeded[Quests];
         const int32_t own = p.rupeesNeeded[OwnedReachable] + p.rupeesNeeded[OwnedNextFairy];
-        const int32_t hidden = p.rupeesNeeded[ArmorNotOwned] + p.rupeesNeeded[Crafted] + p.rupeesNeeded[Quests];
-        const std::string fairies = "Great Fairies " + std::to_string(p.fairies) + " of 4";
-        const std::string now = std::to_string(p.ownedUpgradesLeft[0]);
-        const std::string later = std::to_string(p.ownedUpgradesLeft[1]);
-        Text(Pick(fairies + "   upgrades left on your armor: " + now + " now, " + later + " more that need other fairies",
-                  fairies + "   armor upgrades left: " + now + " now, " + later + " later", 0.38f, ScreenW - 56),
-             28, y, 0.38f, TextColor);
-        y += 28;
-        Icons::Ui("rupee", 26, y - 19, 24);
-        const std::string hiddenPart =
-            app.countHidden ? ", " + Number(hidden) + " for the rest" : std::string(", the rest not counted");
-        const std::string have = "   (you have " + Number(p.rupees) + ")";
-        Text(Pick("To keep: " + Number(own) + " for your armor and the fountains" + hiddenPart + have,
-                  "To keep: " + Number(own) + " for your armor" + hiddenPart + have, 0.38f, ScreenW - 84),
-             56, y, 0.38f, p.rupees >= p.RupeesNeeded(mask) ? Good : Warn);
-        y += 18;
-
-        const int rows = static_cast<int>(app.rows.size());
-        int& cursor = app.cursor[1];
-        int& scroll = app.scroll[1];
-        // Number columns from the right, the shortage after the last. Have, Your armor, Other and Free while the
-        // names keep 300 px; with a big zoom one Keep column for both needs, and the split goes under the list.
-        const float shortW = Width("short 222 +222", SmallText) + 24;
-        const float step = std::max(Width("Your armor", SmallText), 100.0f) + 40;
-        const float colFree = ScreenW - 24 - shortW;
-        const bool split = colFree - 3 * step - 56 - 60 >= 300;
-        const float colHidden = colFree - step, colOwn = colHidden - step, colKeep = colFree - step;
-        const float colHave = split ? colOwn - step : colKeep - step;
-        const float nameW = colHave - 56 - 70;
-        Rect(0, y, ScreenW, 30, BarColor);
-        const float afterName = Text("Material", 56, y + 21, SmallText, TextDim);
-        Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
-        Text("Have", colHave, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        if (split)
+        const float top =
+            StatCards({MakeStat("Great Fairies", std::to_string(p.fairies), TextColor, "of 4", 0.7f),
+                       MakeStat("Armor upgrades left", std::to_string(p.ownedUpgradesLeft[0]), TextColor,
+                                p.ownedUpgradesLeft[1] > 0 ? "+" + std::to_string(p.ownedUpgradesLeft[1]) + " with more fairies"
+                                                           : std::string(),
+                                1.25f),
+                       MakeStat("Rupees: armor, fountains", Number(own), p.rupees >= own ? Good : Gold,
+                                std::string(), 1.25f),
+                       MakeStat("Rupees for the rest", app.countHidden ? Number(rest) : std::string("not counted"),
+                                app.countHidden ? (p.rupees >= p.RupeesNeeded(mask) ? Good : Gold) : TextDim,
+                                std::string(), 0.95f)},
+                      HeaderH + 14) +
+            14;
+        const float bottom = ScreenH - FooterH;
+        const std::vector<ReserveItem> items = ReserveItems(app);
+        if (items.empty())
         {
-            Text("Your armor", colOwn, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-            Text("Other", colHidden, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        }
-        else
-            Text("Keep", colKeep, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Free", colFree, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        y += 32;
-
-        if (rows == 0)
-        {
-            app.visible[1] = 1;
-            Text("Nothing to hold back: no armor, purchase or quest needs your materials.", 56, y + 30, 0.40f, TextDim,
-                 ALIGN_LEFT, ScreenW - 84);
+            app.visible[1] = 0;
+            Text("Nothing to hold back: no armor, purchase or quest needs your materials.", 28, top + 40, 0.40f, TextDim,
+                 ALIGN_LEFT, ScreenW - 56);
             return;
         }
-
-        // The line under the list: what the selected material's other needs are for, and with one Keep column,
-        // how it splits.
-        cursor = std::max(0, std::min(cursor, rows - 1));
-        std::vector<std::string> detail;
+        int counts[3] = {0, 0, 0};
+        std::vector<int> groupOf;
+        for (const ReserveItem& it : items)
         {
-            const MaterialRow& row = app.rows[cursor];
-            const MaterialPlan& m = p.materials[row.index];
-            std::string line;
-            if (HiddenNeed(m) == 0)
-                line = "All for the armor you have";
+            counts[it.group]++;
+            groupOf.push_back(it.group);
+        }
+        const std::vector<GroupTitle> titles = {{"Short for your armor   " + std::to_string(counts[0]), Warn},
+                                                {"Short for the rest   " + std::to_string(counts[1]), TextDim},
+                                                {"Enough   " + std::to_string(counts[2]), Good}};
+        const float listW = ListWidth();
+        GroupedList(app, 1, groupOf, titles, top, bottom, [&](int i, float ry) {
+            const ReserveItem& it = items[i];
+            const MaterialPlan& m = p.materials[app.rows[it.row].index];
+            const float baseline = ry + 23;
+            Icons::Item(ActorName(app, m.item), 20, ry + 4, 26);
+            std::string amount;
+            glm::vec3 color = TextDim;
+            if (it.group < 2)
+            {
+                amount = "short " + Number(it.amount);
+                color = it.group == 0 ? Warn : TextColor;
+            }
             else
             {
-                // Only the kinds this material is needed for.
-                const struct
-                {
-                    Tier tier;
-                    const char* what;
-                } kinds[] = {{ArmorNotOwned, " for armor you do not have"},
-                             {Crafted, " for the Ancient Oven"},
-                             {Quests, " for side quests"}};
-                for (const auto& k : kinds)
-                    if (m.need[k.tier] > 0)
-                        line += (line.empty() ? "Other: " : ", ") + Number(m.need[k.tier]) + k.what;
+                amount = it.amount > 0 ? "+" + Number(it.amount) : "0";
+                color = it.amount > 0 ? Good : TextDim;
             }
-            if (!split)
-                line = "Your armor " + Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]) +
-                       (HiddenNeed(m) ? ", other " + Number(HiddenNeed(m)) : std::string()) + ".   " + line;
-            detail = Wrap(line, 0.38f, ScreenW - 56);
-            if (detail.size() > 2)
-                detail.resize(2);
-        }
-        const float detailTop = ScreenH - FooterH - 40 - 28 * (detail.size() - 1);
-
-        const float rowH = 30;
-        const float listBottom = detailTop - 30;
-        const int visible = std::max(1, static_cast<int>((listBottom - y) / rowH));
-        app.visible[1] = visible;
-        KeepInView(cursor, scroll, rows, visible);
-        for (int i = scroll; i < rows && i < scroll + visible; i++)
-        {
-            const MaterialRow& row = app.rows[i];
-            const MaterialPlan& m = p.materials[row.index];
-            const float ry = y + (i - scroll) * rowH;
-            if (i == cursor)
-                SelectedRow(8, ry, ScreenW - 22, rowH, 6, Background);
-            else if (i % 2)
-                Rect(0, ry, ScreenW, rowH, RowAlt);
-            Icons::Item(ActorName(app, m.item), 22, ry + 2, 26);
-            Text(Fit(row.name, 0.38f, nameW), 56, ry + 21, 0.38f, TextColor);
-            Text(Number(m.have), colHave, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
-            const int32_t h = HiddenNeed(m);
-            if (split)
-            {
-                Text(Number(m.need[OwnedReachable] + m.need[OwnedNextFairy]), colOwn, ry + 21, 0.38f, TextColor,
-                     ALIGN_RIGHT);
-                Text(h ? Number(h) : "-", colHidden, ry + 21, 0.38f, app.countHidden ? TextColor : TextDim,
-                     ALIGN_RIGHT);
-            }
-            else
-                Text(Number(m.Needed(mask)), colKeep, ry + 21, 0.38f, TextColor, ALIGN_RIGHT);
-            const int32_t free = m.Free(mask);
-            const int32_t shortBy = m.Needed(mask) - m.have;
-            Text(Number(free), colFree, ry + 21, 0.38f, free > 0 ? Good : TextDim, ALIGN_RIGHT);
-            if (shortBy > 0)
-            {
-                // What is missing for the armor in the pouch in orange; what only the other needs miss, in grey.
-                const int32_t ownNeed = m.need[OwnedReachable] + m.need[OwnedNextFairy];
-                const int32_t ownShort = std::min(shortBy, std::max(0, ownNeed - m.have));
-                float sx = colFree + 24;
-                if (ownShort > 0)
-                    sx = Text("short " + Number(ownShort), sx, ry + 21, SmallText, Warn) + 8;
-                if (shortBy > ownShort)
-                    Text((ownShort > 0 ? "+" : "short ") + Number(shortBy - ownShort), sx, ry + 21, SmallText, TextDim);
-            }
-        }
-        ScrollBar(y, visible * rowH, rows, visible, scroll);
-        for (size_t i = 0; i < detail.size(); i++)
-            Text(detail[i], 28, detailTop + 28 * i, 0.38f, Accent);
+            const float amountW = Width(amount, 0.38f);
+            Text(Fit(app.rows[it.row].name, 0.38f, listW - 56 - amountW - 44), 56, baseline, 0.38f, TextColor);
+            Text(amount, listW - 26, baseline, 0.38f, color, ALIGN_RIGHT);
+        });
+        ReserveDetail(app, items[app.cursor[1]], listW + 32, top, ScreenW - listW - 64);
     }
 
     struct SellLine
     {
-        std::vector<Part> parts; // a pot; empty for a raw sale
+        int group = 0;           // 0 a pot, 1 sold as it is, 2 a critter kept for cooking
+        std::vector<Part> parts; // a pot's ingredients
+        CookResult result;       // a pot's dish
         uint32_t rawItem = 0;
         int32_t rawCount = 0;
-        int32_t price = 0;
-        int32_t raw = 0;
-        int count = 0; // identical pots
-        bool kept = false; // a critter left out of the sale: nothing is sold
+        int32_t price = 0; // each pot, or the raw sale
+        int32_t raw = 0;   // a pot's ingredients sold as they are
+        int count = 0;     // identical pots
     };
 
+    // The pots, the most they bring in all first; then what sells as it is; then the critters kept.
     std::vector<SellLine> SellLines(const App& app)
     {
         const SalePlan& s = *app.sale;
@@ -1274,7 +1443,7 @@ namespace
         for (int i = 0; i < s.potCount; i++)
         {
             const SalePot& pot = s.pots[i];
-            if (!lines.empty() && lines.back().count > 0 && lines.back().price == pot.price && i > 0 &&
+            if (!lines.empty() && lines.back().price == pot.price && i > 0 &&
                 memcmp(s.pots[i - 1].items, pot.items, sizeof(pot.items)) == 0)
             {
                 lines.back().count++;
@@ -1282,171 +1451,152 @@ namespace
             }
             SellLine l;
             l.parts = Parts(pot.items, pot.itemCount);
+            l.result = Cook(*app.cook, pot.items, pot.itemCount);
             l.price = pot.price;
             l.raw = pot.rawPrice;
             l.count = 1;
             lines.push_back(l);
         }
+        std::stable_sort(lines.begin(), lines.end(),
+                         [](const SellLine& a, const SellLine& b) { return a.price * a.count > b.price * b.count; });
         for (int i = 0; i < s.rawCount; i++)
         {
             SellLine l;
+            l.group = 1;
             l.rawItem = s.raw[i].item;
             l.rawCount = s.raw[i].count;
             l.price = s.raw[i].price;
-            l.raw = s.raw[i].price;
             lines.push_back(l);
         }
         for (int i = 0; i < s.keptCount; i++)
         {
             SellLine l;
+            l.group = 2;
             l.rawItem = s.kept[i].item;
             l.rawCount = s.kept[i].count;
-            l.kept = true;
             lines.push_back(l);
         }
         return lines;
     }
 
-    // How many of a pot's ingredients (from the first) keep their names on a row that ends at `limit`; the others show
-    // their icon and count only.
-    size_t NamedParts(const App& app, const SellLine& l, float scale, float limit)
+    // The selected line: a pot's ingredients and picture, what cooking adds; or why an item is sold or kept as it is.
+    void SellDetail(const App& app, const SellLine& l, float x, float top, float width)
     {
-        float needed = 24;
-        for (const Part& part : l.parts)
-            needed += 34 + Width(std::to_string(part.count) + "x", scale) + 18;
-        size_t named = 0;
-        for (; named < l.parts.size(); named++)
+        float y = top + 40;
+        if (l.group == 0)
         {
-            const float more = Width(std::string(" ") + NameOf(app, l.parts[named].item), scale) + 6;
-            if (needed + more > limit)
-                break;
-            needed += more;
+            char name[96];
+            DishName(*app.cook, l.result, name, sizeof(name));
+            const std::string each = Number(l.price) + " each";
+            const float eachW = Width(each, 0.46f);
+            Text(Fit(name, 0.50f, width - eachW - 20), x, y, 0.50f, TextColor);
+            Text(each, x + width, y, 0.46f, Gold, ALIGN_RIGHT);
+            const float picture = 112.0f;
+            Icons::Dish(DishPicture(app, l.result), x + width - picture, y + 16, picture);
+            y += 42;
+            for (const Part& part : l.parts)
+            {
+                Icons::Item(ActorName(app, part.item), x + 4, y - 22, 30);
+                Text(Fit(std::to_string(part.count) + "x " + NameOf(app, part.item), 0.40f, width - picture - 64), x + 44, y,
+                     0.40f, TextColor);
+                y += 30;
+            }
+            y += 16;
+            const float after = Text("Sold raw: " + Number(l.raw) + "   cooking adds ", x, y, 0.38f, TextDim);
+            Text("+" + Number(l.price - l.raw), after, y, 0.38f, Good);
+            y += 30;
+            Text(l.count > 1 ? std::to_string(l.count) + " pots, " + Number(l.price * l.count) + " in all"
+                             : std::string("One pot"),
+                 x, y, 0.38f, TextColor);
+            return;
         }
-        return named;
+        Icons::Item(ActorName(app, l.rawItem), x, y - 33, 44);
+        const std::string price = l.group == 1 ? Number(l.price) : std::string();
+        const float priceW = price.empty() ? 0.0f : Width(price, 0.46f) + 20;
+        Text(Fit(std::to_string(l.rawCount) + "x " + NameOf(app, l.rawItem), 0.50f, width - 56 - priceW), x + 56, y, 0.50f,
+             TextColor);
+        if (!price.empty())
+            Text(price, x + width, y, 0.46f, Gold, ALIGN_RIGHT);
+        y += 50;
+        if (l.group == 1)
+            Text("Sell as it is.", x, y, 0.38f, TextDim);
+        else
+        {
+            Text("Kept for cooking: yellow hearts or extra stamina.", x, y, 0.38f, TextDim);
+            Text("Y sells these too.", x, y + 30, 0.38f, TextDim);
+        }
     }
 
     void SellTab(App& app)
     {
         const SalePlan& s = *app.sale;
-        float y = HeaderH + 34;
         const int32_t total = s.cookedTotal + s.partsLeftRaw + s.rawTotal;
-        const std::string pots = std::to_string(s.potCount);
-        Text(Pick("Elixirs: " + pots + " pots sell for " + Number(s.cookedTotal) + " rupees (their ingredients sold raw: " +
-                      Number(s.cookedRawTotal) + ")",
-                  "Elixirs: " + pots + " pots sell for " + Number(s.cookedTotal) + " (raw: " + Number(s.cookedRawTotal) +
-                      ")",
-                  0.40f, ScreenW - 56),
-             28, y, 0.40f, TextColor);
-        y += 28;
-        Text(Pick("Monster parts left with no critter to cook them: " + Number(s.partsLeft) + ", worth " +
-                      Number(s.partsLeftRaw) + " raw.   Other items to sell raw: " + Number(s.rawTotal) + " rupees",
-                  "Monster parts with no critter: " + Number(s.partsLeft) + " (" + Number(s.partsLeftRaw) +
-                      " raw).   Other items: " + Number(s.rawTotal),
-                  0.38f, ScreenW - 56),
-             28, y, 0.38f, TextColor);
-        y += 28;
-        Icons::Ui("rupee", 26, y - 20, 26);
-        Text(Pick("All of it: " + Number(total) + " rupees   (" + Number(app.plan->rupees + total) + " with the " +
-                      Number(app.plan->rupees) + " you have)",
-                  "All of it: " + Number(total) + "   (" + Number(app.plan->rupees + total) + " with yours)", 0.40f,
-                  ScreenW - 86),
-             58, y, 0.40f, Gold);
-        y += 14;
-
+        const float top =
+            StatCards({MakeStat("All of it sells for", Number(total), Gold,
+                                Number(app.plan->rupees + total) + " with your " + Number(app.plan->rupees), 2.0f),
+                       MakeStat("Elixirs, " + std::to_string(s.potCount) + " pots", Number(s.cookedTotal), TextColor,
+                                "raw " + Number(s.cookedRawTotal), 1.25f),
+                       MakeStat("Monster parts (" + Number(s.partsLeft) + ")", Number(s.partsLeftRaw), TextColor,
+                                std::string(), 1.15f),
+                       MakeStat("Other items", Number(s.rawTotal), TextColor, std::string(), 0.75f)},
+                      HeaderH + 14) +
+            14;
+        const float bottom = ScreenH - FooterH;
         const std::vector<SellLine> lines = SellLines(app);
-        const int rows = static_cast<int>(lines.size());
-        int& cursor = app.cursor[2];
-        int& scroll = app.scroll[2];
-        const float colPots = ScreenW - 40, colRaw = colPots - 100, colEach = colRaw - 120;
-        Rect(0, y, ScreenW, 30, BarColor);
-        const float afterName = Text("Cook and sell", 28, y + 21, SmallText, TextDim);
-        Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
-        Text("Each pot", colEach, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Raw", colRaw, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Pots", colPots, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        y += 32;
-        const float rowH = 34;
-        const float scale = 0.38f;
-        const float limit = colEach - 110;
-        if (rows == 0)
+        if (lines.empty())
         {
-            app.visible[2] = 1;
-            Text("Nothing free to sell.", 28, y + 30, 0.40f, TextDim);
+            app.visible[2] = 0;
+            Text("Nothing free to sell.", 28, top + 40, 0.40f, TextDim);
             return;
         }
-
-        // When some pot cannot name all its ingredients on its row, the selected pot's are spelled out under the
-        // list (the room is kept for any row, so the list does not jump while moving).
-        cursor = std::max(0, std::min(cursor, rows - 1));
-        bool cut = false;
+        int counts[3] = {0, 0, 0};
+        std::vector<int> groupOf;
         for (const SellLine& l : lines)
-            cut = cut || (l.count && NamedParts(app, l, scale, limit) < l.parts.size());
-        std::vector<std::string> detail;
-        if (cut)
         {
-            const SellLine& l = lines[cursor];
-            std::string text;
-            if (l.count)
-                for (const Part& part : l.parts)
-                    text += (text.empty() ? "" : ", ") + std::to_string(part.count) + "x " + NameOf(app, part.item);
-            detail = Wrap(text, scale, ScreenW - 56);
-            if (detail.size() > 2)
-                detail.resize(2);
-            while (detail.size() < 2)
-                detail.push_back("");
+            counts[l.group]++;
+            groupOf.push_back(l.group);
         }
-        const float detailTop = ScreenH - FooterH - 40 - 28 * (detail.empty() ? 0 : detail.size() - 1);
-        const float listBottom = detail.empty() ? ScreenH - FooterH - 16 : detailTop - 30;
-        const int visible = std::max(1, static_cast<int>((listBottom - y) / rowH));
-        app.visible[2] = visible;
-        KeepInView(cursor, scroll, rows, visible);
-        for (int i = scroll; i < rows && i < scroll + visible; i++)
-        {
+        const std::vector<GroupTitle> titles = {{"Cook and sell   " + std::to_string(counts[0]), Gold},
+                                                {"Sell as it is   " + std::to_string(counts[1]), TextDim},
+                                                {"Kept for cooking   " + std::to_string(counts[2]), TextDim}};
+        const float listW = ListWidth();
+        GroupedList(app, 2, groupOf, titles, top, bottom, [&](int i, float ry) {
             const SellLine& l = lines[i];
-            const float ry = y + (i - scroll) * rowH;
-            const float baseline = ry + 24;
-            if (i == cursor)
-                SelectedRow(8, ry, ScreenW - 22, rowH, 6, Background);
-            else if (i % 2)
-                Rect(0, ry, ScreenW, rowH, RowAlt);
-            if (l.count)
+            const float baseline = ry + 23;
+            std::string name, amount;
+            glm::vec3 color = Gold;
+            if (l.group == 0)
             {
-                // Each ingredient: its icon and "4x"; the names too, for as many (from the first) as fit before the
-                // prices.
-                const size_t named = NamedParts(app, l, scale, limit);
-                float x = 24;
-                for (size_t k = 0; k < l.parts.size(); k++)
-                {
-                    Icons::Item(ActorName(app, l.parts[k].item), x, ry + 3, 28);
-                    std::string text = std::to_string(l.parts[k].count) + "x";
-                    if (k < named)
-                        text += std::string(" ") + NameOf(app, l.parts[k].item);
-                    x = Text(text, x + 34, baseline, scale, TextColor) + (k < named ? 24 : 18);
-                }
-                Text(Number(l.raw), colRaw, baseline, scale, TextDim, ALIGN_RIGHT);
-                Text(std::to_string(l.count) + "x", colPots, baseline, scale, TextColor, ALIGN_RIGHT);
+                Icons::Dish(DishPicture(app, l.result), 18, ry + 2, 30);
+                char dish[96];
+                DishName(*app.cook, l.result, dish, sizeof(dish));
+                name = dish;
+                amount = Number(l.price * l.count);
             }
             else
             {
-                Icons::Item(ActorName(app, l.rawItem), 24, ry + 3, 28);
-                const std::string item = std::to_string(l.rawCount) + "x " + NameOf(app, l.rawItem);
-                const float after = Text(Fit(item, scale, colEach - 140), 58, baseline, scale, TextColor);
-                Text(Fit(l.kept ? "kept for cooking (Y sells them too)" : "sell as it is", SmallText,
-                         std::max(0.0f, colEach - 100 - after - 16)),
-                     after + 16, baseline, SmallText, TextDim);
+                Icons::Item(ActorName(app, l.rawItem), 20, ry + 4, 26);
+                name = std::to_string(l.rawCount) + "x " + NameOf(app, l.rawItem);
+                amount = l.group == 1 ? Number(l.price) : std::string("kept");
+                color = l.group == 1 ? Gold : TextDim;
             }
-            if (!l.kept)
-                Text(Number(l.price), colEach, baseline, scale, Gold, ALIGN_RIGHT);
-        }
-        ScrollBar(y, visible * rowH, rows, visible, scroll);
-        for (size_t i = 0; i < detail.size(); i++)
-            Text(detail[i], 28, detailTop + 28 * i, scale, Accent);
+            const std::string times = l.group == 0 && l.count > 1 ? "x" + std::to_string(l.count) : std::string();
+            const float amountW = Width(amount, 0.38f);
+            const float timesW = times.empty() ? 0.0f : Width(times, SmallText) + 10;
+            const float after = Text(Fit(name, 0.38f, listW - 56 - amountW - timesW - 44), 56, baseline, 0.38f, TextColor);
+            if (!times.empty())
+                Text(times, after + 10, baseline, SmallText, TextDim);
+            Text(amount, listW - 26, baseline, 0.38f, color, ALIGN_RIGHT);
+        });
+        SellDetail(app, lines[app.cursor[2]], listW + 32, top, ScreenW - listW - 64);
     }
 
-    // The hidden level: the points, the enemy and weapon levels, each family's rank, and the enemies counted.
+    // The hidden level: the points and the two levels in cards, each family's rank in a small card, and the enemies
+    // counted in tiles, a dot for each kill that counts.
     void ExpTab(App& app)
     {
         app.visible[3] = 0;
+        app.gridColumns = 0;
         if (!app.level)
         {
             Text("This cook-data.txt has no level tables: make it again with the current gen_cook_data.py.", 28,
@@ -1455,99 +1605,93 @@ namespace
         }
         const LevelData& d = *app.level;
         const LevelPlan& p = *app.levelPlan;
-        char buf[160];
-        float y = HeaderH + 34;
-        char levels[96];
-        snprintf(levels, sizeof(levels), "   enemy level %.1f   weapon level %.1f", p.enemyLevel, p.weaponLevel);
-        const std::string points = Number(static_cast<int32_t>(p.points));
-        Text(Pick(points + " of " + Number(static_cast<int32_t>(p.maxPoints)) + " points (" +
-                      std::to_string(p.defeatedKinds) + " of " + std::to_string(d.flagCount) + " enemies)" + levels,
-                  points + " points" + levels, 0.40f, ScreenW - 56),
-             28, y, 0.40f, Gold);
-        y += 12;
+        char buf[64];
+        Stat points = MakeStat("Points, " + std::to_string(p.defeatedKinds) + " of " + std::to_string(d.flagCount) +
+                                   " enemies",
+                               Number(static_cast<int32_t>(p.points)), Gold, std::string(), 2.4f);
+        points.bar = p.maxPoints > 0 ? p.points / p.maxPoints : 0.0f;
+        points.note = "of " + Number(static_cast<int32_t>(p.maxPoints));
+        snprintf(buf, sizeof(buf), "%.1f", p.enemyLevel);
+        const std::string enemy = buf;
+        snprintf(buf, sizeof(buf), "%.1f", p.weaponLevel);
+        float y = StatCards({points, MakeStat("Enemy level", enemy, TextColor, std::string(), 1.0f),
+                             MakeStat("Weapon level", buf, TextColor, std::string(), 1.0f)},
+                            HeaderH + 14) +
+                  12;
 
-        // Families: the rank the enemy level reaches, its picture and name (named even before the player defeats one:
-        // chosen on 25/11), and the way to the next one.
-        const float rowH = 34;
-        float nameW = Width("No rank yet", 0.38f);
-        for (int s = 0; s < d.speciesCount; s++)
-            for (int r = 0; r < d.species[s].rankCount; r++)
-                nameW = std::max(nameW, Width(NameOf(app, Crc32(d.species[s].ranks[r].actor)), 0.38f));
-        const float bx = 62 + nameW + 28;
-        const float bw = std::max(100.0f, std::min(250.0f, ScreenW * 0.2f));
+        // Families: the rank the enemy level reaches, and the way to the next one.
+        const float left = 24.0f, gap = 10.0f, famH = 60.0f;
+        const int families = std::max(1, d.speciesCount);
+        const float famW = (ScreenW - 2 * left - gap * (families - 1)) / families;
         for (int s = 0; s < d.speciesCount; s++)
         {
             const Species& sp = d.species[s];
             const SpeciesState& st = p.species[s];
-            const float ry = y + s * rowH;
-            if (s % 2)
-                Rect(0, ry, ScreenW, rowH, RowAlt);
-            Icons::Enemy(sp.ranks[std::max(0, st.current)].actor, 22, ry + 1, 32);
-            if (st.current >= 0)
-                Text(NameOf(app, Crc32(sp.ranks[st.current].actor)), 62, ry + 24, 0.38f, TextColor);
-            else
-                Text("No rank yet", 62, ry + 24, 0.38f, TextDim);
+            const float fx = left + s * (famW + gap);
+            RoundRect(fx, y, famW, famH, 10, CardColor);
+            Icons::Enemy(sp.ranks[std::max(0, st.current)].actor, fx + 8, y + 8, 44);
+            const std::string name = st.current >= 0 ? NameOf(app, Crc32(sp.ranks[st.current].actor)) : "No rank yet";
+            Text(Fit(name, SmallText, famW - 68), fx + 60, y + 22, SmallText, st.current >= 0 ? TextColor : TextDim);
             if (st.current + 1 < sp.rankCount)
             {
                 const float from = st.current >= 0 ? sp.ranks[st.current].value : 0.0f;
                 const float to = sp.ranks[st.current + 1].value;
                 const float f = to > from ? (p.enemyLevel - from) / (to - from) : 0.0f;
-                RoundRect(bx, ry + 12, bw, 10, 5, glm::vec4(1.0f, 1.0f, 1.0f, 0.12f));
-                RoundRect(bx, ry + 12, std::max(10.0f, bw * std::min(1.0f, std::max(0.0f, f))), 10, 5,
+                const float bw = famW - 76;
+                RoundRect(fx + 60, y + 30, bw, 6, 3, TrackColor);
+                RoundRect(fx + 60, y + 30, std::max(6.0f, bw * std::min(1.0f, std::max(0.0f, f))), 6, 3,
                           glm::vec4(Gold, 1.0f));
-                snprintf(buf, sizeof(buf), "%.1f / %.0f", p.enemyLevel, to);
-                const float after = Text(buf, bx + bw + 16, ry + 24, SmallText, TextDim);
-                Text(Fit("next: " + std::string(NameOf(app, Crc32(sp.ranks[st.current + 1].actor))), SmallText,
-                         std::max(0.0f, ScreenW - 28 - after - 20)),
-                     ScreenW - 28, ry + 24, SmallText, TextDim, ALIGN_RIGHT);
+                snprintf(buf, sizeof(buf), "next at %.0f", to);
+                Text(Fit(buf, SmallText, famW - 68), fx + 60, y + 52, SmallText, TextDim);
             }
             else
-                Text("top rank", bx, ry + 24, SmallText, Good);
+                Text("top rank", fx + 60, y + 46, SmallText, Good);
         }
-        y += d.speciesCount * rowH + 10;
+        y += famH + 12;
 
+        // The enemies, in the order of the points they give (those whose counter is full last), four to a row.
+        const int cols = 4;
+        app.gridColumns = cols;
+        const float tileW = (ScreenW - 2 * left - gap * (cols - 1)) / cols, tileH = 66.0f, step = tileH + 8;
         const int rows = static_cast<int>(app.levelRows.size());
-        int& cursor = app.cursor[3];
-        int& scroll = app.scroll[3];
-        const float colPoints = ScreenW - 130, colEach = colPoints - 190, colDefeated = colEach - 200;
-        Rect(0, y, ScreenW, 30, BarColor);
-        const float afterName = Text("Enemy", 60, y + 21, SmallText, TextDim);
-        Text(Position(cursor, rows), afterName + 20, y + 21, SmallText, TextDim);
-        Text("Defeated", colDefeated, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Points each", colEach, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        Text("Points", colPoints, y + 21, SmallText, TextDim, ALIGN_RIGHT);
-        y += 32;
-        const float lineH = 30;
-        const int visible = std::max(1, static_cast<int>((ScreenH - FooterH - 10 - y) / lineH));
-        app.visible[3] = visible;
         if (rows == 0)
             return;
-        KeepInView(cursor, scroll, rows, visible);
-        for (int i = scroll; i < rows && i < scroll + visible; i++)
-        {
-            const LevelRow& row = app.levelRows[i];
-            const LevelFlag& f = d.flags[row.index];
-            const LevelFlagState& fs = p.flags[row.index];
-            const float ry = y + (i - scroll) * lineH;
-            if (i == cursor)
-                SelectedRow(8, ry, ScreenW - 22, lineH, 6, Background);
-            else if (i % 2)
-                Rect(0, ry, ScreenW, lineH, RowAlt);
-            // Every enemy by name and picture. One whose counter is full adds nothing more: the whole row in grey,
-            // done (these come last).
-            const bool done = LevelRowDone(d, p, row.index);
-            const char* label = NameOf(app, Crc32(f.actor));
-            Icons::Enemy(f.actor, 24, ry + 1, 28);
-            Text(Fit(label, 0.38f, colDefeated - 60 - 110), 60, ry + 21, 0.38f, done ? TextDim : TextColor);
-            // Each counter stops at its limit (10 for most enemies): further kills add nothing.
-            const std::string defeated = Number(fs.kills) + (f.max > 0 ? " / " + Number(f.max) : std::string());
-            Text(defeated, colDefeated, ry + 21, 0.38f, done ? TextDim : TextColor, ALIGN_RIGHT);
-            snprintf(buf, sizeof(buf), "%g", f.point);
-            Text(buf, colEach, ry + 21, 0.38f, TextDim, ALIGN_RIGHT);
-            Text(Number(static_cast<int32_t>(fs.total)), colPoints, ry + 21, 0.38f, done ? TextDim : (fs.kills ? Gold : TextDim),
-                 ALIGN_RIGHT);
-        }
-        ScrollBar(y, visible * lineH, rows, visible, scroll);
+        const int tileRows = (rows + cols - 1) / cols;
+        const int visibleRows = std::max(1, static_cast<int>((ScreenH - FooterH - 6 - y + 8) / step));
+        int& cursor = app.cursor[3];
+        int& scroll = app.scroll[3];
+        cursor = std::max(0, std::min(cursor, rows - 1));
+        int cursorRow = cursor / cols;
+        KeepInView(cursorRow, scroll, tileRows, visibleRows);
+        for (int r = scroll; r < tileRows && r < scroll + visibleRows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                const int i = r * cols + c;
+                if (i >= rows)
+                    break;
+                const LevelRow& row = app.levelRows[i];
+                const LevelFlag& f = d.flags[row.index];
+                const LevelFlagState& fs = p.flags[row.index];
+                const bool done = LevelRowDone(d, p, row.index);
+                const float tx = left + c * (tileW + gap), ty = y + (r - scroll) * step;
+                if (i == cursor)
+                    SelectedRow(tx, ty, tileW, tileH, 10, Background);
+                else
+                    RoundRect(tx, ty, tileW, tileH, 10, done ? glm::vec4(1.0f, 1.0f, 1.0f, 0.02f) : CardColor);
+                Icons::Enemy(f.actor, tx + 10, ty + 11, 44);
+                Text(Fit(NameOf(app, Crc32(f.actor)), SmallText, tileW - 76), tx + 64, ty + 22, SmallText,
+                     done ? TextDim : TextColor);
+                // A dot for each kill that can count (10 for most enemies), filled for those done.
+                const int slots = f.max > 0 ? std::min<int32_t>(f.max, 10) : 10;
+                for (int k = 0; k < slots; k++)
+                    RoundRect(tx + 64 + k * 13, ty + 30, 9, 9, 4.5f,
+                              k < fs.kills ? glm::vec4(done ? TextDim : Gold, 1.0f) : TrackColor);
+                snprintf(buf, sizeof(buf), "%g each", f.point);
+                const float after = Text(Number(static_cast<int32_t>(fs.total)), tx + 64, ty + 57, SmallText,
+                                         fs.kills > 0 && !done ? Gold : TextDim);
+                Text(buf, after + 10, ty + 57, SmallText, TextDim);
+            }
+        ScrollBar(y, visibleRows * step - 8, tileRows, visibleRows, scroll);
     }
 
     void Message(const std::string& text, const glm::vec3& color)
@@ -1638,6 +1782,19 @@ int main()
                     if ((down & HidNpadButton_AnyLeft) || (pageRepeat && (held & HidNpadButton_AnyLeft)))
                         move = -page;
                     paged = move != 0;
+                }
+                if (app.tab == 3 && app.gridColumns > 0)
+                {
+                    move = 0;
+                    paged = false;
+                    if ((down & HidNpadButton_AnyDown) || (repeat && (held & HidNpadButton_AnyDown)))
+                        move = app.gridColumns;
+                    if ((down & HidNpadButton_AnyUp) || (repeat && (held & HidNpadButton_AnyUp)))
+                        move = -app.gridColumns;
+                    if ((down & HidNpadButton_AnyRight) || (repeat && (held & HidNpadButton_AnyRight)))
+                        move = 1;
+                    if ((down & HidNpadButton_AnyLeft) || (repeat && (held & HidNpadButton_AnyLeft)))
+                        move = -1;
                 }
             }
             else

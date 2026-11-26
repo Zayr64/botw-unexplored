@@ -112,6 +112,18 @@ namespace Compendium
         int32_t Free(uint8_t tierMask) const;
     };
 
+    // What the upgrades left on one armor piece in the pouch take of one material (0.1.17: the Reserve tab says which
+    // pieces a material is held back for).
+    struct PieceNeed
+    {
+        uint32_t piece = 0; // the piece in the pouch
+        uint32_t item = 0;
+        int32_t amount = 0;
+        int fromStar = 0;   // the stars of the first and the last upgrade that take it (1 to 4)
+        int toStar = 0;
+    };
+    constexpr int MaxPieceNeeds = 1024;
+
     struct ReservePlan
     {
         int fairies = 0;            // Great Fairy fountains restored (0 to 4)
@@ -126,6 +138,8 @@ namespace Compendium
         int questsWithUnknownCount = 0;
         int materialCount = 0;
         MaterialPlan materials[MaxMaterials];
+        int pieceNeedCount = 0;
+        PieceNeed pieceNeeds[MaxPieceNeeds]; // the tiers OwnedReachable and OwnedNextFairy, by piece
 
         const MaterialPlan* Find(uint32_t item) const;
         int32_t RupeesNeeded(uint8_t tierMask) const;
