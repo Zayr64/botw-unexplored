@@ -743,6 +743,14 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
     const std::array<uint32_t, 3>& balladFlags = GetBalladStartedFlags();
     const std::vector<uint32_t>& progressFlags = Progress::TrackedFlags();
     const std::vector<uint32_t>& questFlags = QuestMap::Flags(); // the steps and markers of quests.txt too
+    static const std::vector<uint32_t> chestItemFlags = []() // and whether the items of the armor chests are had
+    {
+        std::vector<uint32_t> flags;
+        for (int i = 0; i < Data::ChestItemOwnFlagsCount; ++i)
+            flags.push_back(Data::ChestItemOwnFlags[i].hash);
+        std::sort(flags.begin(), flags.end());
+        return flags;
+    }();
     for (const SaveParser::Record& record : bufferState.records)
     {
         const uint32_t hashValue = record.hash;
@@ -764,7 +772,8 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
             if (std::find(balladFlags.begin(), balladFlags.end(), hashValue) != balladFlags.end())
                 parsedState.balladStarted = true;
             if (std::binary_search(progressFlags.begin(), progressFlags.end(), hashValue) ||
-                std::binary_search(questFlags.begin(), questFlags.end(), hashValue))
+                std::binary_search(questFlags.begin(), questFlags.end(), hashValue) ||
+                std::binary_search(chestItemFlags.begin(), chestItemFlags.end(), hashValue))
                 parsedState.progressFlags.push_back(hashValue);
         }
 
@@ -1156,6 +1165,14 @@ bool SavefileIO::DlcShrinesAppear()
 bool SavefileIO::IsProgressFlagSet(uint32_t flagHash)
 {
     return std::binary_search(CurrentState.progressFlags.begin(), CurrentState.progressFlags.end(), flagHash);
+}
+
+bool SavefileIO::HasChestItem(uint16_t item)
+{
+    for (int i = 0; i < Data::ChestItemOwnFlagsCount; ++i)
+        if (Data::ChestItemOwnFlags[i].item == item && IsProgressFlagSet(Data::ChestItemOwnFlags[i].hash))
+            return true;
+    return false;
 }
 
 bool SavefileIO::HasExpansionPass()

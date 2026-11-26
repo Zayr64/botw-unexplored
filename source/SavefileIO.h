@@ -103,6 +103,8 @@ namespace SavefileIO
     bool GetShrineChests(uint32_t locationHash, int& opened, int& total);
     // Whether the tower of this location is activated, or its great fairy awakened (see LocationState.h).
     bool IsLocationStateDone(uint32_t locationHash);
+    // Whether the player has (or had) the item of an armor-group chest, from any source (Data::ChestItemOwnFlags).
+    bool HasChestItem(uint16_t item);
     // The shrines of the Champions' Ballad are not in the world before it begins.
     bool DlcShrinesAppear();
     // Whether a flag the progress panel counts (quests, Divine Beasts, compendium; see Progress.h) is set.

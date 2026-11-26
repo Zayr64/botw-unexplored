@@ -47,7 +47,7 @@ fi
 /tmp/test_live_extras
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_blood_moon.cpp source/BloodMoon.cpp source/ShrineFlags.cpp -o /tmp/test_blood_moon
 /tmp/test_blood_moon
-"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_chests.cpp source/ChestData.cpp -o /tmp/test_chests
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_chests.cpp source/ChestData.cpp source/ChestOwnedData.cpp -o /tmp/test_chests
 /tmp/test_chests
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_shrine_chests.cpp source/ShrineChests.cpp source/ShrineChestData.cpp -o /tmp/test_shrine_chests
 /tmp/test_shrine_chests

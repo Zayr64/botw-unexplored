@@ -40,7 +40,8 @@ namespace
         "Quests", "Quest", "Side quest", "Shrine quest", "Not taken yet", "Not available yet: something else first",
         "Main quest", "In progress", "Where the game's marker for this step points",
         "No marker in the game for this step: where the quest was taken",
-        "Tower", "Great Fairy Fountain", "Activated", "Not activated", "The fairy is awake", "The fairy sleeps"
+        "Tower", "Great Fairy Fountain", "Activated", "Not activated", "The fairy is awake", "The fairy sleeps",
+        "You already have it: not opened"
     };
 
     static_assert(sizeof(english) / sizeof(english[0]) == static_cast<size_t>(Localization::Text::Count), "English strings are incomplete");

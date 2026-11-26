@@ -126,8 +126,15 @@ void ObjectInfo::Render()
         }
     }
     else if (m_Chest != nullptr)
-        top = found ? Ui::StatusRow(top, Localization::Get(Text::Opened), Ui::Colors::Good)
-                    : Ui::StatusRow(top, Localization::Get(Text::NotOpened), Ui::Colors::Warn, false);
+    {
+        // Not opened, but its item is had already (an armor-group chest): nothing left in it
+        const bool opened = SavefileIO::IsChestOpened(m_Chest->hash);
+        const bool had = !opened && Data::GroupOf(m_Chest->contents) == Data::ChestGroup::Armor &&
+                         SavefileIO::HasChestItem(m_Chest->item);
+        top = had      ? Ui::StatusRow(top, Localization::Get(Text::ChestItemHad), Ui::Colors::Good)
+            : found    ? Ui::StatusRow(top, Localization::Get(Text::Opened), Ui::Colors::Good)
+                       : Ui::StatusRow(top, Localization::Get(Text::NotOpened), Ui::Colors::Warn, false);
+    }
     else if (m_Type == Data::ObjectType::Tower)
         top = found ? Ui::StatusRow(top, Localization::Get(Text::TowerActivated), Ui::Colors::Good)
                     : Ui::StatusRow(top, Localization::Get(Text::TowerNotActivated), Ui::Colors::Warn, false);

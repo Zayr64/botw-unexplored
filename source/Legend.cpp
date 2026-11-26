@@ -26,15 +26,18 @@ namespace
         float tabs, completion, bar, source, rowsTop, rowHeight, rowGap;
     };
 
-    // zayr28: the categories in two columns of seven in the panel's width, in this order (the first column what the map completion and
-    // the world's places ask for, the second the enemies and the loot). Up and down go through them in this order.
+    // zayr28: the categories in two columns of seven in the panel's width, in this order. The first column what the
+    // map completion asks for (Korok seeds, shrines, locations) and the world's places, the Hero's Path last; the
+    // second the loot (the three chest groups, the walls that hide more) and then the mini-bosses, looked up less
+    // (zayr29, chosen by the user over the mini-bosses first and over the towers first). Up and down go through them
+    // in this order.
     constexpr int Columns = 2;
     constexpr int RowsPerColumn = 7;
     const IconButton::ButtonTypes DisplayOrder[] = {
         IconButton::Koroks, IconButton::Shrines, IconButton::Locations, IconButton::Towers, IconButton::GreatFairies,
         IconButton::Quests, IconButton::HeroPath,
-        IconButton::Hinoxes, IconButton::Taluses, IconButton::Moldugas, IconButton::ArmorChests,
-        IconButton::WeaponChests, IconButton::MaterialChests, IconButton::Walls
+        IconButton::ArmorChests, IconButton::WeaponChests, IconButton::MaterialChests, IconButton::Walls,
+        IconButton::Hinoxes, IconButton::Taluses, IconButton::Moldugas
     };
     static_assert(sizeof(DisplayOrder) / sizeof(DisplayOrder[0]) == LegendCategories::ButtonCount,
                   "Every legend category has a place in the columns");

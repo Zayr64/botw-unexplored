@@ -182,6 +182,7 @@ namespace Localization
         TowerNotActivated,
         FairyAwake,
         FairyAsleep,
+        ChestItemHad,
         Count
     };
 

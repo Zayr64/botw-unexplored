@@ -712,14 +712,20 @@ void Map::UpdateMapObjects(bool recenter)
     // Chests: those of Master Mode only exist there; those of the Expansion Pass need it (an opened one,
     // the Champions' Ballad or a Master Mode save show that the game has it).
     const bool dlcChests = SavefileIO::HasExpansionPass();
+    int chestsItemHad = 0;
     const auto placeChest = [&](auto& object, const Data::Chest& chest)
     {
         const Data::ObjectType type = Data::ObjectType::SpecialChest;
         object.m_Position = glm::vec2(chest.x, -chest.y) * MapScale;
         object.m_Excluded = ((chest.flags & Data::ChestMasterModeOnly) && !m_LoadMasterMode) ||
                             ((chest.flags & Data::ChestDlc) && !dlcChests);
-        object.m_Found = !object.m_Excluded &&
-                         ResolveFound(type, chest.hash, SavefileIO::IsChestOpened(chest.hash), manualProgressChanged);
+        // An armor-group chest whose item the player already has (bought, given, found elsewhere) has nothing left
+        // to give: it counts as done, like an opened one (zayr29)
+        const bool opened = SavefileIO::IsChestOpened(chest.hash);
+        const bool had = !opened && Data::GroupOf(chest.contents) == Data::ChestGroup::Armor &&
+                         SavefileIO::HasChestItem(chest.item);
+        chestsItemHad += !object.m_Excluded && had;
+        object.m_Found = !object.m_Excluded && ResolveFound(type, chest.hash, opened || had, manualProgressChanged);
     };
     for (int i = 0; i < Data::ArmorChestsCount; i++)
         placeChest(m_ArmorChests[i], Data::ArmorChests[i]);
@@ -727,6 +733,7 @@ void Map::UpdateMapObjects(bool recenter)
         placeChest(m_WeaponChests[i], Data::WeaponChests[i]);
     for (int i = 0; i < Data::MaterialChestsCount; i++)
         placeChest(m_MaterialChests[i], Data::MaterialChests[i]);
+    Log("MAP: armor-group chests not opened whose item the player already has:", chestsItemHad);
 
     for (int i = 0; i < Data::WallsCount; i++) // Breakable walls
     {

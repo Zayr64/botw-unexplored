@@ -86,5 +86,32 @@ int main()
     assert(vest != nullptr && std::strcmp(ItemOf(*vest), "Salvager Vest") == 0 && vest->flags == Data::ChestSideQuest);
     assert(Find(Data::Chests, Data::ChestsCount, 2175256561u) == nullptr);
     assert(Find(Data::ArmorChests, Data::ArmorChestsCount, 2175256561u) == nullptr);
+
+    // zayr29: every item of the armor-group chests has the flags that tell it is had (IsGet_<actor>), sorted by item;
+    // an armor piece has one per level of upgrade (the Warm Doublet has none: one flag)
+    {
+        std::set<int> withFlags;
+        int previous = -1;
+        for (int i = 0; i < Data::ChestItemOwnFlagsCount; ++i)
+        {
+            const Data::ChestItemOwnFlag& flag = Data::ChestItemOwnFlags[i];
+            assert(flag.item < Data::ChestItemNamesCount && flag.hash != 0 && flag.item >= previous);
+            previous = flag.item;
+            withFlags.insert(flag.item);
+        }
+        for (int i = 0; i < Data::ArmorChestsCount; ++i)
+            assert(withFlags.count(Data::ArmorChests[i].item) == 1);
+        const auto flagsOf = [](const char* name)
+        {
+            int count = 0;
+            for (int i = 0; i < Data::ChestItemOwnFlagsCount; ++i)
+                count += std::strcmp(Data::ChestItemNames[Data::ChestItemOwnFlags[i].item], name) == 0;
+            return count;
+        };
+        assert(flagsOf("Warm Doublet") == 1);           // IsGet_Armor_044_Upper
+        assert(flagsOf("Tunic of the Wild") >= 4);      // its levels of upgrade
+        assert(flagsOf("Travel Medallion") == 1);       // a key item
+        assert(flagsOf("Royal Broadsword") == 0);       // a weapon: not in the armor group
+    }
     return 0;
 }
