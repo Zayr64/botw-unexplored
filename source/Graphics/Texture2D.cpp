@@ -3,9 +3,12 @@
 #include <glad/glad.h>
 #include <stb/stb_image.h>
 
+#include "../Dds.h"
 #include "../Log.h"
 #include "../ImageOverride.h"
+#include "CompressedTexture.h"
 #include <unistd.h>
+#include <vector>
 
 Texture2D::Texture2D()
 {
@@ -31,6 +34,31 @@ void Texture2D::Load(const std::string& filepath)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	stbi_set_flip_vertically_on_load(true);
+
+	// A BC1 copy next to the image (romfs:/map-lowres.dds, made by tools/map_dds.cpp) takes an eighth of the video
+	// memory, where the GPU reads BC1: the map drawn under everything stays loaded the whole time.
+	const std::string ddsPath = Dds::SiblingPath(filepath);
+	if (!ddsPath.empty() && access(ddsPath.c_str(), R_OK) == 0 && CompressedTexture::Bc1Supported())
+	{
+		std::vector<uint8_t> file;
+		Dds::Info info;
+		if (CompressedTexture::ReadFile(ddsPath, file) && Dds::Parse(file.data(), file.size(), info))
+		{
+			const unsigned int error = CompressedTexture::Upload(file.data(), info);
+			if (error == 0)
+			{
+				m_Width = info.width;
+				m_Height = info.height;
+				m_NrChannels = 3;
+				Log("Texture BC1", ddsPath);
+				return;
+			}
+			Log("Could not load the BC1 texture (GL error " + std::to_string(error) + "), using the image", ddsPath);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1000);
+		}
+		else
+			Log("Not a BC1 DDS, using the image", ddsPath);
+	}
 
 	// A sharper copy on the SD card replaces the image, drawn at the size of the original.
 	int logicalWidth = 0, logicalHeight = 0, logicalChannels = 0;

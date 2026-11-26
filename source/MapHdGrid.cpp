@@ -76,14 +76,16 @@ bool MapHdGrid::IsUsableZoom(float zoom)
     return std::isfinite(zoom) && zoom >= MinZoom;
 }
 
-int MapHdGrid::MaxLoadedChunks(bool application)
+int MapHdGrid::MaxLoadedChunks(bool application, bool compressed)
 {
+    if (compressed)
+        return MaxLoadedCompressed;
     return application ? MaxLoadedApplication : MaxLoadedApplet;
 }
 
-int MapHdGrid::Reduction(bool application)
+int MapHdGrid::Reduction(bool application, bool compressed)
 {
-    return application ? 1 : 2;
+    return application || compressed ? 1 : 2;
 }
 
 int MapHdGrid::WantedReduction(bool application, float zoom)
@@ -125,14 +127,19 @@ bool MapHdGrid::HasMemoryForChunk(uint64_t freeBytes)
     return freeBytes >= AppletReserveBytes + ChunkPeakBytes;
 }
 
-int MapHdGrid::TextureMegabytes(int reduction)
+int MapHdGrid::TextureKilobytes(int reduction, bool compressed)
 {
-    return reduction == 1 ? 4 : 1;
+    // ChunkPixels x ChunkPixels with a third more for the mipmaps: 4 bytes a pixel as RGB(A), half a byte as BC1
+    const int pixelsKb = ChunkPixels * ChunkPixels / 1024;
+    if (compressed)
+        return (pixelsKb / 2) * 4 / 3 + 1;
+    const int full = pixelsKb * 4 * 4 / 3;
+    return reduction == 1 ? full : full / 4;
 }
 
-int MapHdGrid::TextureBudget(bool application)
+int MapHdGrid::TextureBudgetKb(bool application)
 {
-    return application ? MaxLoadedApplication * TextureMegabytes(1) : AppletTextureBudget;
+    return application ? MaxLoadedApplication * TextureKilobytes(1, false) : AppletTextureBudgetKb;
 }
 
 bool MapHdGrid::IsValidInfo(std::istream& input)

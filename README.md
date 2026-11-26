@@ -34,7 +34,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Shrine cards show whether the shrine is completed and how many of its chests are opened (`Chests 2/3`); a discovered shrine with something left stays on the map.
 - The shrines of the Champions' Ballad show only once that quest has begun, when they can exist in the world. Before that the legend counts 120 shrines.
 - The most recent save slot is picked by the save time in `caption.sav`, so loading an older save is followed.
-- Optional high-resolution map (4x; from the Album 2x, and 4x zoomed in while memory allows) when zoomed in, read from the SD card (see below).
+- Optional high-resolution map (4x, from the Album too with its BC1 chunks; with JPEG chunks only, 2x from the Album and 4x zoomed in while memory allows) when zoomed in, read from the SD card (see below).
 - Persisted camera, zoom, and legend visibility. Legacy settings are migrated safely.
 
 ## Installation
@@ -90,7 +90,24 @@ loading them in the background as the map moves. The chunks are not distributed 
   4 MB at full size and 1 MB halved, up to 30 MB from the Album (a screen of 6 chunks at full size and 3 halved):
   past that, chunks off screen go first, and with none left the ones still halved on screen stay halved. A texture
   that fails anyway is dropped (the chunk keeps what it had) and no more are kept than at that moment. The last
-  `MAP HD:` line also tells the most MB of textures loaded at once.
+  `MAP HD:` line also tells the most MB of textures loaded at once. The textures are weighed as the GPU holds them:
+  RGB as RGBA (4 bytes a pixel) and a third more for the mipmaps, 5.3 MB at full size and 1.3 MB halved, up to
+  38.5 MB from the Album (the console ran out near 40 MB).
+- **BC1 chunks** (zayr26): `tools/map_dds.cpp` turns each `<column>_<row>.jpg` into a `<column>_<row>.dds` next to it,
+  BC1 (DXT1) with every mipmap level, rows bottom up as the app loads its textures; BC1 keeps 4 bits a pixel, which
+  the GPU reads as they are (0.7 MB a chunk instead of 5.3). When `map-hd/00_00.dds` is there and the GL driver takes
+  BC1 (`GL_EXT_texture_compression_s3tc`), every chunk is loaded from its `.dds` at full size, from the Album too, up to
+  40 at once (27 MB); a chunk without its `.dds` falls back to the JPEG. Without BC1 the JPEG chunks are used as above.
+  The 120 files take 77 MB on the SD card.
+
+  ```bash
+  g++ -O2 -std=c++14 -Iinclude tools/map_dds.cpp -o map_dds
+  for f in map-hd/*.jpg; do ./map_dds "$f" "${f%.jpg}.dds"; done
+  ```
+
+  The built-in map is in BC1 too (`romfs/map-lowres.dds`, made the same way from `romfs/map-lowres.png`, which stays
+  for a driver without BC1): 5 MB on the GPU instead of 40, the whole time the app is open. `log.txt` says whether
+  the driver takes BC1 (`GL:` line) and which textures came from a `.dds`.
 
 ## Quests on the map (optional)
 
@@ -149,7 +166,7 @@ Run the host-side checks with:
 bash tests/run_host_tests.sh
 ```
 
-They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map, the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, the Blood Moon estimate, the size of the icons at each zoom, the reader of
+They cover settings migration and validation, UTF-8 decoding, manual-progress profile/mode/type separation, object metadata mapping, data counts, duplicate completion hashes, the chest tables (world and shrines), the wall table, the tower and fountain flags, the memory rule of the high-resolution map and its BC1 files (`DDS_FILE` adds a real one), the counters of quests, compendium, armor and memories, the quests left to take by region, the table of regions, the f32 and array flags of the live reader, the Blood Moon estimate, the size of the icons at each zoom, the reader of
 quests.txt (`QUESTS_FILE` adds a real one), and the reading of the Hero's Path files (`HERO_PATH_DIR` adds the tracker folder of a real save). GitHub Actions also builds the Switch `.nro` and uploads it as an artifact.
 
 ## Credits

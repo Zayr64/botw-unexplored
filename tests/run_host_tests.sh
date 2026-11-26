@@ -29,6 +29,9 @@ fi
 /tmp/test_map_completion
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_map_hd_grid.cpp source/MapHdGrid.cpp -o /tmp/test_map_hd_grid
 /tmp/test_map_hd_grid
+# DDS_FILE: a DDS made by tools/map_dds.cpp to read too (romfs/map-lowres.dds or a chunk of map-hd/).
+"$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_dds.cpp source/Dds.cpp -o /tmp/test_dds
+/tmp/test_dds ${DDS_FILE:+"$DDS_FILE"}
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_icon_scale.cpp source/IconScale.cpp -o /tmp/test_icon_scale
 /tmp/test_icon_scale
 "$compiler" -std=c++14 -Wall -Wextra -pedantic "${sanitizers[@]}" -Isource tests/test_hero_path.cpp source/HeroPath.cpp -o /tmp/test_hero_path

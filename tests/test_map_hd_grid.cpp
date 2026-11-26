@@ -56,8 +56,8 @@ int main()
     assert(!IsValidInfo(empty));
 
     // From the Album fewer chunks stay loaded, but more than a screen needs at the lowest zoom they show at
-    assert(MaxLoadedChunks(true) == 40 && MaxLoadedChunks(false) == 24);
-    assert(static_cast<int>(wide.size()) < MaxLoadedChunks(false));
+    assert(MaxLoadedChunks(true, false) == 40 && MaxLoadedChunks(false, false) == 24);
+    assert(static_cast<int>(wide.size()) < MaxLoadedChunks(false, false));
     // ...and one more is loaded only while 32 MB stay free after its 8 MB: with the 60 MB the console has from the
     // Album once the map is up, some 20 halved chunks (about 1 MB each) fit, more than a screen needs
     assert(!HasMemoryForChunk(0) && !HasMemoryForChunk(39ull * 1024 * 1024));
@@ -65,7 +65,7 @@ int main()
     assert((60 - 40) + 1 >= static_cast<int>(wide.size()));
 
     // From the Album each chunk is halved: 2 x 2 means, an odd edge alone
-    assert(Reduction(true) == 1 && Reduction(false) == 2);
+    assert(Reduction(true, false) == 1 && Reduction(false, false) == 2);
     // ...and loaded again at full size when zoomed in, where a screen holds at most 3 x 3 of them
     assert(WantedReduction(true, 1.5f) == 1 && WantedReduction(false, 1.5f) == 2 && WantedReduction(false, 2.4f) == 2);
     assert(WantedReduction(false, 2.5f) == 1 && WantedReduction(false, 10.0f) == 1);
@@ -84,17 +84,26 @@ int main()
             assert(ChunkWidthPixels(index) % 2 == 0 && ChunkHeightPixels(index) % 2 == 0);
     }
 
-    // Textures, in MB: from the Album a screen at FullZoom with 6 chunks at full size and 3 halved fits (27 MB, as on
-    // 25/11), a 7th upgrade does not (it holds both textures for a moment); the 15 halved chunks of a screen at
-    // MinZoom fit; 24 at full size (what piled up on 26/11 and showed black) are far over. As an application, the 40
-    // chunks at full size fit: no limit of its own there.
-    assert(TextureMegabytes(1) == 4 && TextureMegabytes(2) == 1);
-    assert(TextureBudget(true) == MaxLoadedApplication * 4 && TextureBudget(false) == 30);
-    assert(6 * TextureMegabytes(1) + 3 * TextureMegabytes(2) <= TextureBudget(false));
-    assert(5 * TextureMegabytes(1) + 4 * TextureMegabytes(2) + TextureMegabytes(1) <= TextureBudget(false));
-    assert(6 * TextureMegabytes(1) + 3 * TextureMegabytes(2) + TextureMegabytes(1) > TextureBudget(false));
-    assert(static_cast<int>(wide.size()) * TextureMegabytes(2) <= TextureBudget(false));
-    assert(MaxLoadedApplet * TextureMegabytes(1) > 3 * TextureBudget(false));
+    // Textures, in KB as the GPU holds them (RGB as RGBA, plus a third for the mipmaps; BC1 at 4 bits a pixel). From
+    // the Album with the JPEG chunks: a screen at FullZoom with 6 at full size and 3 halved fits (as zayr25 allowed and
+    // the console took on 26/11), a 7th upgrade does not (it holds both textures for a moment); the 15 halved chunks
+    // of a screen at MinZoom fit; 24 at full size (what piled up on 26/11 and showed black) are far over. As an
+    // application, the 40 chunks at full size fit: no limit of its own there.
+    const int full = TextureKilobytes(1, false), half = TextureKilobytes(2, false), bc1 = TextureKilobytes(1, true);
+    assert(full == 5461 && half == 1365 && bc1 == 683);
+    assert(TextureBudgetKb(true) == MaxLoadedApplication * full && TextureBudgetKb(false) == 39424);
+    assert(TextureBudgetKb(false) < 40 * 1024); // where the console ran out
+    assert(6 * full + 3 * half <= TextureBudgetKb(false));
+    assert(5 * full + 4 * half + full <= TextureBudgetKb(false));
+    assert(6 * full + 3 * half + full > TextureBudgetKb(false));
+    assert(static_cast<int>(wide.size()) * half <= TextureBudgetKb(false));
+    assert(MaxLoadedApplet * full > 3 * TextureBudgetKb(false));
+    // With the BC1 chunks (zayr26): every chunk at full size, from the Album too, and 40 of them fit with room left
+    // (27 MB); a screen at MinZoom needs 15
+    assert(Reduction(false, true) == 1 && Reduction(true, true) == 1);
+    assert(MaxLoadedChunks(false, true) == 40 && MaxLoadedChunks(true, true) == 40);
+    assert(MaxLoadedChunks(false, true) * bc1 <= TextureBudgetKb(false) * 3 / 4);
+    assert(static_cast<int>(wide.size()) * bc1 < 6 * full + 3 * half);
 
     // Eviction: the least recently used chunk, never one used in the current frame
     assert(PickEviction({{3, 10}, {7, 4}, {9, 8}}, 12) == 7);

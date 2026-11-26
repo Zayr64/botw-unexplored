@@ -42,10 +42,16 @@ namespace MapHdGrid
     constexpr uint64_t ChunkPeakBytes = 8ull * 1024 * 1024;
     // The textures do not come out of the memory measured above (zayr17, 25/11: with 9 chunks loaded, 6 of them at
     // full size, the free memory did not move). From the Album their own pool is small: on 26/11, panning zoomed in,
-    // the chunks at full size piled up (only the 24 above bounded them, about 96 MB) until new textures failed and
-    // showed black. So the textures are weighed too, in MB: about 4 for a chunk at full size, 1 for a halved one, up
-    // to AppletTextureBudget, a little over the 27 MB that worked on 25/11 (and 6 chunks at full size on a screen).
-    constexpr int AppletTextureBudget = 30;
+    // the chunks at full size piled up (only the 24 above bounded them) until new textures failed and showed black.
+    // So the textures are weighed too, in KB as the GPU holds them: RGB is stored as RGBA, 4 bytes a pixel and a
+    // third more for the mipmaps (5461 KB for a chunk at full size, 1365 halved); BC1 takes 4 bits a pixel (683 KB).
+    // From the Album up to AppletTextureBudgetKb: 6 chunks at full size and 3 halved on a screen, what zayr25 allowed,
+    // reached by upgrades that hold one texture more for a moment (5 full, 4 halved and the new one: 38.2 MB). On the
+    // console a texture failed (GL_OUT_OF_MEMORY) near 40 MB on 26/11.
+    constexpr int AppletTextureBudgetKb = 38 * 1024 + 512;
+    // With the BC1 chunks (map-hd/*.dds, zayr26) every chunk is loaded at full size, from the Album too, and as many
+    // stay as in the application: 40 of them take 27 MB.
+    constexpr int MaxLoadedCompressed = MaxLoadedApplication;
 
     struct Rect
     {
@@ -63,9 +69,10 @@ namespace MapHdGrid
 
     bool IsUsableZoom(float zoom);
 
-    int MaxLoadedChunks(bool application);
-    // How much each chunk is reduced before it becomes a texture: 1 as an application, 2 from the Album.
-    int Reduction(bool application);
+    int MaxLoadedChunks(bool application, bool compressed);
+    // How much each chunk is reduced before it becomes a texture: 1 as an application or with the BC1 chunks, 2 from
+    // the Album with the JPEG ones.
+    int Reduction(bool application, bool compressed);
     // The reduction wanted for the chunks on screen at this zoom: from the Album, full size from FullZoom on.
     int WantedReduction(bool application, float zoom);
     // `pixels` (RGB, `width` x `height`) halved into `out`, each pixel the mean of a 2 x 2 block (an odd last row or
@@ -74,11 +81,12 @@ namespace MapHdGrid
     void Halve(const unsigned char* pixels, int width, int height, unsigned char* out);
     // From the Album: whether one more chunk may be loaded with this much memory free.
     bool HasMemoryForChunk(uint64_t freeBytes);
-    // MB of texture a chunk takes at this reduction (with its mipmaps, rounded up): 4 at full size, 1 halved.
-    int TextureMegabytes(int reduction);
-    // MB of textures kept loaded at once: as an application, all of MaxLoadedApplication at full size (no limit of its
-    // own); from the Album, AppletTextureBudget.
-    int TextureBudget(bool application);
+    // KB of video memory a chunk takes with its mipmaps: RGB at this reduction (5461 at full size, 1365 halved), or
+    // BC1 (683, always at full size).
+    int TextureKilobytes(int reduction, bool compressed);
+    // KB of textures kept loaded at once: as an application, all of MaxLoadedApplication at full size in RGB (no limit
+    // of its own); from the Album, AppletTextureBudgetKb.
+    int TextureBudgetKb(bool application);
 
     // map-hd.txt: header, version, then "<width> <height> <chunk size>" of the high-resolution image.
     bool IsValidInfo(std::istream& input);
