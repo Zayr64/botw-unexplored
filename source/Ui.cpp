@@ -63,8 +63,47 @@ namespace
         return names;
     }
 
+    // The Switch's own symbol of a button (filled, as the HOME menu's bar draws them) in the Nintendo Extension font,
+    // as UTF-8; "" for a name it has none for, or without that font (the caps below are drawn then).
+    std::string ButtonGlyphs(const std::string& button)
+    {
+        static const struct { const char* name; uint32_t first, second; } symbols[] = {
+            {"A", 0xE0E0, 0}, {"B", 0xE0E1, 0}, {"X", 0xE0E2, 0}, {"Y", 0xE0E3, 0}, {"L", 0xE0E4, 0}, {"R", 0xE0E5, 0},
+            {"ZL", 0xE0E6, 0}, {"ZR", 0xE0E7, 0}, {"+", 0xE0EF, 0}, {"-", 0xE0F0, 0}, {"<", 0xE0ED, 0},
+            {">", 0xE0EE, 0}, {"Up/Down", 0xE0EB, 0xE0EC}
+        };
+        const auto utf8 = [](uint32_t cp) {
+            return std::string{static_cast<char>(0xE0 | (cp >> 12)), static_cast<char>(0x80 | ((cp >> 6) & 0x3F)),
+                               static_cast<char>(0x80 | (cp & 0x3F))};
+        };
+        for (const auto& symbol : symbols)
+        {
+            if (button != symbol.name)
+                continue;
+            if (!Map::m_Font.HasGlyph(symbol.first) || (symbol.second && !Map::m_Font.HasGlyph(symbol.second)))
+                return std::string();
+            return utf8(symbol.first) + (symbol.second ? utf8(symbol.second) : std::string());
+        }
+        return std::string();
+    }
+
+    // The scale that draws the symbols as tall as the caps (24): measured on the A once.
+    float GlyphScale()
+    {
+        static float scale = 0.0f;
+        if (scale == 0.0f)
+        {
+            const glm::vec2 extent = Map::m_Font.GlyphTopBottom(0xE0E0, 1.0f);
+            scale = extent.x - extent.y > 0.0f ? 25.0f / (extent.x - extent.y) : 0.5f;
+        }
+        return scale;
+    }
+
     float CapWidth(const std::string& button)
     {
+        const std::string glyphs = ButtonGlyphs(button);
+        if (!glyphs.empty())
+            return Ui::TextWidth(glyphs, GlyphScale());
         if (button.size() == 1)
             return 24.0f;
         return Ui::TextWidth(button, 0.28f) + 14.0f;
@@ -75,6 +114,15 @@ namespace
     {
         ShapeBatch& shapes = Ui::Shapes();
         const float width = CapWidth(button);
+        const std::string glyphs = ButtonGlyphs(button);
+        if (!glyphs.empty())
+        {
+            // The symbol centred on the bar's middle, in the colour the caps had
+            const float scale = GlyphScale();
+            const glm::vec2 extent = Map::m_Font.GlyphTopBottom(0xE0E0, scale);
+            Ui::Text(glyphs, glm::vec2(x, centerY - (extent.x + extent.y) * 0.5f), scale, glm::vec3(CapColor));
+            return;
+        }
         if (button.size() == 1)
         {
             const glm::vec2 center(x + 12.0f, centerY);

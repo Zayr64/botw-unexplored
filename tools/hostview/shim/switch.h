@@ -80,7 +80,7 @@ Result romfsInit(void);
 Result romfsExit(void);
 
 typedef enum { PlServiceType_User = 0, PlServiceType_System = 1 } PlServiceType;
-typedef enum { PlSharedFontType_Standard = 0, PlSharedFontType_Total = 6 } PlSharedFontType;
+typedef enum { PlSharedFontType_Standard = 0, PlSharedFontType_NintendoExt = 5, PlSharedFontType_Total = 6 } PlSharedFontType;
 struct PlFontData { u32 type; u32 offset; u32 size; void* address; };
 Result plInitialize(PlServiceType serviceType);
 void plExit(void);

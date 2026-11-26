@@ -304,19 +304,24 @@ Result romfsInit(void) { return 0; }
 Result romfsExit(void) { return 0; }
 
 // The console's font comes from HOSTVIEW_SYSTEM_FONT, a .ttf taken from the firmware (system archive
-// 0100000000000811, nintendo_udsg-r_std_003.bfttf decoded); Nintendo's, so it is never in the repository.
+// 0100000000000811, nintendo_udsg-r_std_003.bfttf decoded), and the buttons' symbols from HOSTVIEW_EXT_FONT
+// (0100000000000810, nintendo_ext_003.bfttf; optional: without it the app draws its own caps). Nintendo's, so they are
+// never in the repository.
 Result plInitialize(PlServiceType) { return 0; }
 void plExit(void) {}
-Result plGetSharedFontByType(PlFontData* font, PlSharedFontType)
+Result plGetSharedFontByType(PlFontData* font, PlSharedFontType type)
 {
-    static std::vector<char> bytes;
+    const bool ext = type == PlSharedFontType_NintendoExt;
+    static std::vector<char> standardBytes, extBytes;
+    std::vector<char>& bytes = ext ? extBytes : standardBytes;
     if (bytes.empty())
     {
-        const char* path = getenv("HOSTVIEW_SYSTEM_FONT");
+        const char* path = getenv(ext ? "HOSTVIEW_EXT_FONT" : "HOSTVIEW_SYSTEM_FONT");
         std::ifstream file(path ? path : "", std::ios::binary);
         if (!file)
         {
-            fprintf(stderr, "hostview: set HOSTVIEW_SYSTEM_FONT to the console's font (.ttf)\n");
+            if (!ext)
+                fprintf(stderr, "hostview: set HOSTVIEW_SYSTEM_FONT to the console's font (.ttf)\n");
             return 0x1;
         }
         bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());

@@ -54,6 +54,7 @@ private:
     unsigned int m_Vbo = 0;
     FT_Library m_FreeType = nullptr;
     FT_Face m_Face = nullptr;
+    FT_Face m_ExtFace = nullptr; // the console's Nintendo Extension font: the buttons' symbols (U+E000 on)
 
     bool m_SystemFont = false; // the face is the console's font: the pl service stays open until Destroy
 
@@ -64,8 +65,14 @@ private:
 public:
     int Load(const std::string& filepath);
 
-    // The console's own font (the HOME menu's, from the pl service), so no font file ships with the app.
+    // The console's own font (the HOME menu's, from the pl service), so no font file ships with the app; with it the
+    // Nintendo Extension font, for the symbols of the buttons.
     int LoadSystem();
+
+    // Whether this character can be drawn (by the font or, for the buttons' symbols, by the extension font).
+    bool HasGlyph(uint32_t character);
+    // Of one character drawn at this scale: its top and bottom above the baseline (bottom may be negative).
+    glm::vec2 GlyphTopBottom(uint32_t character, float scale);
 
     void Destroy();
 

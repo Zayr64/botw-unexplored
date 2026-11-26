@@ -86,6 +86,18 @@ int Font::LoadSystem()
     }
     m_SystemFont = true;
     Log("FONT: system font, bytes:", static_cast<int>(font.size));
+
+    // The buttons' symbols, as the HOME menu draws them (zayr30); the bar draws its own caps without them.
+    PlFontData ext = {};
+    if (R_SUCCEEDED(plGetSharedFontByType(&ext, PlSharedFontType_NintendoExt)) && ext.address != nullptr && ext.size > 0 &&
+        !FT_New_Memory_Face(m_FreeType, static_cast<const FT_Byte*>(ext.address), static_cast<FT_Long>(ext.size), 0,
+                            &m_ExtFace))
+        Log("FONT: button symbols (Nintendo Extension), bytes:", static_cast<int>(ext.size));
+    else
+    {
+        m_ExtFace = nullptr;
+        Log("FONT: no Nintendo Extension font: the buttons are drawn");
+    }
     return Setup("system font", SystemPixels);
 }
 
@@ -94,6 +106,8 @@ int Font::Setup(const std::string& name, int pixels)
     Log("FONT: face loaded");
 
     FT_Set_Pixel_Sizes(m_Face, 0, pixels);
+    if (m_ExtFace)
+        FT_Set_Pixel_Sizes(m_ExtFace, 0, pixels);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     std::string vertexShaderSource = R"text(
@@ -174,7 +188,11 @@ bool Font::LoadGlyph(uint32_t character)
     if (m_Characters.find(character) != m_Characters.end())
         return true;
 
-    if (m_Face == nullptr || FT_Load_Char(m_Face, character, FT_LOAD_RENDER))
+    // A character the font does not have may be one of the buttons' symbols of the extension font
+    FT_Face face = m_Face;
+    if (m_ExtFace && face && FT_Get_Char_Index(face, character) == 0 && FT_Get_Char_Index(m_ExtFace, character) != 0)
+        face = m_ExtFace;
+    if (face == nullptr || FT_Load_Char(face, character, FT_LOAD_RENDER))
     {
         Log("Freetype: Failed to load glyph", static_cast<int>(character));
         return false;
@@ -185,8 +203,8 @@ bool Font::LoadGlyph(uint32_t character)
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, m_Face->glyph->bitmap.width, m_Face->glyph->bitmap.rows,
-                 0, GL_RED, GL_UNSIGNED_BYTE, m_Face->glyph->bitmap.buffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, face->glyph->bitmap.width, face->glyph->bitmap.rows,
+                 0, GL_RED, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -196,11 +214,24 @@ bool Font::LoadGlyph(uint32_t character)
 
     m_Characters.emplace(character, Character{
         texture,
-        glm::ivec2(m_Face->glyph->bitmap.width, m_Face->glyph->bitmap.rows),
-        glm::ivec2(m_Face->glyph->bitmap_left, m_Face->glyph->bitmap_top),
-        static_cast<unsigned int>(m_Face->glyph->advance.x)
+        glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+        glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+        static_cast<unsigned int>(face->glyph->advance.x)
     });
     return true;
+}
+
+bool Font::HasGlyph(uint32_t character)
+{
+    if (m_Face && FT_Get_Char_Index(m_Face, character) != 0)
+        return true;
+    return m_ExtFace && FT_Get_Char_Index(m_ExtFace, character) != 0;
+}
+
+glm::vec2 Font::GlyphTopBottom(uint32_t character, float scale)
+{
+    const Character& ch = GetCharacter(character);
+    return glm::vec2(ch.Bearing.y * scale, (ch.Bearing.y - ch.Size.y) * scale);
 }
 
 const Character& Font::GetCharacter(uint32_t character)
@@ -397,6 +428,11 @@ void Font::Destroy()
     m_Characters.clear();
     m_Mesh.Destroy();
     m_CharMesh.Destroy();
+    if (m_ExtFace != nullptr)
+    {
+        FT_Done_Face(m_ExtFace);
+        m_ExtFace = nullptr;
+    }
     if (m_Face != nullptr)
     {
         FT_Done_Face(m_Face);
