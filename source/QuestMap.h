@@ -70,7 +70,7 @@ namespace QuestMap
     // Whether a quest is done: its last flag, or a step that ends it (version 1 files: the last flag only).
     bool IsDone(const Entry& entry, const std::function<bool(uint32_t)>& isSet);
 
-    // The region (Regions.h) where the quest is taken, from the quest tables of the app; -1 when it has none.
+    // The region (the fifteen of tools/gen_regions.py) where the quest is taken, from the quest tables of the app; -1 when it has none.
     int RegionOf(uint32_t startHash);
 }
 

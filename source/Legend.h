@@ -59,16 +59,6 @@ public:
 class Legend
 {
 public:
-    // The left panel has four tabs; the legend itself is the first.
-    enum Tab
-    {
-        TabLegend,
-        TabProgress,
-        TabRegions,
-        TabCollection,
-        TabCount
-    };
-
     Legend();
 
     void Update();
@@ -88,7 +78,6 @@ public:
     int m_PrevTouchCount = 0;
 
     int m_HighlightedButton = 0; // a place in the order of the columns (Legend.cpp), not a category
-    int m_Tab = TabLegend;
 
     bool m_IsOpen = true;
 

@@ -48,7 +48,7 @@ namespace Progress
         int now = 0;   // can be taken
         int later = 0; // wait for something else to happen first
     };
-    // region: one of Regions.h, or -1 for the whole map (which includes the quest with no known region).
+    // region: one of the fifteen regions (tools/gen_regions.py), or -1 for the whole map (which includes the quest with no known region).
     QuestsLeft QuestsToTake(int region, IsSet isSet);
 
     // Every flag the counters above read, sorted and without repeats: what the reader of the save keeps.

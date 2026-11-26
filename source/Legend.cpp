@@ -11,10 +11,7 @@
 #include "MapObject.hpp"
 #include "SavefileIO.h"
 #include "Localization.h"
-#include "ProgressPanel.h"
 #include "QuestMap.h"
-#include "Regions.h"
-#include "RegionsPanel.h"
 #include "SwitchStyle.h"
 #include "Ui.h"
 
@@ -66,39 +63,9 @@ namespace
         return layout;
     }
 
-    constexpr float TabScale = 0.38f; // the four titles fit the width of the panel
-    constexpr float TabGap = 14.0f;
-    const Localization::Text tabTitles[Legend::TabCount] = {
-        Localization::Text::Legend, Localization::Text::TabProgress, Localization::Text::TabRegions,
-        Localization::Text::TabCollection
-    };
-
-    // Left and right edge of the title of each tab.
-    void TabEdges(float edges[Legend::TabCount][2])
-    {
-        float x = Ui::PanelLeft();
-        for (int tab = 0; tab < Legend::TabCount; ++tab)
-        {
-            edges[tab][0] = x;
-            x += Ui::TextWidth(Localization::Get(tabTitles[tab]), TabScale);
-            edges[tab][1] = x;
-            x += TabGap;
-        }
-    }
-
-    // The tab whose title is under this point of the screen, or -1.
-    int TabAt(const glm::vec2& position)
-    {
-        const float baseline = Ui::Top() - Layout().tabs;
-        if (position.y < baseline - 14.0f || position.y > baseline + 30.0f)
-            return -1;
-        float edges[Legend::TabCount][2];
-        TabEdges(edges);
-        for (int tab = 0; tab < Legend::TabCount; ++tab)
-            if (position.x >= edges[tab][0] - TabGap * 0.5f && position.x <= edges[tab][1] + TabGap * 0.5f)
-                return tab;
-        return -1;
-    }
+    // zayr33: the panel is the legend alone (the tabs Progress, Regions and Collection went out at the user's word); its
+    // title stays where the tabs were, marked as the tab in use of BotW Compendium.
+    constexpr float TitleScale = 0.38f;
 
     constexpr float RowRadius = 8.0f;
 
@@ -106,7 +73,6 @@ namespace
     // selected in a pulsing cyan frame, a gap away, as on the HOME menu; whether the category shows, by a toggle as in
     // System Settings (chosen by the user over a check as when picking in the Album, and over the blue cells of zayr28).
     // zayr31: those pieces are in SwitchStyle, which BotW Compendium uses too.
-
 
     Localization::Text LabelOf(IconButton::ButtonTypes type)
     {
@@ -132,7 +98,7 @@ namespace
     {
         for (int i = 0; i < count; ++i)
         {
-            if (chests[i].m_Excluded || !Map::InRegionFilter(chests[i].m_Region))
+            if (chests[i].m_Excluded)
                 continue;
             ++total;
             found += chests[i].m_Found;
@@ -190,12 +156,6 @@ void Legend::Update()
 {
     const u64 buttonsPressed = padGetButtonsDown(Map::m_Pad);
 
-    // zayr31: L and R change the tab, as in BotW Compendium (Left and Right up to zayr30)
-    if (buttonsPressed & HidNpadButton_R)
-        m_Tab = (m_Tab + 1) % TabCount;
-    if (buttonsPressed & HidNpadButton_L)
-        m_Tab = (m_Tab + TabCount - 1) % TabCount;
-
     HidTouchScreenState state={0};
     if (hidGetTouchScreenStates(&state, 1))
     {
@@ -210,51 +170,29 @@ void Legend::Update()
                 glm::vec2 touchPosition = Ui::FromScreen(glm::vec2(state.touches[0].x - Map::m_CameraWidth / 2,
                                                                    -(state.touches[0].y - Map::m_CameraHeight / 2)));
 
-                const int tab = TabAt(touchPosition);
-                if (tab >= 0)
-                    m_Tab = tab;
-                else if (m_Tab == TabRegions)
-                    RegionsPanel::Touch(touchPosition);
-                else if (m_Tab == TabLegend)
+                for (unsigned int i = 0; i < m_Buttons.size(); i++)
                 {
-                    for (unsigned int i = 0; i < m_Buttons.size(); i++)
+                    IconButton* button = m_Buttons[i];
+
+                    float left = button->m_Position.x;
+                    float right = button->m_Position.x + button->m_Width;
+                    float top = button->m_Position.y;
+                    float bottom = button->m_Position.y - button->m_Height;
+
+                    if (touchPosition.x > left && touchPosition.x < right &&
+                        touchPosition.y > bottom && touchPosition.y < top)
                     {
-                        IconButton* button = m_Buttons[i];
+                        button->Click(this);
 
-                        float left = button->m_Position.x;
-                        float right = button->m_Position.x + button->m_Width;
-                        float top = button->m_Position.y;
-                        float bottom = button->m_Position.y - button->m_Height;
+                        m_HighlightedButton = DisplayIndexOf(static_cast<int>(i));
+                        UpdateSelectedButton();
 
-                        if (touchPosition.x > left && touchPosition.x < right &&
-                            touchPosition.y > bottom && touchPosition.y < top)
-                        {
-                            button->Click(this);
-
-                            m_HighlightedButton = DisplayIndexOf(static_cast<int>(i));
-                            UpdateSelectedButton();
-
-                            break;
-                        }
+                        break;
                     }
                 }
             }
         }
     }
-
-    if (m_Tab == TabRegions)
-        RegionsPanel::Update(buttonsPressed);
-    // Progress and Collection scroll when their rows do not fit
-    if (m_Tab == TabProgress || m_Tab == TabCollection)
-    {
-        const bool collection = m_Tab == TabCollection;
-        if (buttonsPressed & HidNpadButton_Down)
-            ProgressPanel::Scroll(collection, 1);
-        if (buttonsPressed & HidNpadButton_Up)
-            ProgressPanel::Scroll(collection, -1);
-    }
-    if (m_Tab != TabLegend)
-        return;
 
     // Up and down go around
     const int count = static_cast<int>(m_Buttons.size());
@@ -303,22 +241,12 @@ void Legend::Render()
     const float right = left + inner;
     const float top = Ui::Top();
     const PanelLayout layout = Layout();
-    const float TabsBaseline = layout.tabs;
-    const float RowsTop = layout.rowsTop;
-
     Ui::PanelBackground();
 
-    // The tabs, the one in use marked as in BotW Compendium (SwitchStyle)
-    float edges[TabCount][2];
-    TabEdges(edges);
-    for (int tab = 0; tab < TabCount; ++tab)
-    {
-        const bool active = tab == m_Tab;
-        if (active)
-            SwitchStyle::TabMark(Ui::Shapes(), edges[tab][0], edges[tab][1], top - TabsBaseline);
-        Ui::Text(Localization::Get(tabTitles[tab]), glm::vec2(edges[tab][0], top - TabsBaseline), TabScale,
-                 SwitchStyle::TabTitleColor(active));
-    }
+    // The title, marked as the tab in use of BotW Compendium (SwitchStyle)
+    const std::string& title = Localization::Get(Localization::Text::Legend);
+    SwitchStyle::TabMark(Ui::Shapes(), left, left + Ui::TextWidth(title, TitleScale), top - layout.tabs);
+    Ui::Text(title, glm::vec2(left, top - layout.tabs), TitleScale, SwitchStyle::TabTitleColor(true));
 
     // What the game calls map completion: Koroks, shrines and locations.
     const int found = MapEntriesFound();
@@ -329,29 +257,10 @@ void Legend::Render()
     Ui::ProgressBar(left, top - layout.bar, inner, 6.0f,
                     static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
 
-    // Where the progress comes from and, on the right, the region the map is showing alone
+    // Where the progress comes from
     glm::vec3 dotColor;
     bool hasDot = false;
     Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - layout.source), 0.32f, Ui::Colors::TextDim);
-    if (Map::m_RegionFilter >= 0)
-        Ui::Text(RegionsPanel::Label(Map::m_RegionFilter), glm::vec2(right, top - layout.source), 0.32f,
-                 Ui::Colors::Accent, ALIGN_RIGHT);
-
-    if (m_Tab == TabProgress)
-    {
-        ProgressPanel::Render(top - RowsTop);
-        return;
-    }
-    if (m_Tab == TabRegions)
-    {
-        RegionsPanel::Render(top - RowsTop);
-        return;
-    }
-    if (m_Tab == TabCollection)
-    {
-        ProgressPanel::RenderCollection(top - RowsTop);
-        return;
-    }
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->DrawShapes();
@@ -435,35 +344,32 @@ void IconButton::Count(int& found, int& total) const
 {
     found = 0;
     total = 0;
-    // Only what is in the region the map is showing, when it shows one alone
-    const auto add = [&](int region, bool objectFound)
+    const auto add = [&](bool objectFound)
     {
-        if (!Map::InRegionFilter(region))
-            return;
         ++total;
         found += objectFound ? 1 : 0;
     };
     switch (m_Type)
     {
     case Koroks:
-        for (int i = 0; i < Data::KoroksCount; ++i) add(Map::m_Koroks[i].m_Region, Map::m_Koroks[i].m_Found);
+        for (int i = 0; i < Data::KoroksCount; ++i) add(Map::m_Koroks[i].m_Found);
         break;
     case Shrines:
-        for (int i = 0; i < Data::ShrineCount; ++i) add(Map::m_Shrines[i].m_Region, Map::m_Shrines[i].m_Found);
+        for (int i = 0; i < Data::ShrineCount; ++i) add(Map::m_Shrines[i].m_Found);
         if (SavefileIO::DlcShrinesAppear())
-            for (int i = 0; i < Data::DLCShrineCount; ++i) add(Map::m_DLCShrines[i].m_Region, Map::m_DLCShrines[i].m_Found);
+            for (int i = 0; i < Data::DLCShrineCount; ++i) add(Map::m_DLCShrines[i].m_Found);
         break;
     case Hinoxes:
-        for (int i = 0; i < Data::HinoxesCount; ++i) add(Map::m_Hinoxes[i].m_Region, Map::m_Hinoxes[i].m_Found);
+        for (int i = 0; i < Data::HinoxesCount; ++i) add(Map::m_Hinoxes[i].m_Found);
         break;
     case Taluses:
-        for (int i = 0; i < Data::TalusesCount; ++i) add(Map::m_Taluses[i].m_Region, Map::m_Taluses[i].m_Found);
+        for (int i = 0; i < Data::TalusesCount; ++i) add(Map::m_Taluses[i].m_Found);
         break;
     case Moldugas:
-        for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Region, Map::m_Moldugas[i].m_Found);
+        for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Found);
         break;
     case Locations:
-        for (int i = 0; i < Data::LocationsCount; ++i) add(Map::m_Locations[i].m_Region, Map::m_Locations[i].m_Found);
+        for (int i = 0; i < Data::LocationsCount; ++i) add(Map::m_Locations[i].m_Found);
         break;
     case ArmorChests:
         CountChests(Map::m_ArmorChests, Data::ArmorChestsCount, found, total);
@@ -475,7 +381,7 @@ void IconButton::Count(int& found, int& total) const
         CountChests(Map::m_MaterialChests, Data::MaterialChestsCount, found, total);
         break;
     case Walls:
-        for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Region, Map::m_Walls[i].m_Found);
+        for (int i = 0; i < Data::WallsCount; ++i) add(Map::m_Walls[i].m_Found);
         break;
     case Quests:
         // Done out of the side and shrine quests of this game (the Expansion Pass ones only with it); those in
@@ -484,15 +390,14 @@ void IconButton::Count(int& found, int& total) const
         {
             const QuestMap::Entry& quest = QuestMap::Entries()[i];
             if (!quest.main && (!quest.dlc || SavefileIO::HasExpansionPass()))
-                add(Map::m_Quests[i].m_Region,
-                    QuestMap::IsDone(quest, [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); }));
+                add(QuestMap::IsDone(quest, [](uint32_t hash) { return SavefileIO::IsProgressFlagSet(hash); }));
         }
         break;
     case Towers:
-        for (int i = 0; i < Map::TowerCount; ++i) add(Map::m_Towers[i].m_Region, Map::m_Towers[i].m_Found);
+        for (int i = 0; i < Map::TowerCount; ++i) add(Map::m_Towers[i].m_Found);
         break;
     case GreatFairies:
-        for (int i = 0; i < Map::FairyCount; ++i) add(Map::m_Fairies[i].m_Region, Map::m_Fairies[i].m_Found);
+        for (int i = 0; i < Map::FairyCount; ++i) add(Map::m_Fairies[i].m_Found);
         break;
     default:
         break;

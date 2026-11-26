@@ -20,9 +20,6 @@
 #include "MapCompletion.h"
 #include "ObjectModel.h"
 #include "Log.h"
-#include "Regions.h"
-#include "RegionsPanel.h"
-#include "ProgressPanel.h"
 #include "Localization.h"
 #include "ShrineFlags.h"
 #include "ManualProgress.h"
@@ -213,16 +210,13 @@ namespace
         // legendButton: the legend category, for a type that is not always in the same one (the special chests)
         const auto add = [&](Data::ObjectType type, uint32_t hash, const glm::vec2& position, const std::string& name,
                              bool* found, bool pending = false, int korokIndex = -1, const Data::Chest* chest = nullptr,
-                             int legendButton = ObjectModel::NoLegendButton, const QuestMap::Entry* quest = nullptr,
-                             int region = -2)
+                             int legendButton = ObjectModel::NoLegendButton, const QuestMap::Entry* quest = nullptr)
         {
             if (legendButton == ObjectModel::NoLegendButton)
                 legendButton = ObjectModel::GetMetadata(type).legendButtonIndex;
             bool visible = Map::m_Legend->m_Show[legendButton];
             if (type == Data::ObjectType::DLCShrine)
                 visible = visible && SavefileIO::DlcShrinesAppear();
-            if (visible && Map::m_RegionFilter >= 0)
-                visible = (region != -2 ? region : Regions::Of(hash)) == Map::m_RegionFilter;
             entries.push_back({type, hash, position, &name, found, pending, visible, korokIndex, chest, quest});
         };
 
@@ -273,7 +267,7 @@ namespace
                 continue;
             add(Data::ObjectType::Quest, quests[i].startHash, Map::m_Quests[i].m_Position, quests[i].name,
                 now ? &Map::m_Quests[i].m_Found : &Map::m_LaterQuests[i].m_Found, false, -1, nullptr,
-                static_cast<int>(IconButton::Quests), &quests[i], Map::m_Quests[i].m_Region);
+                static_cast<int>(IconButton::Quests), &quests[i]);
         }
         // The quests in progress: each marker of the current step
         for (size_t i = 0; i < quests.size(); ++i)
@@ -282,7 +276,7 @@ namespace
                 MapObject<Data::QuestActiveIcon>& active = Map::m_ActiveQuests[i * QuestMap::MaxMarkers + k];
                 if (!active.m_Excluded)
                     add(Data::ObjectType::Quest, quests[i].startHash, active.m_Position, quests[i].name, &active.m_Found,
-                        false, -1, nullptr, static_cast<int>(IconButton::Quests), &quests[i], active.m_Region);
+                        false, -1, nullptr, static_cast<int>(IconButton::Quests), &quests[i]);
             }
     }
 
@@ -431,13 +425,7 @@ namespace
         const bool objectCard = Map::m_ObjectInfo->m_IsOpen;
         if (Map::m_Legend->m_IsOpen)
         {
-            if (Map::m_Legend->m_Tab == Legend::TabLegend)
-                add("A", Text::HintShowHide);
-            else if (Map::m_Legend->m_Tab == Legend::TabRegions)
-                add("A", RegionsPanel::HighlightIsWholeMap() ? Text::WholeMap : Text::HintShowRegion);
-            else if (ProgressPanel::Scrolls(Map::m_Legend->m_Tab == Legend::TabCollection))
-                add("Up/Down", Text::HintScroll);
-            add("L R", Text::HintTab);
+            add("A", Text::HintShowHide);
             add("B", Text::HintClose);
         }
         else if (korokCard || objectCard)
@@ -495,14 +483,6 @@ namespace
                 Ui::Chip(Localization::Get(Localization::Text::MapCompletion) + " " +
                          MapCompletion::Format(MapCompletion::Hundredths(MapEntriesFound()), '.'),
                          Ui::Left() + 16.0f, Ui::Top() - 16.0f, false);
-                // The region the map is showing alone, with what is found of it
-                if (Map::m_RegionFilter >= 0)
-                {
-                    int found = 0, total = 0;
-                    RegionsPanel::Count(Map::m_RegionFilter, found, total);
-                    Ui::Chip(RegionsPanel::Label(Map::m_RegionFilter) + " " + std::to_string(found) + "/" + std::to_string(total),
-                             Ui::Left() + 16.0f, Ui::Top() - 52.0f, false);
-                }
             }
         }
 
@@ -785,19 +765,6 @@ void Map::UpdateMapObjects(bool recenter)
                                           SavefileIO::IsWallBroken(Data::Walls[i].hash), manualProgressChanged);
     }
 
-    // The region each object is in, for the map of one region and the counters by region
-    for (int i = 0; i < Data::KoroksCount; i++) m_Koroks[i].m_Region = Regions::Of(Data::Koroks[i].hash);
-    for (int i = 0; i < Data::ShrineCount; i++) m_Shrines[i].m_Region = Regions::Of(Data::Shrines[i].hash);
-    for (int i = 0; i < Data::DLCShrineCount; i++) m_DLCShrines[i].m_Region = Regions::Of(Data::DLCShrines[i].hash);
-    for (int i = 0; i < Data::HinoxesCount; i++) m_Hinoxes[i].m_Region = Regions::Of(Data::Hinoxes[i].hash);
-    for (int i = 0; i < Data::TalusesCount; i++) m_Taluses[i].m_Region = Regions::Of(Data::Taluses[i].hash);
-    for (int i = 0; i < Data::MoldugasCount; i++) m_Moldugas[i].m_Region = Regions::Of(Data::Moldugas[i].hash);
-    for (int i = 0; i < Data::ArmorChestsCount; i++) m_ArmorChests[i].m_Region = Regions::Of(Data::ArmorChests[i].hash);
-    for (int i = 0; i < Data::WeaponChestsCount; i++) m_WeaponChests[i].m_Region = Regions::Of(Data::WeaponChests[i].hash);
-    for (int i = 0; i < Data::MaterialChestsCount; i++) m_MaterialChests[i].m_Region = Regions::Of(Data::MaterialChests[i].hash);
-    for (int i = 0; i < Data::WallsCount; i++) m_Walls[i].m_Region = Regions::Of(Data::Walls[i].hash);
-    for (int i = 0; i < Data::LocationsCount; i++) m_Locations[i].m_Region = Regions::Of(Data::Locations[i].hash);
-
     // Towers and Great Fairy fountains: where their locations are, found once activated or awakened
     const auto placeState = [&](auto& object, const Data::Location* location, Data::ObjectType type)
     {
@@ -807,7 +774,6 @@ void Map::UpdateMapObjects(bool recenter)
         object.m_Position = glm::vec2(location->x, -location->y) * MapScale;
         object.m_Found = ResolveFound(type, location->hash, SavefileIO::IsLocationStateDone(location->hash),
                                       manualProgressChanged);
-        object.m_Region = Regions::Of(location->hash);
     };
     for (int i = 0; i < TowerCount; i++)
         placeState(m_Towers[i], m_TowerLocations[i], Data::ObjectType::Tower);
@@ -828,15 +794,12 @@ void Map::UpdateMapObjects(bool recenter)
         const bool available = quest.requiresHash == 0 || SavefileIO::IsProgressFlagSet(quest.requiresHash);
         const bool exists = !quest.dlc || SavefileIO::HasExpansionPass();
         const glm::vec2 position = glm::vec2(quest.x, -quest.z) * MapScale;
-        const int region = QuestMap::RegionOf(quest.startHash);
         m_Quests[i].m_Position = position;
         m_Quests[i].m_Found = taken;
         m_Quests[i].m_Excluded = !exists || !available || quest.main;
-        m_Quests[i].m_Region = region;
         m_LaterQuests[i].m_Position = position;
         m_LaterQuests[i].m_Found = taken;
         m_LaterQuests[i].m_Excluded = !exists || available || quest.main;
-        m_LaterQuests[i].m_Region = region;
         if (!quest.main)
             questCounts[!exists ? 3 : (taken ? 2 : (available ? 0 : 1))]++;
 
@@ -857,7 +820,6 @@ void Map::UpdateMapObjects(bool recenter)
             const bool used = k < static_cast<int>(markers.size());
             active.m_Excluded = !used;
             active.m_Found = false;
-            active.m_Region = region;
             if (used)
                 active.m_Position = glm::vec2(markers[k].x, -markers[k].z) * MapScale;
         }
@@ -924,8 +886,8 @@ void Map::Update()
         m_HasTargetCameraPosition = false;
     }
 
-    // L glides to Link and keeps the zoom (zayr31: with the legend open, L and R change its tab)
-    if (!imageViewerWasOpen && !m_Legend->m_IsOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
+    // L glides to Link and keeps the zoom
+    if (!imageViewerWasOpen && (buttonsPressed & HidNpadButton_L) && HasPlayerPosition())
     {
         m_TargetCameraPosition = PlayerMapPosition();
         m_HasTargetCameraPosition = true;
@@ -1040,7 +1002,7 @@ void Map::Update()
         FocusMissing(1);
     else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_ZL))
         FocusMissing(-1);
-    else if (!imageViewerWasOpen && !modalDialogOpen && !m_Legend->m_IsOpen && (buttonsPressed & HidNpadButton_R))
+    else if (!imageViewerWasOpen && !modalDialogOpen && (buttonsPressed & HidNpadButton_R))
         FocusNearestToCenter();
 
     if (!imageViewerWasOpen && m_HasTargetCameraPosition)
@@ -1221,8 +1183,8 @@ void Map::Render()
                 if (m_Koroks[k].m_ObjectData->path == nullptr)
                     continue;
 
-                // Don't render if found, or outside the region shown
-                if (!m_Legend->ShouldShow(m_Koroks[k].m_Found) || !InRegionFilter(m_Koroks[k].m_Region))
+                // Don't render if found
+                if (!m_Legend->ShouldShow(m_Koroks[k].m_Found))
                     continue;
 
                 Data::KorokPath* path = m_Koroks[k].m_ObjectData->path;
@@ -1606,32 +1568,6 @@ TexturedQuad Map::m_MasterModeIcon;
 
 float Map::m_Zoom = Map::m_DefaultZoom;
 float Map::m_ViewShift = 0.0f;
-int Map::m_RegionFilter = -1;
-
-bool Map::InRegionFilter(int region)
-{
-    return m_RegionFilter < 0 || region == m_RegionFilter;
-}
-
-void Map::SetRegionFilter(int region)
-{
-    m_RegionFilter = region >= 0 && region < Regions::Count ? region : Regions::None;
-    s_NextMissingActive = false; // the nearest missing objects are others now
-    if (m_RegionFilter < 0)
-        return;
-
-    // Bring the region into the part of the screen that the panel leaves free
-    const Data::RegionBounds& bounds = Regions::Bounds(m_RegionFilter);
-    const float width = (bounds.maxX - bounds.minX) * MapScale;
-    const float height = (bounds.maxZ - bounds.minZ) * MapScale;
-    const float freeWidth = m_CameraWidth - Ui::PanelWidth * Ui::Zoom - 60.0f;
-    const float freeHeight = m_CameraHeight - Ui::FooterHeight * Ui::Zoom - 60.0f;
-    m_Zoom = std::max(MinZoom, std::min(1.5f, std::min(freeWidth / width, freeHeight / height)));
-    m_TargetCameraPosition = glm::vec2((bounds.minX + bounds.maxX) * 0.5f, -(bounds.minZ + bounds.maxZ) * 0.5f) * MapScale;
-    m_HasTargetCameraPosition = true;
-    m_CursorFollowsTarget = true;
-}
-
 glm::mat4 Map::m_ProjectionMatrix = glm::mat4(1.0f);
 glm::mat4 Map::m_ViewMatrix = glm::mat4(1.0f);
 
