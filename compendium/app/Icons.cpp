@@ -137,6 +137,17 @@ namespace Icons
             Queue(std::string(Folder) + "enemies/" + actor + ".jpg", x, top, size, glm::vec4(1.0f));
     }
 
+    void Dish(const std::string& actor, float x, float top, float size)
+    {
+        if (actor.empty())
+            return;
+        const std::string large = std::string(Folder) + "dishes/" + actor + ".png";
+        if (s_ready && Get(large))
+            Queue(large, x, top, size, glm::vec4(1.0f));
+        else
+            Item(actor, x, top, size);
+    }
+
     void Flush(const glm::mat4& projection, float screenHeight)
     {
         if (!s_ready || s_queue.empty())

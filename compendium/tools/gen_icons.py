@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Makes the app's icons from a dump of the game (1.6.0): the item icons of every ingredient and material in
-cook-data.txt (UI/StockItem/<actor>.sbitemico) and a few icons of the game's interface (Layout/Common.sblarc in
+cook-data.txt (UI/StockItem/<actor>.sbitemico), the dishes (Item_Cook_*) once more at their full size for the Dishes
+tab, and a few icons of the game's interface (Layout/Common.sblarc in
 Pack/Bootup.pack): rupee, heart, and the effect icons of the pause menu.
 
 They are the game's images, so they never go into this repository: copy the output folder to
@@ -93,13 +94,22 @@ def item_names(cook_data):
     return sorted(names)
 
 
+# An elixir (Item_Cook_C_17) has one picture per effect in the game's pouch; the actor's own is a placeholder.
+ELIXIR_EFFECTS = ["AllSpeed", "AttackUp", "DefenseUp", "ExGutsMaxUp", "Fireproof", "GutsRecover", "LifeMaxUp",
+                  "Quietness", "ResistCold", "ResistElectric", "ResistHot"]
+
+
 def main():
     romfs, cook_data, out = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     (out / "items").mkdir(parents=True, exist_ok=True)
     (out / "ui").mkdir(parents=True, exist_ok=True)
+    (out / "dishes").mkdir(parents=True, exist_ok=True)
 
-    made = missing = 0
-    for name in item_names(cook_data):
+    made = missing = dishes = 0
+    names = item_names(cook_data)
+    if "Item_Cook_C_17" in names:
+        names += ["Item_Cook_C_17_" + effect for effect in ELIXIR_EFFECTS]
+    for name in names:
         path = romfs / "UI/StockItem" / (name + ".sbitemico")
         if not path.exists():
             missing += 1
@@ -110,6 +120,9 @@ def main():
             continue
         _, w, h, rgba = textures[0]
         image = Image.frombytes("RGBA", (w, h), rgba)
+        if name.startswith("Item_Cook_"):
+            image.save(out / "dishes" / (name + ".png"), optimize=True)  # 144 px: the Dishes tab draws it large
+            dishes += 1
         if max(w, h) > ITEM_SIZE:
             image = image.resize((ITEM_SIZE * w // max(w, h), ITEM_SIZE * h // max(w, h)), Image.LANCZOS)
         image.save(out / "items" / (name + ".png"), optimize=True)
@@ -141,8 +154,8 @@ def main():
             image.save(out / "ui" / (app_name + ".png"), optimize=True)
         else:
             print("not found:", texture)
-    print(f"{out}: {made} item icons ({missing} items without one), {len(found)} interface icons, "
-          f"{enemies} enemy pictures")
+    print(f"{out}: {made} item icons ({missing} items without one), {dishes} of them dishes at full size, "
+          f"{len(found)} interface icons, {enemies} enemy pictures")
 
 
 if __name__ == "__main__":

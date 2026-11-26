@@ -364,6 +364,20 @@ namespace
         return a ? a->name : "";
     }
 
+    // The picture of a dish. An elixir (Item_Cook_C_17) has one per effect in the game's pouch,
+    // Item_Cook_C_17_<effect>; its own is a placeholder.
+    std::string DishPicture(const App& app, const CookResult& r)
+    {
+        std::string actor = ActorName(app, r.actor);
+        if (actor != "Item_Cook_C_17" || r.effect == EffectNone)
+            return actor;
+        if (r.effect == LifeMaxUp)
+            return actor + "_LifeMaxUp";
+        if (r.effect == MovingSpeed)
+            return actor + "_AllSpeed";
+        return actor + "_" + EffectIcon(r.effect);
+    }
+
     struct Part
     {
         uint32_t item;
@@ -895,6 +909,12 @@ namespace
                 y += 28;
         }
 
+        // The dish as the game shows it in the pouch, on the right of what makes it; the lines under the name stop
+        // short of it.
+        const float picture = 112.0f;
+        Icons::Dish(DishPicture(app, d.result), x + width - picture, y + 10, picture);
+        const float textWidth = width - picture - 20;
+
         const uint8_t mask = TierMask(app);
         const float step = PartStep;
         const float icon = 30.0f;
@@ -914,21 +934,16 @@ namespace
             const float heldWidth = held.empty() ? 0.0f : Width(held, SmallText) + 16;
             Icons::Item(ActorName(app, p.item), x + 4, y - 7 - icon / 2, icon);
             const std::string line = std::to_string(p.count) + "x " + NameOf(app, p.item);
-            const float after = Text(Fit(line, scale, width - 44 - heldWidth), x + 44, y, scale, TextColor);
+            const float after = Text(Fit(line, scale, textWidth - 44 - heldWidth), x + 44, y, scale, TextColor);
             if (!held.empty())
                 Text(held, after + 16, y, SmallText, Warn);
             y += step;
         }
         y += 38 - step;
         ResultLine(d.result, x, y, 0.42f);
-        y += 32;
-        // What the dish sells for, and what its ingredients would sell for as they are.
-        Icons::Ui("rupee", x + 2, y - 20, 24);
-        const float after = Text("Sells for " + Number(d.result.price), x + 32, y, 0.38f, TextColor);
-        Text(Fit("ingredients worth " + Number(d.cost), SmallText, x + width - after - 18), after + 18, y, SmallText,
-             TextDim);
-        y += 26;
-        Text(Fit(CritText(app, d), SmallText, width), x, y, SmallText, TextDim);
+        // What it sells for is in the Sell tab.
+        y += 30;
+        Text(Fit(CritText(app, d), SmallText, textWidth), x, y, SmallText, TextDim);
         return y;
     }
 

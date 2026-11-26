@@ -25,6 +25,8 @@ namespace Icons
     bool HasUi(const std::string& name);
     // The enemy's picture from the Hyrule Compendium (enemies/<actor>.jpg).
     void Enemy(const std::string& actor, float x, float top, float size);
+    // A dish at its full size (dishes/<actor>.png, 144 px), or its item icon (72 px) when that is all there is.
+    void Dish(const std::string& actor, float x, float top, float size);
 
     // Draws what was queued (after the shapes, before the text) and empties the queue.
     void Flush(const glm::mat4& projection, float screenHeight);
