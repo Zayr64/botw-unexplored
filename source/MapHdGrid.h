@@ -40,6 +40,12 @@ namespace MapHdGrid
     // reserve was 64 MB, chosen before the number above was known: with it no chunk ever loaded from the Album.
     constexpr uint64_t AppletReserveBytes = 32ull * 1024 * 1024;
     constexpr uint64_t ChunkPeakBytes = 8ull * 1024 * 1024;
+    // The textures do not come out of the memory measured above (zayr17, 25/11: with 9 chunks loaded, 6 of them at
+    // full size, the free memory did not move). From the Album their own pool is small: on 26/11, panning zoomed in,
+    // the chunks at full size piled up (only the 24 above bounded them, about 96 MB) until new textures failed and
+    // showed black. So the textures are weighed too, in MB: about 4 for a chunk at full size, 1 for a halved one, up
+    // to AppletTextureBudget, a little over the 27 MB that worked on 25/11 (and 6 chunks at full size on a screen).
+    constexpr int AppletTextureBudget = 30;
 
     struct Rect
     {
@@ -68,6 +74,11 @@ namespace MapHdGrid
     void Halve(const unsigned char* pixels, int width, int height, unsigned char* out);
     // From the Album: whether one more chunk may be loaded with this much memory free.
     bool HasMemoryForChunk(uint64_t freeBytes);
+    // MB of texture a chunk takes at this reduction (with its mipmaps, rounded up): 4 at full size, 1 halved.
+    int TextureMegabytes(int reduction);
+    // MB of textures kept loaded at once: as an application, all of MaxLoadedApplication at full size (no limit of its
+    // own); from the Album, AppletTextureBudget.
+    int TextureBudget(bool application);
 
     // map-hd.txt: header, version, then "<width> <height> <chunk size>" of the high-resolution image.
     bool IsValidInfo(std::istream& input);

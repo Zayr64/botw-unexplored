@@ -7,6 +7,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 ## Features
 
 - Koroks, shrines, DLC shrines, Hinoxes, Taluses, and Moldugas.
+- **Locations**: the named places of the map not visited yet (the third part of the map completion, with the Korok seeds and the shrines), as magenta pins, in a category on by default. The card tells the place's name; the names are not drawn on the map.
 - **Breakable walls**: the 140 walls of the world map that a bomb opens, as one more category that starts switched off. The card only says whether the wall was broken.
 - **Quests**: where each side and shrine quest not taken yet is given (where its giver stands), as an orange speech bubble; those that wait for something else to happen first show in grey. The card tells the kind of quest, its name and place, whether it can be taken now and the game's own description. Quests already taken are in the game's log and leave the map. The data is `sdmc:/switch/botw-unexplored/quests.txt`, made from the game's files (see "Quests on the map"); without it there are no quests on the map.
 - **Treasure chests** of the world map that are still closed and hold something rare, in three categories that start switched off, each drawn as the symbol of its tab in the game's inventory instead of a chest (a purple tunic, a red sword, a gold gem): `Armor & key items` (armor, key items and horse gear: what is kept for good), `Rare weapons` (weapons, bows and shields found in at most two chests of the whole map) and `Rare materials` (the same for materials). A chest card shows what the chest holds (the item and how many) under the name of its group, whether it is opened and how far it is. The other chests, with arrows, gems, rupees and gear found in many chests, are not on the map: the Progress tab counts them. Chests of the Expansion Pass show once the save has a sign of it (one of them opened, the Champions' Ballad or a Master Mode save); chests that only exist in Master Mode show only there. Chests inside shrines and Divine Beasts are not on the map (a shrine card tells when one is left).
@@ -19,7 +20,7 @@ This repository is the maintained fork of [lud99/botw-unexplored](https://github
 - Normal Mode and Master Mode, including save-backup support when BotW is running.
 - A bar at the bottom shows what each button does in the current screen, and the name of the object under the aim.
 - Object cards: type, name, what is done and what is left (a hollow dot), distance and direction from Link, game coordinates. Korok cards add the guide's photo (`A` enlarges it) and the hint.
-- The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The names of the locations are not drawn on the map; how many were visited is a number in the Progress tab.
+- The legend shows the map completion (computed like the game: Korok seeds, discovered shrines and locations over 1207) and a progress bar per category. The locations visited are also a number in the Progress tab.
 - The left panel has four tabs, all in numbers only:
   - **Progress** counts what the map does not show: quests of each kind done and taken, towers, shrines completed and their chests, great fairies, Divine Beasts and their chests, the common chests of the world map, memories recalled (out of the pictures the album has so far), locations visited, and when the next Blood Moon comes, in minutes of play (from the world's clock and the Blood Moon timer, by the rule of the game's `TimeMgr` in the zeldaret/botw decomp).
   - **Regions** lists the fifteen regions of the map with what is found of each (Korok seeds and shrines) and shows one alone on the map: only its objects are drawn, counted in the legend and picked by `ZL`/`ZR`/`R`. Each row also tells how many shrine and side quests are taken in that region and are not in the log yet: `3 quests` can be taken now; with none of those, `2 later` wait for something else to happen first. A region is named once its tower is activated; until then it is an "Unknown region".
@@ -84,6 +85,12 @@ loading them in the background as the map moves. The chunks are not distributed 
   nearest to the center first, while that memory rule allows (the halved one stays on screen until then). `log.txt`
   tells what it found (the `MEMORY:` and `MAP HD:` lines; at the end, the most chunks loaded at once and the least
   memory free).
+- The textures do not come out of that memory: from the Album they have a small pool of their own, which panning
+  zoomed in once filled with chunks at full size until new ones drew black. So the textures are weighed too, about
+  4 MB at full size and 1 MB halved, up to 30 MB from the Album (a screen of 6 chunks at full size and 3 halved):
+  past that, chunks off screen go first, and with none left the ones still halved on screen stay halved. A texture
+  that fails anyway is dropped (the chunk keeps what it had) and no more are kept than at that moment. The last
+  `MAP HD:` line also tells the most MB of textures loaded at once.
 
 ## Quests on the map (optional)
 

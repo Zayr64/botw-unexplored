@@ -11,6 +11,7 @@ namespace LegendCategories
         Hinoxes,
         Taluses,
         Moldugas,
+        Locations,      // the named places not visited yet, the third part of the map completion
         ArmorChests,    // the special chests, in three groups (Chests.h)
         WeaponChests,
         MaterialChests,

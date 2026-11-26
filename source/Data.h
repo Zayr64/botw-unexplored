@@ -71,6 +71,9 @@ namespace Data
     // For location names and their positions, https://github.com/MrCheeze/botw-waypoint-map/blob/gh-pages/map_locations.js
     // For the location hashes, https://github.com/marcrobledo/savegame-editors/blob/master/zelda-botw/zelda-botw.locations.js
 
+    // Tag of the map objects drawn for the locations.
+    struct LocationIcon {};
+
     struct Location
     {
         uint32_t hash;

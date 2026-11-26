@@ -20,7 +20,6 @@
 
 template <typename T> class MapObject;
 
-class MapLocation;
 class Legend;
 class Dialog;
 class LineRenderer;
@@ -122,7 +121,7 @@ namespace Map
     extern MapObject<Data::QuestIcon>* m_Quests;
     extern MapObject<Data::QuestLaterIcon>* m_LaterQuests;
 
-    extern MapLocation* m_Locations;
+    extern MapObject<Data::LocationIcon>* m_Locations; // one per entry of Data::Locations
 
     extern Legend* m_Legend;
     extern KorokDialog* m_KorokDialog;

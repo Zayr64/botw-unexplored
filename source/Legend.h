@@ -18,6 +18,7 @@ public:
     static constexpr ButtonTypes Hinoxes = ButtonTypes::Hinoxes;
     static constexpr ButtonTypes Taluses = ButtonTypes::Taluses;
     static constexpr ButtonTypes Moldugas = ButtonTypes::Moldugas;
+    static constexpr ButtonTypes Locations = ButtonTypes::Locations;
     static constexpr ButtonTypes ArmorChests = ButtonTypes::ArmorChests;
     static constexpr ButtonTypes WeaponChests = ButtonTypes::WeaponChests;
     static constexpr ButtonTypes MaterialChests = ButtonTypes::MaterialChests;

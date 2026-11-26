@@ -843,8 +843,12 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
         {
             char name[32];
             std::snprintf(name, sizeof(name), "trackblock%02d.sav", i);
+            // Most of the 30 names are not there: asked quietly first, as in the copy, not through FileExists.
+            const std::string path = folder + name;
+            if (access(path.c_str(), R_OK) != 0)
+                continue;
             std::vector<uint8_t> data;
-            if (!ReadFileBuffer((folder + name).c_str(), data))
+            if (!ReadFileBuffer(path.c_str(), data))
                 continue;
             std::string error;
             if (!HeroPath::ReadFile(data.data(), data.size(), records, error))

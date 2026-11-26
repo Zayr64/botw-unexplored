@@ -125,6 +125,16 @@ bool MapHdGrid::HasMemoryForChunk(uint64_t freeBytes)
     return freeBytes >= AppletReserveBytes + ChunkPeakBytes;
 }
 
+int MapHdGrid::TextureMegabytes(int reduction)
+{
+    return reduction == 1 ? 4 : 1;
+}
+
+int MapHdGrid::TextureBudget(bool application)
+{
+    return application ? MaxLoadedApplication * TextureMegabytes(1) : AppletTextureBudget;
+}
+
 bool MapHdGrid::IsValidInfo(std::istream& input)
 {
     std::string header, version, size;

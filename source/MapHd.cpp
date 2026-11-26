@@ -79,9 +79,16 @@ namespace
     unsigned int s_Frame = 0;
     int s_LoadedCount = 0;
     int s_FullCount = 0; // loaded at full size
+    // MB of textures loaded (MapHdGrid::TextureMegabytes of each chunk) and how many may be: lowered to what is loaded
+    // if a texture ever fails for lack of video memory.
+    int s_TextureMB = 0;
+    int s_TextureBudget = MapHdGrid::TextureBudget(true);
+    bool s_BudgetLogged = false;
+    bool s_VideoErrorLogged = false;
     // For the log at the end: the most chunks loaded at once, and the least memory free when one was asked for.
     int s_PeakLoaded = 0;
     int s_PeakFull = 0;
+    int s_PeakTextureMB = 0;
     uint64_t s_LeastFree = FreeMemory::Unknown;
     Chunk s_Chunks[MapHdGrid::ChunkCount];
     std::vector<int> s_Visible;
@@ -180,11 +187,41 @@ namespace
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        while (glGetError() != GL_NO_ERROR) {} // only the errors of this texture are looked at below
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, decoded.width, decoded.height, 0, GL_RGB, GL_UNSIGNED_BYTE, decoded.pixels);
+        GLenum error = glGetError();
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-        glGenerateMipmap(GL_TEXTURE_2D);
+        if (error == GL_NO_ERROR)
+        {
+            glGenerateMipmap(GL_TEXTURE_2D);
+            error = glGetError();
+        }
         glBindTexture(GL_TEXTURE_2D, 0);
         FreePixels(pixels);
+        if (error != GL_NO_ERROR)
+        {
+            // Out of video memory, most likely: an incomplete texture would draw black over the map. It goes, the
+            // chunk keeps what it had (halved, or the low-resolution map under it), and no more textures than now
+            // are kept from here on.
+            delete texture;
+            s_TextureBudget = std::max(s_TextureMB, MapHdGrid::TextureMegabytes(s_BaseReduction));
+            if (!s_VideoErrorLogged)
+            {
+                Log("MAP HD: no video memory for " + MapHdGrid::ChunkFileName(decoded.index) +
+                    (decoded.reduction == 1 ? " (full size)" : " (halved)") + ", GL error " + std::to_string(error) +
+                    "; textures kept from now on: " + std::to_string(s_TextureBudget) + " MB, loaded: " +
+                    std::to_string(s_LoadedCount) + " (" + std::to_string(s_FullCount) + " at full size)");
+                s_VideoErrorLogged = true;
+            }
+            if (upgrade)
+            {
+                chunk.upgrading = false;
+                chunk.noUpgrade = true;
+            }
+            else // asked for again when there is room; with nothing loaded there never will be
+                chunk.state = s_LoadedCount > 0 ? ChunkState::Empty : ChunkState::Failed;
+            return;
+        }
 
         // Same corner order and texture coordinates as the low-resolution map, which is also loaded flipped.
         const MapHdGrid::Rect rect = MapHdGrid::ChunkRect(decoded.index);
@@ -206,6 +243,7 @@ namespace
             delete chunk.texture;
             if (chunk.reduction == 1)
                 --s_FullCount;
+            s_TextureMB -= MapHdGrid::TextureMegabytes(chunk.reduction);
         }
         else
             ++s_LoadedCount;
@@ -214,11 +252,13 @@ namespace
         chunk.reduction = decoded.reduction;
         if (chunk.reduction == 1)
             ++s_FullCount;
+        s_TextureMB += MapHdGrid::TextureMegabytes(chunk.reduction);
         chunk.upgrading = false;
         chunk.state = ChunkState::Loaded;
         chunk.lastUsed = s_Frame;
         s_PeakLoaded = std::max(s_PeakLoaded, s_LoadedCount);
         s_PeakFull = std::max(s_PeakFull, s_FullCount);
+        s_PeakTextureMB = std::max(s_PeakTextureMB, s_TextureMB);
     }
 
     void Unload(int index)
@@ -233,6 +273,7 @@ namespace
             --s_LoadedCount;
             if (chunk.reduction == 1)
                 --s_FullCount;
+            s_TextureMB -= MapHdGrid::TextureMegabytes(chunk.reduction);
         }
         chunk.state = ChunkState::Empty;
         chunk.reduction = 1;
@@ -247,6 +288,33 @@ namespace
             if (s_Chunks[index].state == ChunkState::Loaded)
                 loaded.push_back({index, s_Chunks[index].lastUsed});
         return MapHdGrid::PickEviction(loaded, s_Frame);
+    }
+
+    // Whether `megabytes` more of texture fit in the budget, after letting go of chunks off screen if needed. With
+    // `fullOnScreen` (zoomed out again, the chunks wanted halved) a chunk on screen at full size may go too, the
+    // farthest from the center first: it comes back halved.
+    bool MakeTextureRoom(int megabytes, bool fullOnScreen)
+    {
+        while (s_TextureMB + megabytes > s_TextureBudget)
+        {
+            int victim = EvictionCandidate();
+            for (auto it = s_Visible.rbegin(); victim < 0 && fullOnScreen && it != s_Visible.rend(); ++it)
+                if (s_Chunks[*it].state == ChunkState::Loaded && s_Chunks[*it].reduction == 1)
+                    victim = *it;
+            if (victim < 0)
+            {
+                if (!s_BudgetLogged)
+                {
+                    Log("MAP HD: textures at their limit (" + std::to_string(s_TextureMB) + " of " +
+                        std::to_string(s_TextureBudget) + " MB): the chunks still missing wait for some to go off "
+                        "screen, the halved ones on screen stay halved");
+                    s_BudgetLogged = true;
+                }
+                return false;
+            }
+            Unload(victim);
+        }
+        return true;
     }
 
     std::string MegabytesText(uint64_t bytes)
@@ -304,11 +372,15 @@ void MapHd::Init()
     s_Worker = std::thread(Worker);
     s_Enabled = true;
     s_MaxLoaded = MapHdGrid::MaxLoadedChunks(s_Application);
+    s_TextureBudget = MapHdGrid::TextureBudget(s_Application);
     s_NextMemoryCheck = 0;
     s_MemoryLogged = false;
     s_UpgradeLogged = false;
+    s_BudgetLogged = false;
+    s_VideoErrorLogged = false;
     Log("MAP HD: on, up to " + std::to_string(s_MaxLoaded) + " chunks" +
-        (s_Application ? "" : " at half size (the map at 2x), at full size when zoomed in, each only while memory allows"));
+        (s_Application ? "" : " at half size (the map at 2x), at full size when zoomed in, each only while memory allows") +
+        ", up to " + std::to_string(s_TextureBudget) + " MB of textures");
 }
 
 void MapHd::Update(const glm::vec2& cameraPosition, float zoom, float halfWidth, float halfHeight)
@@ -374,7 +446,10 @@ void MapHd::Update(const glm::vec2& cameraPosition, float zoom, float halfWidth,
         std::lock_guard<std::mutex> lock(s_Mutex);
         idle = s_Request < 0 && !s_HasDecoded;
     }
-    if (wanted >= 0 && idle && HasRoomForChunk())
+    // An upgrade holds both textures for a moment: the full size is weighed whole, the halved one is freed after.
+    const int megabytes = MapHdGrid::TextureMegabytes(upgrade ? 1 : s_BaseReduction);
+    const bool zoomedOut = MapHdGrid::WantedReduction(s_Application, zoom) > 1;
+    if (wanted >= 0 && idle && MakeTextureRoom(megabytes, !upgrade && zoomedOut) && HasRoomForChunk())
     {
         if (upgrade && !s_UpgradeLogged)
         {
@@ -435,7 +510,8 @@ void MapHd::Destroy()
 
     // How it went, for the next time the memory rule is looked at.
     Log("MAP HD: at most " + std::to_string(s_PeakLoaded) + " chunks loaded at once (" + std::to_string(s_PeakFull) +
-        " at full size); least memory free when one was asked for: " + MegabytesText(s_LeastFree));
+        " at full size), " + std::to_string(s_PeakTextureMB) + " MB of textures; least memory free when one was asked for: " +
+        MegabytesText(s_LeastFree));
 
     for (int index = 0; index < MapHdGrid::ChunkCount; ++index)
         Unload(index);

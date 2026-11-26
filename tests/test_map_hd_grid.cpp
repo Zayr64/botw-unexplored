@@ -84,6 +84,18 @@ int main()
             assert(ChunkWidthPixels(index) % 2 == 0 && ChunkHeightPixels(index) % 2 == 0);
     }
 
+    // Textures, in MB: from the Album a screen at FullZoom with 6 chunks at full size and 3 halved fits (27 MB, as on
+    // 25/11), a 7th upgrade does not (it holds both textures for a moment); the 15 halved chunks of a screen at
+    // MinZoom fit; 24 at full size (what piled up on 26/11 and showed black) are far over. As an application, the 40
+    // chunks at full size fit: no limit of its own there.
+    assert(TextureMegabytes(1) == 4 && TextureMegabytes(2) == 1);
+    assert(TextureBudget(true) == MaxLoadedApplication * 4 && TextureBudget(false) == 30);
+    assert(6 * TextureMegabytes(1) + 3 * TextureMegabytes(2) <= TextureBudget(false));
+    assert(5 * TextureMegabytes(1) + 4 * TextureMegabytes(2) + TextureMegabytes(1) <= TextureBudget(false));
+    assert(6 * TextureMegabytes(1) + 3 * TextureMegabytes(2) + TextureMegabytes(1) > TextureBudget(false));
+    assert(static_cast<int>(wide.size()) * TextureMegabytes(2) <= TextureBudget(false));
+    assert(MaxLoadedApplet * TextureMegabytes(1) > 3 * TextureBudget(false));
+
     // Eviction: the least recently used chunk, never one used in the current frame
     assert(PickEviction({{3, 10}, {7, 4}, {9, 8}}, 12) == 7);
     assert(PickEviction({{3, 12}, {7, 12}}, 12) == -1);

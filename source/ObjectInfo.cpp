@@ -108,6 +108,9 @@ void ObjectInfo::Render()
     else if (m_Chest != nullptr)
         top = found ? Ui::StatusRow(top, Localization::Get(Text::Opened), Ui::Colors::Good)
                     : Ui::StatusRow(top, Localization::Get(Text::NotOpened), Ui::Colors::Warn, false);
+    else if (m_Type == Data::ObjectType::Location)
+        top = found ? Ui::StatusRow(top, Localization::Get(Text::Discovered), Ui::Colors::Good)
+                    : Ui::StatusRow(top, Localization::Get(Text::NotDiscovered), Ui::Colors::Warn, false);
     else if (m_Type == Data::ObjectType::BreakableWall)
         top = found ? Ui::StatusRow(top, Localization::Get(Text::Broken), Ui::Colors::Good)
                     : Ui::StatusRow(top, Localization::Get(Text::NotBroken), Ui::Colors::Warn, false);

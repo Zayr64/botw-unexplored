@@ -9,7 +9,6 @@
 #include "Graphics/Texture2D.h"
 #include "Map.h"
 #include "MapObject.hpp"
-#include "MapLocation.h"
 #include "SavefileIO.h"
 #include "Localization.h"
 #include "ProgressPanel.h"
@@ -85,7 +84,7 @@ namespace
         case IconButton::HeroPath: return Localization::Text::HeroPath;
         case IconButton::Quests: return Localization::Text::Quests;
         default:
-            // Koroks to Moldugas, in the order of the categories
+            // Koroks to Locations, in the order of the categories (as in Localization::Text)
             return static_cast<Localization::Text>(static_cast<int>(Localization::Text::Koroks) + static_cast<int>(type));
         }
     }
@@ -105,7 +104,7 @@ namespace
 
     int MapEntriesFound()
     {
-        // The locations count although the app does not draw them: the number is the game's.
+        // Visited or not, whatever the legend shows: the number is the game's.
         static_assert(Data::KoroksCount + Data::ShrineCount + Data::LocationsCount == MapCompletion::TotalEntries,
                       "Map completion total must match the tracked data");
 
@@ -137,6 +136,7 @@ Legend::Legend()
     m_Buttons[1]->Click(this, true);
     m_Buttons[IconButton::HeroPath]->Click(this, true);
     m_Buttons[IconButton::Quests]->Click(this, true);
+    m_Buttons[IconButton::Locations]->Click(this, true);
 
     // Set first highlighted button
     UpdateSelectedButton();
@@ -347,6 +347,7 @@ IconButton::IconButton(ButtonTypes type, glm::vec2 position, float width, float 
     case Hinoxes: iconPath = "romfs:/hinox.png"; break;
     case Taluses: iconPath = "romfs:/talus.png"; break;
     case Moldugas: iconPath = "romfs:/molduga.png"; break;
+    case Locations: iconPath = "romfs:/location.png"; break;
     case ArmorChests: iconPath = Data::IconOf(Data::ChestGroup::Armor); break;
     case WeaponChests: iconPath = Data::IconOf(Data::ChestGroup::Weapon); break;
     case MaterialChests: iconPath = Data::IconOf(Data::ChestGroup::Material); break;
@@ -394,6 +395,9 @@ void IconButton::Count(int& found, int& total) const
         break;
     case Moldugas:
         for (int i = 0; i < Data::MoldugasCount; ++i) add(Map::m_Moldugas[i].m_Region, Map::m_Moldugas[i].m_Found);
+        break;
+    case Locations:
+        for (int i = 0; i < Data::LocationsCount; ++i) add(Map::m_Locations[i].m_Region, Map::m_Locations[i].m_Found);
         break;
     case ArmorChests:
         CountChests(Map::m_ArmorChests, Data::ArmorChestsCount, found, total);

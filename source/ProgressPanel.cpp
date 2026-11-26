@@ -10,7 +10,7 @@
 #include "Localization.h"
 #include "LocationState.h"
 #include "Map.h"
-#include "MapLocation.h"
+#include "MapObject.hpp"
 #include "Progress.h"
 #include "SavefileIO.h"
 #include "ShrineFlags.h"
