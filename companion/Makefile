@@ -44,7 +44,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE	:=	BotW Companion
 APP_AUTHOR	:=	Zayr64
-APP_VERSION :=  0.1.3
+APP_VERSION :=  0.1.4
 
 TARGET		:=	botw-companion
 BUILD		:=	build

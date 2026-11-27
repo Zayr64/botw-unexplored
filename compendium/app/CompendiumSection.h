@@ -27,7 +27,8 @@ namespace CompendiumSection
     // After the frame is on the screen: the slow work it asked for (reading the save, cooking).
     void AfterFrame(int section);
 
-    // "-": the save or the running game is read again, the next time a tab is shown (or now, on a tab).
+    // "-": the save or the running game is read again, the next time a tab is shown (or now, on a tab); when it is the
+    // very same save (the game stands still behind the Album) the tabs stay as they are, with nothing cooked again.
     void Reload(int section);
 
     // The height of the header on the screen, in pixels: the map's panels start under it.

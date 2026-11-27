@@ -1843,6 +1843,7 @@ namespace
         bool ok = false;
         int frame = 0; // frames drawn with a tab: the first says the save is being read
         int heldFrames = 0;
+        bool reloadPending = false; // the BotW Companion's "-": read again when a tab is shown
     };
 
     std::unique_ptr<Runtime> s_run;
@@ -1985,10 +1986,55 @@ namespace
         g_font->RenderBatch();
     }
 
+#ifdef BOTW_COMPANION
+    // The BotW Companion's "-", when a tab is shown (after the map has read the game again): the very same save keeps
+    // the tabs as they are, with nothing cooked again (with the Album open the game stands still, 27/11); a changed one
+    // is read and cooked again, keeping the options and where the lists were.
+    void ReloadIfChanged(Runtime& r)
+    {
+        r.reloadPending = false;
+        if (r.app.loading)
+            return; // not read yet: it will be, now
+#ifdef COMPANION_FORCE_RELOAD
+        const bool compare = false; // the simulator's check of the other path: every save is another
+#else
+        const bool compare = r.ok;
+#endif
+        if (compare)
+        {
+            const SaveSource::Loaded now = SaveSource::Load();
+            if (now.kind == r.app.loaded.kind && now.saveTime == r.app.loaded.saveTime && now.bytes == r.app.loaded.bytes)
+            {
+                Log("Compendium: the same save, nothing cooked again");
+                Measure::Step("read again: the same save");
+                return;
+            }
+        }
+        App fresh;
+        fresh.tab = r.app.tab;
+        fresh.countHidden = r.app.countHidden;
+        fresh.wholePouch = r.app.wholePouch;
+        fresh.sellPrized = r.app.sellPrized;
+        for (int t = 0; t < 4; t++)
+        {
+            fresh.cursor[t] = r.app.cursor[t];
+            fresh.scroll[t] = r.app.scroll[t];
+        }
+        r.app = std::move(fresh);
+        r.ok = false;
+        r.frame = 0; // the next frame says the save is being read, the one after reads it
+        Log("Compendium: another save, read and cooked again");
+    }
+#endif
+
     // After the frame is on the screen: the save read (on the frame after the one that says so), or the dishes cooked
     // again.
     void AfterTabFrame(Runtime& r, bool content)
     {
+#ifdef BOTW_COMPANION
+        if (content && r.reloadPending)
+            ReloadIfChanged(r);
+#endif
         App& app = r.app;
         if (content && app.loading && r.frame > 0)
         {
@@ -2059,13 +2105,10 @@ void CompendiumSection::AfterFrame(int section)
 
 void CompendiumSection::Reload(int section)
 {
-    // The tab and where the lists were stay; the rest is read and cooked again (the first frame says so).
-    Runtime& r = *s_run;
-    const int tab = r.app.tab;
-    r.app = App();
-    r.app.tab = tab;
-    r.ok = false;
-    r.frame = section > 0 ? 1 : 0;
+    // Read when a tab is shown, after the map has read the game again (on a tab, at the end of this very frame):
+    // nothing changes when it is the same save (ReloadIfChanged).
+    (void)section;
+    s_run->reloadPending = true;
     Log("Compendium: read again");
 }
 
