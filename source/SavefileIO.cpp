@@ -22,6 +22,10 @@
 #include "SaveParser.h"
 #include "ShrineChests.h"
 #include "ShrineFlags.h"
+#ifdef BOTW_COMPANION
+#include "LiveSave.h" // the Compendium's: the save of its tabs, made from the same scan
+#include "SaveShare.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -34,7 +38,9 @@ namespace
 {
     bool saveMounted = false;
 
-    bool ParseFileIntoState(const char* filepath, SavefileIO::ParsedSaveState& parsedState);
+    // `keep`: where to leave the file's bytes once parsed (the BotW Companion's tabs read them too).
+    bool ParseFileIntoState(const char* filepath, SavefileIO::ParsedSaveState& parsedState,
+                            std::vector<uint8_t>* keep = nullptr);
 
     // What the running game holds in memory.
     struct LiveState
@@ -42,6 +48,11 @@ namespace
         SavefileIO::ParsedSaveState parsed;
         bool masterMode = false;
         std::string message; // why it could not be read
+#ifdef BOTW_COMPANION
+        bool tabsReady = false;        // the save of the Compendium's tabs was made from the same scan
+        std::vector<uint8_t> tabsSave; // that save
+        std::string tabsMessage;       // else why not (empty: `message`)
+#endif
     };
     bool LoadLive(LiveState& live);
 
@@ -103,6 +114,10 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
     Log("Loading gamesave. Master mode: " + std::string(loadMasterMode ? "true" : "false") + 
        ", Choose profile (instead of automatic): " + std::string(chooseProfile ? "true" : "false"));
 
+#ifdef BOTW_COMPANION
+    // What the tabs read is shared again below, only when it is read now.
+    SaveShare::Clear();
+#endif
     SaveState candidate = CurrentState;
     const SaveLoadDecision::MountStatus mountStatus = MountSavefile(chooseProfile, candidate);
 
@@ -120,8 +135,9 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         }
 
         ParsedSaveState parsedState;
+        std::vector<uint8_t> bytes;
         const std::string path = "save:/" + std::to_string(saveSlot) + "/game_data.sav";
-        if (!ParseFileIntoState(path.c_str(), parsedState))
+        if (!ParseFileIntoState(path.c_str(), parsedState, &bytes))
         {
             Log(loadMasterMode ? "Master Mode savefile failed to parse" : "Normal Mode savefile failed to parse");
             Map::m_NoSavefileDialog->SetOpen(true);
@@ -138,6 +154,12 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         candidate.loadedSlot = saveSlot;
         candidate.saveTime = GetSavefileTimestamp("save:/" + std::to_string(saveSlot) + "/caption.sav");
         CommitState(candidate);
+#ifdef BOTW_COMPANION
+        // The Compendium's tabs read this same save (they read the Normal Mode one).
+        if (!loadMasterMode)
+            SaveShare::SetSave(std::move(bytes), saveSlot, candidate.saveTime,
+                               SaveShare::ProfileName(candidate.accountUid1, candidate.accountUid2));
+#endif
         Map::m_GameRunningDialog->SetOpen(false);
         Map::m_NoSavefileDialog->SetOpen(false);
         LoadHeroPath("save:/tracker/"); // the save is still mounted here
@@ -159,6 +181,16 @@ bool SavefileIO::LoadGamesave(bool loadMasterMode, bool chooseProfile, bool foll
         // slots exist) when the memory cannot be read or the game runs the other mode.
         LiveState live;
         const bool liveRead = LoadLive(live);
+#ifdef BOTW_COMPANION
+        {
+            // The tabs read what the game holds whatever its mode, as the BotW Compendium does; else a copy.
+            const std::string profile = SaveShare::ProfileName(candidate.accountUid1, candidate.accountUid2);
+            if (live.tabsReady)
+                SaveShare::SetLive(std::move(live.tabsSave), profile);
+            else
+                SaveShare::SetLiveFailed(live.tabsMessage.empty() ? live.message : live.tabsMessage, profile);
+        }
+#endif
         if (liveRead && followGameMode)
             loadMasterMode = live.masterMode;
         const bool useLive = liveRead && live.masterMode == loadMasterMode;
@@ -875,7 +907,7 @@ void ApplyRecords(const SaveParser::ParsedSaveState& bufferState, SavefileIO::Pa
             std::to_string(static_cast<int>(s_HeroPathMeters / 1000.0)) + " km");
     }
 
-bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parsedState)
+bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parsedState, std::vector<uint8_t>* keep)
 {
     Log("Opening savefile", filepath);
 
@@ -888,6 +920,8 @@ bool ParseFileIntoState(const char *filepath, SavefileIO::ParsedSaveState& parse
     Log("User has DLC:", parsedState.hasDLC ? "true" : "false");
 
     Log("Successfully parsed file", filepath);
+    if (keep)
+        keep->swap(buffer);
 
     return true;
 }
@@ -964,6 +998,51 @@ public:
     }
 };
 
+#ifdef BOTW_COMPANION
+// The BotW Companion: one scan of the game's memory gives the map its flags and the Compendium's tabs their save.
+class BothVisitors : public LiveGameData::Visitor
+{
+public:
+    BothVisitors(LiveGameData::Visitor& map, LiveGameData::Visitor& tabs) : m_Map(map), m_Tabs(tabs) {}
+
+    void OnFlag(LiveGameData::FlagKind kind, uint32_t hash, const uint8_t* value, uint64_t address) override
+    {
+        m_Map.OnFlag(kind, hash, value, address);
+        m_Tabs.OnFlag(kind, hash, value, address);
+    }
+
+    void OnArrayElement(LiveGameData::FlagKind kind, uint32_t hash, int index, const uint8_t* value) override
+    {
+        m_Map.OnArrayElement(kind, hash, index, value);
+        m_Tabs.OnArrayElement(kind, hash, index, value);
+    }
+
+private:
+    LiveGameData::Visitor& m_Map;
+    LiveGameData::Visitor& m_Tabs;
+};
+
+// The tabs' save from the scan, with the BotW Compendium's own checks (compendium/app/SaveSource.cpp).
+void MakeTabsSave(bool scanned, const LiveGameData::Report& report, const Compendium::LiveSave& tabs, LiveState& live)
+{
+    std::string why;
+    if (!scanned)
+        why = report.error;
+    else if (!report.f32)
+        why = "the game's stamina could not be read";
+    else if (report.arraysFound != Compendium::LiveArrayCount())
+        why = "the game's pouch could not be read";
+    else if (!tabs.Build(live.tabsSave, why))
+        live.tabsSave.clear();
+    live.tabsReady = why.empty();
+    live.tabsMessage = why;
+    if (live.tabsReady)
+        Log("LIVE: the tabs' save made from the same scan, records", static_cast<int>(tabs.RecordCount()));
+    else
+        Log("LIVE: no save for the tabs:", why);
+}
+#endif
+
 // World position of the shrine whose map is "DungeonNNN".
 bool ShrinePosition(const char* mapName, float& x, float& z)
 {
@@ -1003,10 +1082,23 @@ bool LoadLive(LiveState& live)
     LiveGameData::Report report;
     LiveGameData::Options options;
     options.f32 = true; // the world's clock and the Blood Moon timer; never makes the scan fail
-    const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), layout, collector, report, options);
+#ifdef BOTW_COMPANION
+    // The same scan makes the save of the Compendium's tabs: the pouch's arrays come along (the map skips them).
+    Compendium::LiveSave tabs;
+    BothVisitors both(collector, tabs);
+    options.arrays = Compendium::LiveArrays();
+    options.arrayCount = Compendium::LiveArrayCount();
+    LiveGameData::Visitor& visitor = both;
+#else
+    LiveGameData::Visitor& visitor = collector;
+#endif
+    const bool scanned = LiveGameData::Scan(GameMemory::Reader(), GameMemory::MainBase(), layout, visitor, report, options);
     std::istringstream details(report.details);
     for (std::string line; std::getline(details, line);)
         Log("LIVE: " + line);
+#ifdef BOTW_COMPANION
+    MakeTabsSave(scanned, report, tabs, live);
+#endif
     if (!scanned)
     {
         GameMemory::Close();

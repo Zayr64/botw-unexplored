@@ -11,6 +11,9 @@
 #include "LiveGameData.h"
 #include "LiveSave.h"
 #include "Log.h"
+#ifdef BOTW_COMPANION
+#include "SaveShare.h"
+#endif
 
 namespace SaveSource
 {
@@ -201,9 +204,59 @@ namespace SaveSource
         }
     }
 
+#ifdef BOTW_COMPANION
+    namespace
+    {
+        // The BotW Companion: what the map has just read (SaveShare), without mounting the save or scanning the game's
+        // memory again. False when the map shared nothing: the tabs then read by themselves.
+        bool LoadShared(Loaded& out)
+        {
+            const SaveShare::Shared& shared = SaveShare::Get();
+            switch (shared.from)
+            {
+            case SaveShare::From::Save:
+                out.kind = Kind::Game;
+                out.bytes = shared.bytes;
+                out.slot = shared.slot;
+                out.saveTime = shared.saveTime;
+                Log("The save the map read, slot", shared.slot);
+                return true;
+            case SaveShare::From::Live:
+                out.kind = Kind::Live;
+                out.gameRunning = true;
+                out.bytes = shared.bytes;
+                Log("LIVE: the save the map's scan made");
+                return true;
+            case SaveShare::From::LiveFailed:
+                out.gameRunning = true;
+                out.liveMessage = shared.message;
+                Log("LIVE: not from the map's scan:", shared.message);
+                LoadCopy(shared.profile, out);
+                if (out.kind == Kind::None)
+                {
+                    out.message = "BotW is open and there is no copy of the save yet: open this app once with the game "
+                                  "closed";
+                    Log(out.message);
+                }
+                else
+                {
+                    Log("Using a copy of the save:", KindText(out.kind));
+                }
+                return true;
+            default:
+                return false;
+            }
+        }
+    }
+#endif
+
     Loaded Load()
     {
         Loaded out;
+#ifdef BOTW_COMPANION
+        if (LoadShared(out))
+            return out;
+#endif
         AccountUid uid;
         memset(&uid, 0, sizeof(uid));
         if (!FindUser(uid))
