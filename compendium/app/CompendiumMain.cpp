@@ -1338,19 +1338,72 @@ namespace
         return u.fromStar == 0 ? "make, " + stars : stars;
     }
 
+    // What a material asks for, by its group: for the upgrades of the armor in the pouch only the upgrades (as the group
+    // is sorted); for the rest every need counted (the others when X counts them). And what is left over.
+    struct ReserveGoal
+    {
+        int32_t have, goal, spare;
+    };
+
+    ReserveGoal GoalOf(const App& app, const ReserveItem& it)
+    {
+        const MaterialPlan& m = app.plan->materials[app.rows[it.row].index];
+        const uint8_t mask = TierMask(app);
+        const int32_t goal = it.group == 0 ? m.need[OwnedReachable] + m.need[OwnedNextFairy] : m.Needed(mask);
+        return {m.have, goal, m.Free(mask)};
+    }
+
+    // The colour of a bar by the group, as the detail's bar has always been.
+    glm::vec3 GoalBarColor(const ReserveItem& it)
+    {
+        return it.group == 0 ? Warn : it.group == 1 ? TextDim : Good;
+    }
+
+    // The colour of a material by its group: missing for the upgrades, missing for the rest, enough.
+    glm::vec3 GroupColor(const ReserveItem& it, const ReserveGoal& g)
+    {
+        if (it.group == 0)
+            return Warn;
+        if (it.group == 1)
+            return TextColor;
+        return g.spare > 0 || g.goal > 0 ? Good : TextDim;
+    }
+
+    // The text after a material, in the list (short) and on top of the detail: what you have of the goal, as "3/45" (as
+    // the map's legend counts), or what is left over when it is enough (chosen by the user, 27/11, over "42 more" and
+    // over the bar alone).
+    std::string GoalText(const ReserveItem& it, const ReserveGoal& g, bool detail)
+    {
+        if (it.group == 2 && g.spare > 0)
+            return detail ? Number(g.spare) + " spare" : "+" + Number(g.spare);
+        if (g.goal == 0)
+            return std::string();
+        return Number(g.have) + "/" + Number(g.goal);
+    }
+
+    // A small bar: what you have of the goal (full when it is enough).
+    void MiniBar(float x, float top, float w, const ReserveItem& it, const ReserveGoal& g)
+    {
+        RoundRect(x, top, w, 8, 4, glm::vec4(1.0f, 1.0f, 1.0f, 0.10f));
+        const float part = g.goal > 0 ? std::min(1.0f, static_cast<float>(g.have) / static_cast<float>(g.goal)) : 1.0f;
+        if (part > 0.0f)
+            RoundRect(x, top, std::max(8.0f, w * part), 8, 4, glm::vec4(GoalBarColor(it), 1.0f));
+    }
+
     // The selected material: have against needed, then what it is for by name, in four short sections.
     void ReserveDetail(const App& app, const ReserveItem& it, float x, float top, float width)
     {
         const ReservePlan& p = *app.plan;
         const uint8_t mask = TierMask(app);
         const MaterialPlan& m = p.materials[app.rows[it.row].index];
-        const int32_t needed = m.Needed(mask);
+        const ReserveGoal goal = GoalOf(app, it);
+        const int32_t needed = goal.goal;
         const int32_t shortBy = needed - m.have;
         const int32_t free = m.Free(mask);
         float y = top + 40;
         Icons::Item(ActorName(app, m.item), x, y - 33, 44);
-        const std::string status = it.group < 2 ? "short " + Number(it.amount) : Number(free) + " free";
-        const glm::vec3 color = it.group < 2 ? (it.group == 0 ? Warn : TextColor) : (free > 0 ? Good : TextDim);
+        const std::string status = GoalText(it, goal, true);
+        const glm::vec3 color = it.group == 2 && free == 0 ? TextDim : GroupColor(it, goal);
         const float statusW = Width(status, 0.46f);
         Text(Fit(app.rows[it.row].name, 0.50f, width - 56 - statusW - 20), x + 56, y, 0.50f, TextColor);
         Text(status, x + width, y, 0.46f, color, ALIGN_RIGHT);
@@ -1363,11 +1416,8 @@ namespace
             RoundRect(x, y, std::max(12.0f, width * needed / most), 12, 6, glm::vec4(1.0f, 1.0f, 1.0f, 0.16f));
         if (m.have > 0)
             RoundRect(x, y, std::max(12.0f, width * m.have / most), 12, 6,
-                      glm::vec4(shortBy > 0 ? (it.group == 0 ? Warn : TextDim) : Good, 1.0f));
-        y += 34;
-        Text("you have " + Number(m.have), x, y, SmallText, TextDim);
-        Text("needed " + Number(needed), x + width, y, SmallText, TextDim, ALIGN_RIGHT);
-        y += 36;
+                      glm::vec4(shortBy > 0 ? GoalBarColor(it) : Good, 1.0f));
+        y += 46; // nothing under the bar: the fraction on top says it
 
         // What it is for: each thing by name and picture, the most first, in sections. The upgrades that wait for
         // another Great Fairy are among the upgrades (their stars say it).
@@ -1474,8 +1524,8 @@ namespace
             counts[it.group]++;
             groupOf.push_back(it.group);
         }
-        const std::vector<GroupTitle> titles = {{"Short for upgrades   " + std::to_string(counts[0]), Warn},
-                                                {"Short for new armor, oven, quests   " + std::to_string(counts[1]), TextDim},
+        const std::vector<GroupTitle> titles = {{"For upgrades   " + std::to_string(counts[0]), Warn},
+                                                {"For new armor, oven, quests   " + std::to_string(counts[1]), TextDim},
                                                 {"Enough   " + std::to_string(counts[2]), Good}};
         const float listW = ListWidth();
         GroupedList(app, 1, groupOf, titles, top, bottom, [&](int i, float ry) {
@@ -1483,21 +1533,15 @@ namespace
             const MaterialPlan& m = p.materials[app.rows[it.row].index];
             const float baseline = ry + 23;
             Icons::Item(ActorName(app, m.item), 20, ry + 4, 26);
-            std::string amount;
-            glm::vec3 color = TextDim;
-            if (it.group < 2)
-            {
-                amount = "short " + Number(it.amount);
-                color = it.group == 0 ? Warn : TextColor;
-            }
-            else
-            {
-                amount = it.amount > 0 ? "+" + Number(it.amount) : "0";
-                color = it.amount > 0 ? Good : TextDim;
-            }
-            const float amountW = Width(amount, 0.38f);
-            Text(Fit(app.rows[it.row].name, 0.38f, listW - 56 - amountW - 44), 56, baseline, 0.38f, TextColor);
-            Text(amount, listW - 26, baseline, 0.38f, color, ALIGN_RIGHT);
+            // A small bar in a column of its own, as the detail's, and the fraction after it (27/11, at the user's word:
+            // a bar instead of "short 38")
+            const ReserveGoal goal = GoalOf(app, it);
+            const std::string amount = GoalText(it, goal, false);
+            const float barW = 84, barRight = listW - 26 - 96;
+            Text(Fit(app.rows[it.row].name, 0.38f, barRight - barW - 16 - 56), 56, baseline, 0.38f, TextColor);
+            MiniBar(barRight - barW, ry + 13, barW, it, goal); // full when enough, also when nothing counted asks for it
+            if (!amount.empty())
+                Text(amount, listW - 26, baseline, SmallText, GroupColor(it, goal), ALIGN_RIGHT);
         });
         ReserveDetail(app, items[app.cursor[1]], listW + 32, top, ScreenW - listW - 64);
     }
