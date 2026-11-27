@@ -55,6 +55,14 @@ namespace
     PanelLayout Layout()
     {
         const float height = Ui::Top() - (Ui::Bottom() + Ui::FooterHeight + 8.0f);
+#ifdef BOTW_COMPANION
+        // The BotW Companion: its header marks the section and shows where the data comes from, so neither the title nor
+        // the line of the save (0: not drawn), and the cells keep the height they have in Unexplored (chosen by the
+        // user, 27/11, over dropping only the title and over shorter cells).
+        PanelLayout companion = {0.0f, 36.0f, 52.0f, 0.0f, 70.0f, 0.0f, 5.0f};
+        companion.rowHeight = std::max(30.0f, std::floor((height - companion.rowsTop) / RowsPerColumn) - companion.rowGap);
+        return companion;
+#endif
         PanelLayout layout = {52.0f, 88.0f, 106.0f, 132.0f, 152.0f, 58.0f, 6.0f};
         if (layout.rowsTop + RowsPerColumn * (layout.rowHeight + layout.rowGap) <= height)
             return layout;
@@ -244,9 +252,12 @@ void Legend::Render()
     Ui::PanelBackground();
 
     // The title, marked as the tab in use of BotW Compendium (SwitchStyle)
-    const std::string& title = Localization::Get(Localization::Text::Legend);
-    SwitchStyle::TabMark(Ui::Shapes(), left, left + Ui::TextWidth(title, TitleScale), top - layout.tabs);
-    Ui::Text(title, glm::vec2(left, top - layout.tabs), TitleScale, SwitchStyle::TabTitleColor(true));
+    if (layout.tabs > 0.0f)
+    {
+        const std::string& title = Localization::Get(Localization::Text::Legend);
+        SwitchStyle::TabMark(Ui::Shapes(), left, left + Ui::TextWidth(title, TitleScale), top - layout.tabs);
+        Ui::Text(title, glm::vec2(left, top - layout.tabs), TitleScale, SwitchStyle::TabTitleColor(true));
+    }
 
     // What the game calls map completion: Koroks, shrines and locations.
     const int found = MapEntriesFound();
@@ -258,9 +269,12 @@ void Legend::Render()
                     static_cast<float>(found) / static_cast<float>(MapCompletion::TotalEntries), Ui::Colors::Gold);
 
     // Where the progress comes from
-    glm::vec3 dotColor;
-    bool hasDot = false;
-    Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - layout.source), 0.32f, Ui::Colors::TextDim);
+    if (layout.source > 0.0f)
+    {
+        glm::vec3 dotColor;
+        bool hasDot = false;
+        Ui::Text(Map::SourceText(dotColor, hasDot), glm::vec2(left, top - layout.source), 0.32f, Ui::Colors::TextDim);
+    }
 
     for (unsigned int i = 0; i < m_Buttons.size(); i++)
         m_Buttons[i]->DrawShapes();
